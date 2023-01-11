@@ -1,11 +1,23 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using UnityEngine;
+using UnityEditor.SceneManagement;
+using UnityEngine.SceneManagement;
 using UnityEditor;
 using System.Text.RegularExpressions;
+using GLTF;
+using GLTF.Schema;
+using UnityGLTF;
+using Toph.GLTFSerializer.Components;
+
+
 
 public class UnitySync : EditorWindow
 {
@@ -13,7 +25,10 @@ public class UnitySync : EditorWindow
 
     public static string ip = "127.0.0.1";
     public static string port = "8080";
-    public static string textMessage = "This is a message";
+    public static string exportSceneName = "ExportScene";
+    public static string importSceneName = "ImportScene";
+
+    public static bool debug = false;
 
     #endregion
 
@@ -21,9 +36,16 @@ public class UnitySync : EditorWindow
 
     private static TcpListener tcpListener;
     private static Thread tcpListenerThread;
-    private static TcpClient connectedTcpClient;
     private static TcpClient socketConnection;
+
+    #endregion
+
+    #region thread handlers
+
+
     private static bool shouldRun;
+    private static readonly object _lock = new object();
+    private static readonly Queue<Action> _mainThreadActions = new Queue<Action>();
 
     #endregion
 
@@ -33,7 +55,19 @@ public class UnitySync : EditorWindow
         EditorWindow.GetWindow(typeof(UnitySync));
     }
 
-    void OnGUI()
+	public void Update()
+	{
+        lock (_lock)
+        {
+            while (_mainThreadActions.Count > 0)
+            {
+                var action = _mainThreadActions.Dequeue();
+                action?.Invoke();
+            }
+        }
+    }
+
+	void OnGUI()
     {
         GUILayout.Label("Unity Sync", EditorStyles.boldLabel);
         GUIStyle myStyle = new GUIStyle(GUI.skin.textField);
@@ -55,11 +89,14 @@ public class UnitySync : EditorWindow
             CloseTCPSocket();
         }
 
-        textMessage = GUI.TextField(new Rect(5, 100, 200, 30), textMessage, myStyle);
-        if (GUI.Button(new Rect(215, 100, 100, 30), new GUIContent("Send Message", "Send Message")))
+        exportSceneName = GUI.TextField(new Rect(5, 100, 200, 30), exportSceneName, myStyle);
+        if (GUI.Button(new Rect(215, 100, 100, 30), new GUIContent("Export Scene", "Export Scene")))
         {
-            SendMessage();
+            ExportScene();
         }
+
+        importSceneName = GUI.TextField(new Rect(5, 140, 200, 30), importSceneName, myStyle);
+
     }
 
     private static void OpenTCPSocket()
@@ -83,23 +120,26 @@ public class UnitySync : EditorWindow
             tcpListener = new TcpListener(IPAddress.Parse(ip), int.Parse(port));
             tcpListener.Start();
             Debug.Log("Server is listening");
-            Byte[] bytes = new Byte[1024];
+            List<byte[]> allBytes = new List<byte[]>();
             while (shouldRun)
             {
-                using (connectedTcpClient = tcpListener.AcceptTcpClient())
-                {
-                    using (NetworkStream stream = connectedTcpClient.GetStream())
-                    {
-                        int length;			
-                        while ((length = stream.Read(bytes, 0, bytes.Length)) != 0)
-                        {
-                            byte[] incommingData = new byte[length];
-                            Array.Copy(bytes, 0, incommingData, 0, length);
-                            string clientMessage = Encoding.ASCII.GetString(incommingData);
-                            Debug.Log("client message received: " + clientMessage);
-                        }
-                    }
-                }
+				using TcpClient connectedTcpClient = tcpListener.AcceptTcpClient();
+				using NetworkStream stream = connectedTcpClient.GetStream();
+
+                bool shouldImport = false;
+                byte[] lengthBytes = new byte[4];
+				int length;
+				while ((length = stream.Read(lengthBytes, 0, lengthBytes.Length)) != 0)
+				{
+                    shouldImport = true;
+                    byte[] data = new byte[BitConverter.ToUInt32(lengthBytes)];
+                    int dataLength = stream.Read(data, 0, data.Length);
+                    allBytes.Add(data);
+                    Debug.Log("Received " + data.Length);
+				}
+                if (shouldImport)
+                    _mainThreadActions.Enqueue(() => ImportScene(allBytes));
+
             }
         }
         catch (SocketException socketException)
@@ -108,22 +148,48 @@ public class UnitySync : EditorWindow
         }
     }
 
-    private static void SendMessage()
+    private async static void ExportScene()
     {
+        var exportScene = SceneManager.GetSceneByName(exportSceneName);
+        if (exportScene.IsValid() is false || exportScene.isLoaded is false)
+        {
+            Debug.LogError($"Export scene with name '{exportSceneName}' can not be found or is not valid!");
+            return;
+        }
+
+        var rootGameObjects = GLTFUnitySceneHelper.GetSceneRootGameObjects(exportScene).ToList();
+        var rootComponents = GLTFUnitySceneHelper.AddOrGetSceneRootComponents(rootGameObjects);
+        rootComponents.ForEach(r => r.Init());
+
+        var byteArrays = new List<byte[]>();
+        foreach (var rootComponent in rootComponents)
+        {
+            var byteArray = await rootComponent.SerializeGameObject(new ExportOptions());
+            byteArrays.Add(byteArray);
+
+            if (debug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(byteArray)}");
+        }
+
         try
         {
             socketConnection = new TcpClient(ip, int.Parse(port));
             if (socketConnection == null)
+			{
+                Debug.Log("Socket Exception: couldn't connect to server");
                 return;
+			}
 
             try
             {
                 NetworkStream stream = socketConnection.GetStream();
                 if (stream.CanWrite)
                 {
-                    string clientMessage = textMessage;
-                    byte[] clientMessageAsByteArray = Encoding.ASCII.GetBytes(clientMessage);        
-                    stream.Write(clientMessageAsByteArray, 0, clientMessageAsByteArray.Length);
+                    foreach (byte[] bytes in byteArrays)
+					{
+                        stream.Write(BitConverter.GetBytes((uint)bytes.Length), 0, 4);
+                        stream.Write(bytes, 0, bytes.Length);
+                        Debug.Log("Send " + bytes.Length);
+					}
                     Debug.Log("Message send by Client");
                 }
                 socketConnection.Close();
@@ -137,5 +203,50 @@ public class UnitySync : EditorWindow
         {
             Debug.Log("Socket Exception: " + socketException);
         }
+
+        if (debug) Debug.Log($"Scene '{exportScene.name}' exported."); //
+    }
+
+    private async static void ImportScene(List<byte[]> scene)
+	{
+        foreach (byte[] bytes in scene)
+            Debug.Log("final Length" + bytes.Length);
+
+
+        var importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+        importScene.name = importSceneName;
+        Debug.Log(importScene);
+        Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
+        {
+            if (createdObject is null)
+            {
+                return;
+            }
+            SceneManager.MoveGameObjectToScene(createdObject, importScene);
+
+            if (debug) Debug.Log($"GameObject '{createdObject.name}' imported.");
+        };
+        Debug.Log(2);
+
+        foreach (var byteArray in scene)
+        {
+            Debug.Log(3);
+            using (var memoryStream = new MemoryStream())
+            {
+                await memoryStream.WriteAsync(byteArray);
+                await DeserializeGameObject(importScene, new ImportOptions(), memoryStream, onLoadComplete);
+            }
+        }
+        Debug.Log(4);
+        if (debug) Debug.Log($"Scene '{importScene.name}' imported.");
+    }
+
+    private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream,
+        Action<GameObject, ExceptionDispatchInfo> onLoadComplete)
+    {
+        GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
+
+        var importer = new GLTFSceneImporterExtended(gLTFRoot, stream, importOptions);
+        await importer.UpdateOrCreateSceneAsync(GLTFUnitySceneHelper.GetSceneRootComponents(importScene), debug, -1, true, onLoadComplete); // ToDo get progress using IProgress
     }
 }
