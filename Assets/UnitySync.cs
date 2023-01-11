@@ -42,7 +42,6 @@ public class UnitySync : EditorWindow
 
     #region thread handlers
 
-
     private static bool shouldRun;
     private static readonly object _lock = new object();
     private static readonly Queue<Action> _mainThreadActions = new Queue<Action>();
@@ -138,8 +137,9 @@ public class UnitySync : EditorWindow
                     Debug.Log("Received " + data.Length);
 				}
                 if (shouldImport)
+				{
                     _mainThreadActions.Enqueue(() => ImportScene(allBytes));
-
+				}
             }
         }
         catch (SocketException socketException)
@@ -190,7 +190,6 @@ public class UnitySync : EditorWindow
                         stream.Write(bytes, 0, bytes.Length);
                         Debug.Log("Send " + bytes.Length);
 					}
-                    Debug.Log("Message send by Client");
                 }
                 socketConnection.Close();
             }
@@ -204,18 +203,13 @@ public class UnitySync : EditorWindow
             Debug.Log("Socket Exception: " + socketException);
         }
 
-        if (debug) Debug.Log($"Scene '{exportScene.name}' exported."); //
+        if (debug) Debug.Log($"Scene '{exportScene.name}' exported.");
     }
 
     private async static void ImportScene(List<byte[]> scene)
 	{
-        foreach (byte[] bytes in scene)
-            Debug.Log("final Length" + bytes.Length);
-
-
         var importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
         importScene.name = importSceneName;
-        Debug.Log(importScene);
         Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
         {
             if (createdObject is null)
@@ -226,18 +220,15 @@ public class UnitySync : EditorWindow
 
             if (debug) Debug.Log($"GameObject '{createdObject.name}' imported.");
         };
-        Debug.Log(2);
 
         foreach (var byteArray in scene)
         {
-            Debug.Log(3);
             using (var memoryStream = new MemoryStream())
             {
                 await memoryStream.WriteAsync(byteArray);
                 await DeserializeGameObject(importScene, new ImportOptions(), memoryStream, onLoadComplete);
             }
         }
-        Debug.Log(4);
         if (debug) Debug.Log($"Scene '{importScene.name}' imported.");
     }
 
