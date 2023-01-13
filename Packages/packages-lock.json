@@ -17,7 +17,7 @@
         "com.unity.render-pipelines.universal": "12.1.6",
         "com.unity.shadergraph": "12.1.6"
       },
-      "hash": "e70d10c73aacbb8069f49e2d7055295e28fa91ed"
+      "hash": "3bcaecae25662fdfcf54c2504a9d31d49121cdb4"
     },
     "com.unity.burst": {
       "version": "1.6.5",

@@ -10,10 +10,49 @@ namespace jKnepel.UnitySync
     {
         #region public members
 
-        public static string ip = "127.0.0.1";
-        public static string port = "8080";
-        public static string exportSceneName = "ExportScene";
-        public static string importSceneName = "ImportScene";
+        private static string _ip = "127.0.0.1";
+        public static string ip
+        {
+            get { return _ip; }
+            set
+			{
+                _ip = value;
+                SyncEvents.onIpChanged?.Invoke(value);
+			}
+        }
+
+        private static string _port = "8080";
+        public static string port
+		{
+            get { return _port; }
+            set
+			{
+                _port = value;
+                SyncEvents.onPortChanged?.Invoke(value);
+			}
+		}
+
+        private static string _exportSceneName = "ExportScene";
+        public static string exportSceneName
+		{
+            get { return _exportSceneName; }
+            set
+			{
+                _exportSceneName = value;
+                SyncEvents.onExportSceneNameChanged?.Invoke(value);
+			}
+		}
+
+        private static string _importSceneName = "ImportScene";
+        public static string importSceneName
+		{
+            get { return _importSceneName; }
+            set
+			{
+                _importSceneName = value;
+                SyncEvents.onImportSceneNameChanged?.Invoke(value);
+			}
+		}
 
         #endregion
 

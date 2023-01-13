@@ -8,9 +8,9 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEditor;
 using UnityEditor.SceneManagement;
-using UnityEngine.SceneManagement;
 using GLTF;
 using GLTF.Schema;
 using UnityGLTF;
@@ -21,23 +21,26 @@ namespace jKnepel.UnitySync
     [InitializeOnLoad()]
     public static class SyncManager
     {
-        #region private members
+        #region public members
 
-        private static string ip = "127.0.0.1";
-        private static string port = "8080";
-        private static string exportSceneName = "Serializable";
-        private static string importSceneName = "Import";
+        public static string Ip { get; private set; }
+        public static string Port { get; private set; }
+        public static string ExportSceneName { get; private set; }
+        public static string ImportSceneName { get; private set; }
+        public static bool IsDebug { get; private set; }
+
+        #endregion
+
+        #region private members
 
         private static TcpListener tcpListener;
         private static TcpClient socketConnection;
-        private static bool debug = false;
 
         #endregion
 
         #region thread handlers
 
         private static Thread tcpListenerThread;
-        private static bool shouldRun;
         private static readonly object _lock = new object();
         private static readonly Queue<Action> _mainThreadActions = new Queue<Action>();
 
@@ -47,11 +50,17 @@ namespace jKnepel.UnitySync
 
         static SyncManager()
 		{
+            IsDebug = true;
+            SyncEvents.onIpChanged += (string value) => Ip = value;
+            SyncEvents.onPortChanged += (string value) => Port = value;
+            SyncEvents.onExportSceneNameChanged += (string value) => ExportSceneName = value;
+            SyncEvents.onImportSceneNameChanged += (string value) => ImportSceneName = value;
+
             SyncEvents.onOpenTCPSocket += OpenTCPSocket;
             SyncEvents.onCloseTCPSocket += CloseTCPSocket;
             SyncEvents.onExportScene += ExportScene;
 
-            UnityEditor.EditorApplication.update += Update;
+            EditorApplication.update += Update;
         }
 
         private static void Update()
@@ -77,67 +86,65 @@ namespace jKnepel.UnitySync
 
 		private static void OpenTCPSocket()
         {
-            shouldRun = true;
-            tcpListenerThread = new Thread(new ThreadStart(ListenForIncommingRequests));
-            tcpListenerThread.IsBackground = true;
-            tcpListenerThread.Start();
+			tcpListenerThread = new Thread(new ThreadStart(ListenForIncommingRequests))
+			{
+				IsBackground = true
+			};
+			tcpListenerThread.Start();
         }
 
         private static void CloseTCPSocket()
         {
-            shouldRun = false;
+            tcpListenerThread.Abort();
+            tcpListener.Server.Close();
         }
 
         private static void ListenForIncommingRequests()
         {
             try
             {
-                tcpListener = new TcpListener(IPAddress.Parse(ip), int.Parse(port));
+                tcpListener = new TcpListener(IPAddress.Parse(Ip), int.Parse(Port));
                 tcpListener.Start();
-                Debug.Log("Server is listening");
+				Debug.Log("Server is listening");
                 List<byte[]> allBytes = new List<byte[]>();
-                while (shouldRun)
+                while (true)
                 {
                     using TcpClient connectedTcpClient = tcpListener.AcceptTcpClient();
                     using NetworkStream stream = connectedTcpClient.GetStream();
 
-                    bool shouldImport = false;
                     byte[] lengthBytes = new byte[4];
                     int length;
                     while ((length = stream.Read(lengthBytes, 0, lengthBytes.Length)) != 0)
                     {
-                        shouldImport = true;
                         byte[] data = new byte[BitConverter.ToUInt32(lengthBytes)];
                         int dataLength = stream.Read(data, 0, data.Length);
                         allBytes.Add(data);
-                        Debug.Log("Received " + data.Length);
-                    }
-
-                    if (shouldImport)
-                    {
                         AddMainThreadAction(() => ImportScene(allBytes));
+						Debug.Log("Received " + data.Length);
                     }
                 }
-
-                tcpListener.Server.Close();
             }
             catch (SocketException socketException)
             {
-                Debug.Log("Socket Exception " + socketException.ToString());
+				Debug.Log("Socket Exception " + socketException.ToString());
             }
+            catch (ThreadAbortException ex)
+			{
+                
+			}
         }
 
         private async static void ExportScene()
         {
-            var exportScene = SceneManager.GetSceneByName(exportSceneName);
+            var exportScene = SceneManager.GetSceneByName(ExportSceneName);
             if (exportScene.IsValid() is false || exportScene.isLoaded is false)
             {
-                Debug.LogError($"Export scene with name '{exportSceneName}' can not be found or is not valid!");
+				Debug.LogError($"Export scene with name '{ExportSceneName}' can not be found or is not valid!");
                 return;
             }
 
-            var rootGameObjects = GLTFUnitySceneHelper.GetSceneRootGameObjects(exportScene).ToList();
-            var rootComponents = GLTFUnitySceneHelper.AddOrGetSceneRootComponents(rootGameObjects);
+            var rootGameObjects = GLTFSceneHelper.GetSceneRootGameObjects(exportScene).ToList();
+            var rootComponents = GLTFSceneHelper.AddOrGetSceneRootComponents(rootGameObjects);
             rootComponents.ForEach(r => r.Init());
 
             var byteArrays = new List<byte[]>();
@@ -146,49 +153,42 @@ namespace jKnepel.UnitySync
                 var byteArray = await rootComponent.SerializeGameObject(new ExportOptions());
                 byteArrays.Add(byteArray);
 
-                if (debug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(byteArray)}");
+                if (IsDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(byteArray)}");
             }
 
             try
             {
-                socketConnection = new TcpClient(ip, int.Parse(port));
+                socketConnection = new TcpClient(Ip, int.Parse(Port));
                 if (socketConnection == null)
                 {
-                    Debug.Log("Socket Exception: couldn't connect to server");
+					Debug.Log("Socket Exception: couldn't connect to server");
                     return;
                 }
 
-                try
+                NetworkStream stream = socketConnection.GetStream();
+                if (stream.CanWrite)
                 {
-                    NetworkStream stream = socketConnection.GetStream();
-                    if (stream.CanWrite)
+                    foreach (byte[] bytes in byteArrays)
                     {
-                        foreach (byte[] bytes in byteArrays)
-                        {
-                            stream.Write(BitConverter.GetBytes((uint)bytes.Length), 0, 4);
-                            stream.Write(bytes, 0, bytes.Length);
-                            Debug.Log("Send " + bytes.Length);
-                        }
+                        stream.Write(BitConverter.GetBytes((uint)bytes.Length), 0, 4);
+                        stream.Write(bytes, 0, bytes.Length);
+                        Debug.Log("Send " + bytes.Length);
                     }
-                    socketConnection.Close();
                 }
-                catch (SocketException socketException)
-                {
-                    Debug.Log("Socket Exception: " + socketException);
-                }
+                socketConnection.Close();
             }
             catch (SocketException socketException)
             {
-                Debug.Log("Socket Exception: " + socketException);
+				Debug.Log("Socket Exception: " + socketException);
             }
 
-            if (debug) Debug.Log($"Scene '{exportScene.name}' exported.");
+            if (IsDebug) Debug.Log($"Scene '{exportScene.name}' exported.");
         }
 
         private async static void ImportScene(List<byte[]> scene)
         {
             var importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            importScene.name = importSceneName;
+            importScene.name = ImportSceneName;
             Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
             {
                 if (createdObject is null)
@@ -197,7 +197,7 @@ namespace jKnepel.UnitySync
                 }
                 SceneManager.MoveGameObjectToScene(createdObject, importScene);
 
-                if (debug) Debug.Log($"GameObject '{createdObject.name}' imported.");
+                if (IsDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
             };
 
             foreach (var byteArray in scene)
@@ -208,7 +208,7 @@ namespace jKnepel.UnitySync
                     await DeserializeGameObject(importScene, new ImportOptions(), memoryStream, onLoadComplete);
                 }
             }
-            if (debug) Debug.Log($"Scene '{importScene.name}' imported.");
+            if (IsDebug) Debug.Log($"Scene '{importScene.name}' imported.");
         }
 
         private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream,
@@ -217,7 +217,7 @@ namespace jKnepel.UnitySync
             GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
             var importer = new GLTFSceneImporterExtended(gLTFRoot, stream, importOptions);
-            await importer.UpdateOrCreateSceneAsync(GLTFUnitySceneHelper.GetSceneRootComponents(importScene), debug, -1, true, onLoadComplete); // ToDo get progress using IProgress
+            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), IsDebug, -1, true, onLoadComplete); // ToDo get progress using IProgress
         }
     }
 
