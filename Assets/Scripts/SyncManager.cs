@@ -35,14 +35,15 @@ namespace jKnepel.UnitySync
 
         private static TcpListener tcpListener;
         private static TcpClient socketConnection;
+        private static Scene _importScene;
 
         #endregion
 
         #region thread handlers
 
         private static Thread tcpListenerThread;
-        private static readonly object _lock = new object();
-        private static readonly Queue<Action> _mainThreadActions = new Queue<Action>();
+        private static readonly object _lock = new();
+        private static readonly Queue<Action> _mainThreadActions = new();
 
 		#endregion
 
@@ -105,19 +106,18 @@ namespace jKnepel.UnitySync
                 tcpListener = new TcpListener(IPAddress.Parse(Ip), int.Parse(Port));
                 tcpListener.Start();
 				Debug.Log("Server is listening");
-                List<byte[]> allBytes = new List<byte[]>();
                 while (true)
                 {
                     using TcpClient connectedTcpClient = tcpListener.AcceptTcpClient();
                     using NetworkStream stream = connectedTcpClient.GetStream();
 
                     byte[] lengthBytes = new byte[4];
-                    int length;
-                    while ((length = stream.Read(lengthBytes, 0, lengthBytes.Length)) != 0)
+                    while (stream.Read(lengthBytes, 0, lengthBytes.Length) != 0)
                     {
+                        List<byte[]> allBytes = new List<byte[]>();
                         byte[] data = new byte[BitConverter.ToUInt32(lengthBytes)];
                         int dataLength = stream.Read(data, 0, data.Length);
-                        allBytes.Add(data);
+						allBytes.Add(data);
                         AddMainThreadAction(() => ImportScene(allBytes));
 						Debug.Log("Received " + data.Length);
                     }
@@ -186,15 +186,19 @@ namespace jKnepel.UnitySync
 
         private async static void ImportScene(List<byte[]> scene)
         {
-            var importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            importScene.name = ImportSceneName;
+            if (!_importScene.IsValid())
+			{
+                _importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+                _importScene.name = ImportSceneName;
+			}
+
             Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
             {
                 if (createdObject is null)
                 {
                     return;
                 }
-                SceneManager.MoveGameObjectToScene(createdObject, importScene);
+                SceneManager.MoveGameObjectToScene(createdObject, _importScene);
 
                 if (IsDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
             };
@@ -204,10 +208,12 @@ namespace jKnepel.UnitySync
                 using (var memoryStream = new MemoryStream())
                 {
                     await memoryStream.WriteAsync(byteArray);
-                    await DeserializeGameObject(importScene, new ImportOptions(), memoryStream, onLoadComplete);
+                    await DeserializeGameObject(_importScene, new ImportOptions(), memoryStream, onLoadComplete);
                 }
             }
-            if (IsDebug) Debug.Log($"Scene '{importScene.name}' imported.");
+            if (IsDebug) Debug.Log($"Scene '{_importScene.name}' imported.");
+
+            return;
         }
 
         private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream,
@@ -216,7 +222,7 @@ namespace jKnepel.UnitySync
             GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
             var importer = new GLTFSceneImporterExtended(gLTFRoot, stream, importOptions);
-            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), IsDebug, -1, true, onLoadComplete); // ToDo get progress using IProgress
+            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), IsDebug, -1, true, onLoadComplete);
         }
     }
 
