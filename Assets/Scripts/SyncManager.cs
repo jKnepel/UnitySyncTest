@@ -96,7 +96,6 @@ namespace jKnepel.UnitySync
         private static void CloseTCPSocket()
         {
             tcpListenerThread.Abort();
-            tcpListener.Server.Close();
         }
 
         private static void ListenForIncommingRequests()
@@ -124,14 +123,14 @@ namespace jKnepel.UnitySync
                     }
                 }
             }
-            catch (SocketException socketException)
+            catch (SocketException ex)
             {
-				Debug.Log("Socket Exception " + socketException.ToString());
+				Debug.Log("Socket Exception " + ex.ToString());
             }
             catch (ThreadAbortException ex)
 			{
-                
-			}
+                tcpListener.Server.Close();
+            }
         }
 
         private async static void ExportScene()
@@ -177,9 +176,9 @@ namespace jKnepel.UnitySync
                 }
                 socketConnection.Close();
             }
-            catch (SocketException socketException)
+            catch (SocketException ex)
             {
-				Debug.Log("Socket Exception: " + socketException);
+				Debug.Log("Socket Exception: " + ex);
             }
 
             if (IsDebug) Debug.Log($"Scene '{exportScene.name}' exported.");
