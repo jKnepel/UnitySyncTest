@@ -1,8 +1,6 @@
-using System;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
-using System.Text.RegularExpressions;
+using System.Text.RegularExpressions;   
 
 namespace jKnepel.UnitySync
 {
@@ -28,7 +26,7 @@ namespace jKnepel.UnitySync
             set
 			{
                 _port = value;
-                SyncEvents.onPortChanged?.Invoke(value);
+                SyncEvents.onPortChanged?.Invoke(int.Parse(value));
 			}
 		}
 
@@ -86,6 +84,11 @@ namespace jKnepel.UnitySync
 
             exportSceneName = GUI.TextField(new Rect(5, 100, 200, 30), exportSceneName, myStyle);
             if (GUI.Button(new Rect(215, 100, 100, 30), new GUIContent("Export Scene", "Export Scene")))
+            {
+                SyncEvents.onExportScene?.Invoke();
+            }
+
+            if (GUI.Button(new Rect(325, 100, 100, 30), new GUIContent("Close Client", "Close Client")))
             {
                 SyncEvents.onExportScene?.Invoke();
             }

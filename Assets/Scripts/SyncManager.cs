@@ -1,8 +1,11 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -24,7 +27,7 @@ namespace jKnepel.UnitySync
         #region public members
 
         public static string Ip { get; private set; }
-        public static string Port { get; private set; }
+        public static int Port { get; private set; }
         public static string ExportSceneName { get; private set; }
         public static string ImportSceneName { get; private set; }
         public static bool IsDebug { get; private set; }
@@ -33,15 +36,14 @@ namespace jKnepel.UnitySync
 
         #region private members
 
-        private static TcpListener tcpListener;
-        private static TcpClient socketConnection;
         private static Scene _importScene;
 
         #endregion
 
         #region thread handlers
 
-        private static Thread tcpListenerThread;
+        private static Socket client;
+        private static Thread listenerThread;
         private static readonly object _lock = new();
         private static readonly Queue<Action> _mainThreadActions = new();
 
@@ -53,13 +55,14 @@ namespace jKnepel.UnitySync
 		{
             IsDebug = true;
             SyncEvents.onIpChanged += (string value) => Ip = value;
-            SyncEvents.onPortChanged += (string value) => Port = value;
+            SyncEvents.onPortChanged += (int value) => Port = value;
             SyncEvents.onExportSceneNameChanged += (string value) => ExportSceneName = value;
             SyncEvents.onImportSceneNameChanged += (string value) => ImportSceneName = value;
 
             SyncEvents.onOpenTCPSocket += OpenTCPSocket;
             SyncEvents.onCloseTCPSocket += CloseTCPSocket;
             SyncEvents.onExportScene += ExportScene;
+            SyncEvents.onCloseClient += CloseClient;
 
             EditorApplication.update += Update;
         }
@@ -83,57 +86,131 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region private methods
+		#region event handlers
 
 		private static void OpenTCPSocket()
         {
-			tcpListenerThread = new Thread(new ThreadStart(ListenForIncommingRequests))
+            listenerThread = new Thread(() => ListenForIncomingRequests())
 			{
 				IsBackground = true
 			};
-			tcpListenerThread.Start();
+            listenerThread.Start();
         }
 
         private static void CloseTCPSocket()
         {
-            tcpListenerThread.Abort();
+            listenerThread.Abort();
         }
 
-        private static void ListenForIncommingRequests()
+        private static void CloseClient()
+		{
+            client.Shutdown(SocketShutdown.Both);
+            client.Close();
+        }
+
+        #endregion
+
+        #region socket methods
+
+        private static void ListenForIncomingRequests()
         {
+            Socket listener = null;
+            Socket handler = null;
             try
             {
-                tcpListener = new TcpListener(IPAddress.Parse(Ip), int.Parse(Port));
-                tcpListener.Start();
-				Debug.Log("Server is listening");
+                IPHostEntry host = Dns.GetHostEntry(Ip);
+                IPAddress ipAddress = host.AddressList[0];
+                IPEndPoint localEndPoint = new(ipAddress, Port);
+
+                listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                listener.Bind(localEndPoint);
+                listener.Listen(10);
+                listener.Blocking = true;
+
+                Debug.Log("Server is listening");
+                
                 while (true)
                 {
-                    using TcpClient connectedTcpClient = tcpListener.AcceptTcpClient();
-                    using NetworkStream stream = connectedTcpClient.GetStream();
+                    handler = listener.Accept();
 
                     byte[] lengthBytes = new byte[4];
-                    while (stream.Read(lengthBytes, 0, lengthBytes.Length) != 0)
-                    {
-                        List<byte[]> allBytes = new List<byte[]>();
-                        byte[] data = new byte[BitConverter.ToUInt32(lengthBytes)];
-                        int dataLength = stream.Read(data, 0, data.Length);
-						allBytes.Add(data);
-                        AddMainThreadAction(() => ImportScene(allBytes));
-						Debug.Log("Received " + data.Length);
-                    }
+                    handler.Receive(lengthBytes, SocketFlags.None);
+                    int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
+
+                    byte[] receivedBytes = new byte[dataLength];
+                    handler.Receive(receivedBytes, SocketFlags.None);
+                    Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
+
+                    string hashedBytes = GetHashedBytes(receivedBytes);
+                    handler.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
+                    Debug.Log("Send Hash: " + hashedBytes);
+
+                    AddMainThreadAction(() => ImportScene(receivedBytes));
                 }
             }
             catch (SocketException ex)
             {
 				Debug.Log("Socket Exception " + ex.ToString());
             }
-            catch (ThreadAbortException ex)
+            catch (ThreadAbortException)
 			{
-                tcpListener.Server.Close();
+                if (listener != null)
+                {
+                    listener.Shutdown(SocketShutdown.Both);
+                    listener.Close();
+                }
+                if (handler != null)
+				{
+                    handler.Shutdown(SocketShutdown.Both);
+                    handler.Close();
+				}
+                Debug.Log("Server was closed");
             }
         }
 
-        private async static void ExportScene()
+        private static void SendRequest(List<byte[]> byteArrays)
+		{
+            try
+            {
+                IPHostEntry host = Dns.GetHostEntry(Ip);
+                IPAddress ipAddress = host.AddressList[0];
+                IPEndPoint remoteEP = new(ipAddress, Port);
+
+                
+                foreach (byte[] bytes in byteArrays)
+                {
+                    client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                    client.Connect(remoteEP);
+
+                    client.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
+                    client.Send(bytes, SocketFlags.None);
+                    /*
+                    byte[] receivedHashedBytes = new byte[20];
+                    Debug.Log("1");
+                    sender.Receive(receivedHashedBytes, SocketFlags.None);
+                    Debug.Log("2");
+                    if (ByteArrayCompare(receivedHashedBytes, GetHashedBytes(bytes)))
+                    {
+                        Debug.Log("Hashes are not equal");
+					}
+                    */
+                    
+                    Debug.Log("Send " + bytes.Length);
+                    client.Shutdown(SocketShutdown.Both);
+                    client.Close();
+                }
+            }
+            catch (SocketException ex)
+            {
+                Debug.Log("Socket Exception: " + ex);
+            }
+        }
+
+		#endregion
+
+		#region synchronizer
+
+		private async static void ExportScene()
         {
             var exportScene = SceneManager.GetSceneByName(ExportSceneName);
             if (exportScene.IsValid() is false || exportScene.isLoaded is false)
@@ -155,41 +232,24 @@ namespace jKnepel.UnitySync
                 if (IsDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(byteArray)}");
             }
 
-            try
+            Thread exportSceneThread = new(() => SendRequest(byteArrays))
             {
-                socketConnection = new TcpClient(Ip, int.Parse(Port));
-                if (socketConnection == null)
-                {
-					Debug.Log("Socket Exception: couldn't connect to server");
-                    return;
-                }
-
-                NetworkStream stream = socketConnection.GetStream();
-                if (stream.CanWrite)
-                {
-                    foreach (byte[] bytes in byteArrays)
-                    {
-                        stream.Write(BitConverter.GetBytes((uint)bytes.Length), 0, 4);
-                        stream.Write(bytes, 0, bytes.Length);
-                        Debug.Log("Send " + bytes.Length);
-                    }
-                }
-                socketConnection.Close();
-            }
-            catch (SocketException ex)
-            {
-				Debug.Log("Socket Exception: " + ex);
-            }
-
-            if (IsDebug) Debug.Log($"Scene '{exportScene.name}' exported.");
+                IsBackground = true
+            };
+            exportSceneThread.Start();
         }
 
-        private async static void ImportScene(List<byte[]> scene)
+        private async static void ImportScene(byte[] scene)
         {
-            if (!_importScene.IsValid())
+            if (_importScene.IsValid() is false || _importScene.isLoaded is false)
 			{
-                _importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-                _importScene.name = ImportSceneName;
+                _importScene = SceneManager.GetSceneByName(ImportSceneName);
+                if (_importScene.IsValid() is false || _importScene.isLoaded is false)
+				{
+                    _importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+                    _importScene.name = ImportSceneName;
+				}
+				SceneManager.SetActiveScene(_importScene);
 			}
 
             Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
@@ -203,13 +263,12 @@ namespace jKnepel.UnitySync
                 if (IsDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
             };
 
-            foreach (var byteArray in scene)
+            using (var memoryStream = new MemoryStream())
             {
-                using (var memoryStream = new MemoryStream())
-                {
-                    await memoryStream.WriteAsync(byteArray);
-                    await DeserializeGameObject(_importScene, new ImportOptions(), memoryStream, onLoadComplete);
-                }
+                if (IsDebug) Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(scene)}");
+                await memoryStream.WriteAsync(scene);
+                await DeserializeGameObject(_importScene, new ImportOptions(), memoryStream, onLoadComplete);
+
             }
             if (IsDebug) Debug.Log($"Scene '{_importScene.name}' imported.");
 
@@ -224,7 +283,35 @@ namespace jKnepel.UnitySync
             var importer = new GLTFSceneImporterExtended(gLTFRoot, stream, importOptions);
             await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), IsDebug, -1, true, onLoadComplete);
         }
-    }
 
-	#endregion
+		#endregion
+
+		#region helper methods
+
+		private static string GetHashedBytes(byte[] bytes)
+		{
+			using var sha1 = new SHA1CryptoServiceProvider();
+			string hashedBytes = string.Concat(sha1.ComputeHash(bytes).Select(x => x.ToString("X2")));
+            return hashedBytes;
+        }
+
+        private static byte[] ParseStringToByteArray(string bytes)
+		{
+            byte[] arr = new byte[bytes.Length / 2];
+            for (int index = 0; index < arr.Length; index++)
+            {
+                string byteValue = bytes.Substring(index * 2, 2);
+                arr[index] = byte.Parse(byteValue, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+            }
+
+            return arr;
+        }
+
+        private static bool ByteArrayCompare(ReadOnlySpan<byte> a1, ReadOnlySpan<byte> a2)
+        {
+            return a1.SequenceEqual(a2);
+        }
+
+        #endregion
+    }
 }
