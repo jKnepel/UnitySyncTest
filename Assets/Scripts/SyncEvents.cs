@@ -11,7 +11,11 @@ namespace jKnepel.UnitySync
 
         public static Action onOpenTCPSocket;
         public static Action onCloseTCPSocket;
-        public static Action onExportScene;
+        public static Action<bool> onIsOpenChanged;
+        public static Action onConnectClient;
         public static Action onCloseClient;
+        public static Action<bool> onIsConnectedChanged;
+        
+        public static Action onExportScene;
     }
 }
