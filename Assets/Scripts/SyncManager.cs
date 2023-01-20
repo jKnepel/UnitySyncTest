@@ -41,6 +41,7 @@ namespace jKnepel.UnitySync
 
         #region thread handlers
 
+        private static Socket _listener;
         private static Socket _client;
         private static List<SocketConnection> _connectedClients = new();
         private static int _maximumNumberConnections = 10;
@@ -80,6 +81,8 @@ namespace jKnepel.UnitySync
                     action?.Invoke();
                 }
             }
+
+            Debug.Log(_connectedClients.Count);
         }
 
         private static void AddMainThreadAction(Action action)
@@ -93,16 +96,41 @@ namespace jKnepel.UnitySync
 
 		private static void OpenTCPSocket()
         {
-            _listenerThread = new(() => ListenForIncomingRequests())
-			{
-				IsBackground = true
-			};
+            IPHostEntry host = Dns.GetHostEntry(Ip);
+            IPAddress ipAddress = host.AddressList[0];
+            IPEndPoint localEndPoint = new(ipAddress, Port);
+
+            _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            _listener.Bind(localEndPoint);
+            _listener.Listen(_maximumNumberConnections);
+            _listener.Blocking = true;
+            SyncEvents.onIsOpenChanged?.Invoke(true);
+
+            Debug.Log("Server is listening");
+
+            _listenerThread = new(() => ListenForIncomingConnections()) { IsBackground = true };
             _listenerThread.Start();
         }
 
         private static void CloseTCPSocket()
         {
-            _listenerThread.Abort();
+            try
+			{
+                for (int i = _connectedClients.Count - 1; i >= 0; i--)
+				{
+                    _connectedClients.ElementAt(i).HandlerThread.Abort();
+                    _connectedClients.RemoveAt(i);
+                }
+
+                if (_listener != null)
+                {
+                    _listenerThread.Abort();
+                    _listener.Close();
+                    SyncEvents.onIsOpenChanged?.Invoke(false);
+                }
+                Debug.Log("Server was closed");
+            }
+            catch (SocketException ex) { Debug.Log(ex); }
         }
 
         private static void ConnectClient()
@@ -118,7 +146,7 @@ namespace jKnepel.UnitySync
                 SyncEvents.onIsConnectedChanged?.Invoke(true);
 			} catch (SocketException ex)
 			{
-                Debug.Log("Socket Exception " + ex.ToString());
+                Debug.Log("Socket Exception " + ex);
             }
         }
 
@@ -133,56 +161,32 @@ namespace jKnepel.UnitySync
 
         #region socket methods
 
-        private static void ListenForIncomingRequests()
+        private static void ListenForIncomingConnections()
         {
-            Socket listener = null;
             try
             {
-                IPHostEntry host = Dns.GetHostEntry(Ip);
-                IPAddress ipAddress = host.AddressList[0];
-                IPEndPoint localEndPoint = new(ipAddress, Port);
-
-                listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                listener.Bind(localEndPoint);
-                listener.Listen(_maximumNumberConnections);
-                listener.Blocking = true;
-                SyncEvents.onIsOpenChanged?.Invoke(true);
-
-                Debug.Log("Server is listening");
-                
                 while (true)
                 {
-                    Socket handler = listener.Accept();
+                    Socket handler = _listener.Accept();
+                    handler.Blocking = true;
 
                     SocketConnection connection = new(handler);
-                    _connectedClients.Add(connection);
-                    Thread handlerThread = new(() => HandleSocketConnection(connection))
-                    {
-                        IsBackground = true
-                    };
+                    Thread handlerThread = new(() => HandleSocketConnection(connection)) { IsBackground = true };
                     connection.HandlerThread = handlerThread;
+                    _connectedClients.Add(connection);
                     handlerThread.Start();
                 }
             }
             catch (SocketException ex)
             {
-				Debug.Log("Socket Exception " + ex.ToString());
-            }
-            catch (ThreadAbortException)
-			{
-                if (listener != null)
-                {
-                    listener.Shutdown(SocketShutdown.Both);
-                    listener.Close();
-                    SyncEvents.onIsOpenChanged?.Invoke(false);
-                }
-                Debug.Log("Server was closed");
+                Debug.Log("Socket Exception " + ex);
             }
         }
 
         private static void HandleSocketConnection(SocketConnection connection)
 		{
             Socket handler = connection.Socket;
+            
             try
             {
                 while (true)
@@ -191,15 +195,27 @@ namespace jKnepel.UnitySync
                     handler.Receive(lengthBytes, SocketFlags.None);
                     int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
 
+                    if (dataLength <= 0)
+					{
+                        if (!IsConnected(handler))
+						{
+                            connection.HandlerThread.Abort();
+                        }
+                        continue;
+                    }
+
                     byte[] receivedBytes = new byte[dataLength];
                     handler.Receive(receivedBytes, SocketFlags.None);
                     Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
 
-                    string hashedBytes = GetHashedBytes(receivedBytes);
-                    handler.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
-                    Debug.Log("Send Hash: " + hashedBytes);
+                    if (receivedBytes.Length == dataLength)
+					{
+                        string hashedBytes = GetHashedBytes(receivedBytes);
+                        handler.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
+                        Debug.Log("Send Hash: " + hashedBytes);
 
-                    AddMainThreadAction(() => ImportScene(receivedBytes));
+                        AddMainThreadAction(() => ImportScene(receivedBytes));
+					}
                 }
             }
             catch (SocketException ex)
@@ -213,7 +229,7 @@ namespace jKnepel.UnitySync
                     handler.Shutdown(SocketShutdown.Both);
                     handler.Close();
                 }
-                Debug.Log("Server was closed");
+                Debug.Log("Connection was closed");
             }
         }
 
@@ -271,11 +287,7 @@ namespace jKnepel.UnitySync
                 if (IsDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(byteArray)}");
             }
 
-            Thread exportSceneThread = new(() => SendRequest(byteArrays))
-            {
-                IsBackground = true
-            };
-            exportSceneThread.Start();
+            SendRequest(byteArrays);
         }
 
         private async static void ImportScene(byte[] scene)
@@ -349,6 +361,15 @@ namespace jKnepel.UnitySync
         private static bool ByteArrayCompare(ReadOnlySpan<byte> a1, ReadOnlySpan<byte> a2)
         {
             return a1.SequenceEqual(a2);
+        }
+
+        private static bool IsConnected(this Socket socket)
+        {
+            try
+            {
+                return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
+            }
+            catch (SocketException) { return false; }
         }
 
         #endregion
