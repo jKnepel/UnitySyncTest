@@ -81,8 +81,6 @@ namespace jKnepel.UnitySync
                     action?.Invoke();
                 }
             }
-
-            Debug.Log(_connectedClients.Count);
         }
 
         private static void AddMainThreadAction(Action action)
@@ -92,7 +90,9 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region event handlers
+		#region sync manager
+
+		#region server logic
 
 		private static void OpenTCPSocket()
         {
@@ -116,11 +116,14 @@ namespace jKnepel.UnitySync
         {
             try
 			{
-                for (int i = _connectedClients.Count - 1; i >= 0; i--)
+                lock (_connectedClients)
 				{
-                    _connectedClients.ElementAt(i).HandlerThread.Abort();
-                    _connectedClients.RemoveAt(i);
-                }
+                    for (int i = _connectedClients.Count - 1; i >= 0; i--)
+				    {
+                        _connectedClients.ElementAt(i).HandlerThread.Abort();
+                        _connectedClients.RemoveAt(i);
+                    }
+				}
 
                 if (_listener != null)
                 {
@@ -132,6 +135,82 @@ namespace jKnepel.UnitySync
             }
             catch (SocketException ex) { Debug.Log(ex); }
         }
+
+        private static void ListenForIncomingConnections()
+        {
+            try
+            {
+                while (true)
+                {
+                    Socket handler = _listener.Accept();
+                    handler.Blocking = true;
+
+                    SocketConnection connection = new(handler);
+                    Thread handlerThread = new(() => HandleSocketConnection(connection)) { IsBackground = true };
+                    connection.HandlerThread = handlerThread;
+                    lock (_connectedClients) { _connectedClients.Add(connection); }
+                    handlerThread.Start();
+                }
+            }
+            catch (SocketException ex)
+            {
+                Debug.Log("Socket Exception " + ex);
+            }
+        }
+
+        private static void HandleSocketConnection(SocketConnection connection)
+        {
+            Socket handler = connection.Socket;
+
+            try
+            {
+                while (true)
+                {
+                    byte[] lengthBytes = new byte[4];
+                    handler.Receive(lengthBytes, SocketFlags.None);
+                    int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
+
+                    if (dataLength <= 0)
+                    {
+                        if (!IsConnected(handler))
+                        {
+                            connection.HandlerThread.Abort();
+                        }
+                        continue;
+                    }
+
+                    byte[] receivedBytes = new byte[dataLength];
+                    handler.Receive(receivedBytes, SocketFlags.None);
+                    Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
+
+                    if (receivedBytes.Length == dataLength)
+                    {
+                        string hashedBytes = GetHashedBytes(receivedBytes);
+                        handler.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
+                        Debug.Log("Send Hash: " + hashedBytes);
+
+                        AddMainThreadAction(() => ImportScene(receivedBytes));
+                    }
+                }
+            }
+            catch (SocketException ex)
+            {
+                Debug.Log("Socket Exception " + ex.ToString());
+            }
+            catch (ThreadAbortException)
+            {
+                if (handler != null)
+                {
+                    handler.Shutdown(SocketShutdown.Both);
+                    handler.Close();
+                }
+                Debug.Log("Connection was closed");
+            }
+        }
+
+        #endregion
+
+        #region client logic
 
         private static void ConnectClient()
 		{
@@ -157,84 +236,8 @@ namespace jKnepel.UnitySync
             SyncEvents.onIsConnectedChanged?.Invoke(false);
         }
 
-        #endregion
-
-        #region socket methods
-
-        private static void ListenForIncomingConnections()
-        {
-            try
-            {
-                while (true)
-                {
-                    Socket handler = _listener.Accept();
-                    handler.Blocking = true;
-
-                    SocketConnection connection = new(handler);
-                    Thread handlerThread = new(() => HandleSocketConnection(connection)) { IsBackground = true };
-                    connection.HandlerThread = handlerThread;
-                    _connectedClients.Add(connection);
-                    handlerThread.Start();
-                }
-            }
-            catch (SocketException ex)
-            {
-                Debug.Log("Socket Exception " + ex);
-            }
-        }
-
-        private static void HandleSocketConnection(SocketConnection connection)
-		{
-            Socket handler = connection.Socket;
-            
-            try
-            {
-                while (true)
-                {
-                    byte[] lengthBytes = new byte[4];
-                    handler.Receive(lengthBytes, SocketFlags.None);
-                    int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
-
-                    if (dataLength <= 0)
-					{
-                        if (!IsConnected(handler))
-						{
-                            connection.HandlerThread.Abort();
-                        }
-                        continue;
-                    }
-
-                    byte[] receivedBytes = new byte[dataLength];
-                    handler.Receive(receivedBytes, SocketFlags.None);
-                    Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
-
-                    if (receivedBytes.Length == dataLength)
-					{
-                        string hashedBytes = GetHashedBytes(receivedBytes);
-                        handler.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
-                        Debug.Log("Send Hash: " + hashedBytes);
-
-                        AddMainThreadAction(() => ImportScene(receivedBytes));
-					}
-                }
-            }
-            catch (SocketException ex)
-            {
-                Debug.Log("Socket Exception " + ex.ToString());
-            }
-            catch (ThreadAbortException)
-            {
-                if (handler != null)
-                {
-                    handler.Shutdown(SocketShutdown.Both);
-                    handler.Close();
-                }
-                Debug.Log("Connection was closed");
-            }
-        }
-
         private static void SendRequest(List<byte[]> byteArrays)
-		{
+        {
             try
             {
                 foreach (byte[] bytes in byteArrays)
@@ -251,7 +254,7 @@ namespace jKnepel.UnitySync
                         Debug.Log("Hashes are not equal");
 					}
                     */
-                    
+
                     Debug.Log("Send " + bytes.Length);
                 }
             }
@@ -260,6 +263,8 @@ namespace jKnepel.UnitySync
                 Debug.Log("Socket Exception: " + ex);
             }
         }
+
+		#endregion
 
 		#endregion
 
