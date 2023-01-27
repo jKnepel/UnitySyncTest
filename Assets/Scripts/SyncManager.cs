@@ -37,6 +37,9 @@ namespace jKnepel.UnitySync
 
         private static Scene _importScene;
 
+        private static Dictionary<int, GameObject> _exportGameObjectIds = new Dictionary<int, GameObject>();
+        private static Dictionary<int, GameObject> _importGameObjectIds = new Dictionary<int, GameObject>();
+
         #endregion
 
         #region thread handlers
@@ -70,6 +73,21 @@ namespace jKnepel.UnitySync
             SyncEvents.onExportScene += ExportScene;
 
             EditorApplication.update += Update;
+
+            ObjectChangeEvents.changesPublished += LogEvent;
+
+            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
+            foreach (GameObject go in allObjects)
+			{
+                if (go.activeInHierarchy)
+				{
+                    _exportGameObjectIds.Add(go.GetInstanceID(), go);
+                    foreach (Component co in go.GetComponents(typeof(Component)))
+				    {
+                        _exportGameObjectIds.Add(co.GetInstanceID(), go);
+				    }
+				}
+			}
         }
 
         private static void Update()
@@ -87,6 +105,24 @@ namespace jKnepel.UnitySync
         private static void AddMainThreadAction(Action action)
         {
             _mainThreadActions.Enqueue(action);
+        }
+
+        private static void LogEvent(ref ObjectChangeEventStream stream)
+		{
+            ChangeGameObjectOrComponentPropertiesEventArgs obj = new();
+            stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
+            SerializeDasJetzt(obj);
+        }
+
+        private async static void SerializeDasJetzt(ChangeGameObjectOrComponentPropertiesEventArgs obj)
+	    {
+            if (obj.scene == SceneManager.GetSceneByName(ExportSceneName))
+            {
+                GameObject go = _exportGameObjectIds[obj.instanceId];
+                GLTFRootGameObject gltf = go.GetOrAddComponent<GLTFRootGameObject>();
+                byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
+                _clientThreadRequests.Enqueue(bytes);
+            }
         }
 
 		#endregion
@@ -276,14 +312,6 @@ namespace jKnepel.UnitySync
             }
 		}
 
-        private static void SendRequest(List<byte[]> byteArrays)
-        {
-            foreach (byte[] bytes in byteArrays)
-            {
-                _clientThreadRequests.Enqueue(bytes);
-            }
-        }
-
 		#endregion
 
 		#endregion
@@ -312,7 +340,10 @@ namespace jKnepel.UnitySync
                 if (IsDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(byteArray)}");
             }
 
-            SendRequest(byteArrays);
+            foreach (byte[] bytes in byteArrays)
+            {
+                _clientThreadRequests.Enqueue(bytes);
+            }
         }
 
         private async static void ImportScene(byte[] scene)
@@ -349,6 +380,12 @@ namespace jKnepel.UnitySync
             if (IsDebug) Debug.Log($"Scene '{_importScene.name}' imported.");
 
             return;
+        }
+
+        private static byte[] SerializeGameObject(Transform transform, ExportOptions exportOptions)
+        {
+            var exporter = new UnityGLTF.GLTFSceneExporter(transform, exportOptions);
+            return exporter.SaveGLBToByteArray(transform.name);
         }
 
         private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream,
