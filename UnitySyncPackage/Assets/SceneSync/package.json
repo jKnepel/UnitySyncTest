@@ -2,7 +2,7 @@
     "name": "com.toph.scene-synchronizer",
     "version": "0.0.1",
     "displayName": "Scene Synchronizer",
-    "description": "A package for de-/serializing scene objects, components and data based on the glTF format.",
+    "description": "A Unity package for synchronizing scenes between Unity editors and clients, based on the glTF format. Can be used in editor at design time and in builded applications.",
     "unity": "2021.3",
     "unityRelease": "0f16",
     "dependencies": {
