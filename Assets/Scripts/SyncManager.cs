@@ -42,16 +42,17 @@ namespace jKnepel.UnitySync
         #region thread handlers
 
         private static Socket _listener;
-        private static Socket _client;
+        private static SocketConnection _clientSocket;
         private static List<SocketConnection> _connectedClients = new();
         private static int _maximumNumberConnections = 10;
         private static Thread _listenerThread;
         private static readonly object _lock = new();
         private static readonly Queue<Action> _mainThreadActions = new();
+        private static readonly Queue<byte[]> _clientThreadRequests = new();
 
-		#endregion
+        #endregion
 
-		#region unity cycle
+        #region unity cycle
 
         static SyncManager()
 		{
@@ -77,7 +78,7 @@ namespace jKnepel.UnitySync
             {
                 while (_mainThreadActions.Count > 0)
                 {
-                    var action = _mainThreadActions.Dequeue();
+                    Action action = _mainThreadActions.Dequeue();
                     action?.Invoke();
                 }
             }
@@ -96,8 +97,7 @@ namespace jKnepel.UnitySync
 
 		private static void OpenTCPSocket()
         {
-            IPHostEntry host = Dns.GetHostEntry(Ip);
-            IPAddress ipAddress = host.AddressList[0];
+            IPAddress ipAddress = Dns.GetHostEntry("127.0.0.1").AddressList[0];
             IPEndPoint localEndPoint = new(ipAddress, Port);
 
             _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -217,13 +217,18 @@ namespace jKnepel.UnitySync
             try
 			{
                 IPHostEntry host = Dns.GetHostEntry(Ip);
+                if (Ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
                 IPAddress ipAddress = host.AddressList[0];
                 IPEndPoint remoteEP = new(ipAddress, Port);
 
-                _client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                _client.Connect(remoteEP);
+                Socket client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                client.Connect(remoteEP);
                 SyncEvents.onIsConnectedChanged?.Invoke(true);
-			} catch (SocketException ex)
+                _clientSocket = new SocketConnection(client);
+                Thread handlerThread = new(() => HandleClientConnection()) { IsBackground = true };
+                _clientSocket.HandlerThread = handlerThread;
+                handlerThread.Start();
+            } catch (SocketException ex)
 			{
                 Debug.Log("Socket Exception " + ex);
             }
@@ -231,36 +236,51 @@ namespace jKnepel.UnitySync
 
         private static void CloseClient()
 		{
-            _client.Shutdown(SocketShutdown.Both);
-            _client.Close();
+            if (_clientSocket.Socket != null)
+            {
+                _listenerThread.Abort();
+                _listener.Close();
+            }
+            Debug.Log("Client was disconnected");
             SyncEvents.onIsConnectedChanged?.Invoke(false);
         }
 
-        private static void SendRequest(List<byte[]> byteArrays)
-        {
+        private static void HandleClientConnection()
+		{
             try
-            {
-                foreach (byte[] bytes in byteArrays)
+			{
+                while (true)
                 {
-                    _client.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
-                    _client.Send(bytes, SocketFlags.None);
-                    /*
-                    byte[] receivedHashedBytes = new byte[20];
-                    Debug.Log("1");
-                    sender.Receive(receivedHashedBytes, SocketFlags.None);
-                    Debug.Log("2");
-                    if (ByteArrayCompare(receivedHashedBytes, GetHashedBytes(bytes)))
-                    {
-                        Debug.Log("Hashes are not equal");
-					}
-                    */
+                    lock (_clientThreadRequests)
+					{
+                        if (_clientThreadRequests.Count == 0) continue;
 
-                    Debug.Log("Send " + bytes.Length);
+                        byte[] bytes = _clientThreadRequests.Dequeue();
+                        _clientSocket.Socket.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
+                        _clientSocket.Socket.Send(bytes, SocketFlags.None);
+                    }
                 }
             }
             catch (SocketException ex)
             {
-                Debug.Log("Socket Exception: " + ex);
+                Debug.Log("Socket Exception " + ex.ToString());
+            }
+            catch (ThreadAbortException)
+            {
+                if (_clientSocket.Socket != null)
+                {
+                    _clientSocket.Socket.Shutdown(SocketShutdown.Both);
+                    _clientSocket.Socket.Close();   
+                }
+                Debug.Log("Connection was closed");
+            }
+		}
+
+        private static void SendRequest(List<byte[]> byteArrays)
+        {
+            foreach (byte[] bytes in byteArrays)
+            {
+                _clientThreadRequests.Enqueue(bytes);
             }
         }
 
