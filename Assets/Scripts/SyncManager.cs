@@ -1,10 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Globalization;
-using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -32,8 +29,8 @@ namespace jKnepel.UnitySync
         private static Scene _exportScene;
         private static Scene _importScene;
 
-        private static Dictionary<int, GameObject> _exportGameObjectIds = new Dictionary<int, GameObject>();
-        private static Dictionary<int, GameObject> _importGameObjectIds = new Dictionary<int, GameObject>();
+        private static Dictionary<int, GameObject> _exportGameObjectIds = new();
+        private static Dictionary<int, GameObject> _importGameObjectIds = new();
 
         private static readonly Queue<byte[]> _receivedBytes = new();
 
@@ -43,13 +40,12 @@ namespace jKnepel.UnitySync
 
         static SyncManager()
 		{
-            _isDebug = true;
             SyncEvents.onOpenTCPSocket += OpenTCPSocket;
             SyncEvents.onCloseTCPSocket += CloseTCPSocket;
             SyncEvents.onConnectClient += ConnectClient;
             SyncEvents.onCloseClient += CloseClient;
 
-            // TODO : test if it works in build
+            // TODO : test if it works in build / find an alternative
             EditorApplication.update += Update;
         }
 
@@ -108,12 +104,41 @@ namespace jKnepel.UnitySync
             }
 
             _exportScene = scene;
-            _server = new(port);
+            try
+			{
+                _server = new(port);
+			}
+            catch (Exception ex)
+            {
+                ObjectChangeEvents.changesPublished -= LogEvent;
+                if (_server != null)
+                {
+                    _server.Dispose();
+                    _server = null;
+                }
 
-            Debug.Log("a");
+                if (ex is SocketException)
+                {
+                    Debug.Log("Socket Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ObjectDisposedException)
+                {
+                    Debug.Log("Object Disposed Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ThreadStartException || ex is OutOfMemoryException)
+				{
+                    Debug.Log("Thread Exception " + ex.ToString());
+                    return;
+                }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
+            }
 
             EditorApplication.update += _server.Update;
 
+            // TODO : figure why tf this blocks the main thread
             //ExportScene();
         }
 
@@ -165,7 +190,37 @@ namespace jKnepel.UnitySync
             _importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
             _importScene.name = sceneName;
             SceneManager.SetActiveScene(_importScene);
-            _client = new(ip, port);
+
+            try
+            {
+                _client = new(ip, port);
+            }
+            catch (Exception ex)
+            {
+                if (_client != null)
+                {
+                    _client.Dispose();
+                    _client = null;
+                }
+
+                if (ex is SocketException)
+                {
+                    Debug.Log("Socket Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ObjectDisposedException)
+                {
+                    Debug.Log("Object Disposed Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ThreadStartException || ex is OutOfMemoryException)
+                {
+                    Debug.Log("Thread Exception " + ex.ToString());
+                    return;
+                }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
+            }
 
             EditorApplication.update += _client.Update;
         }
@@ -201,6 +256,7 @@ namespace jKnepel.UnitySync
         {
             Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
             {
+                Debug.Log(createdObject.name);
                 if (createdObject is null)
                 {
                     return;
@@ -219,12 +275,11 @@ namespace jKnepel.UnitySync
 			return;
         }
 
-        private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream,
-            Action<GameObject, ExceptionDispatchInfo> onLoadComplete)
+        private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream, Action<GameObject, ExceptionDispatchInfo> onLoadComplete)
         {
             GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
-            var importer = new GLTFSceneImporterExtended(gLTFRoot, stream, importOptions);
+            GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
             await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), _isDebug, -1, true, onLoadComplete);
         }
 

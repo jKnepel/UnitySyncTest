@@ -1,22 +1,10 @@
 using System;
-using System.IO;
 using System.Linq;
-using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Generic;
-using System.Runtime.ExceptionServices;
 using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEditor;
-using UnityEditor.SceneManagement;
-using GLTF;
-using GLTF.Schema;
-using UnityGLTF;
-using Toph.GLTFSerializer.Components;
 
 namespace jKnepel.UnitySync
 {
@@ -39,13 +27,12 @@ namespace jKnepel.UnitySync
             _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
             _listener.Bind(localEndPoint);
             _listener.Listen(_maximumNumberConnections);
-            _listener.Blocking = true;
-            SyncEvents.onIsOpenChanged?.Invoke(true);
-
-            Debug.Log("Server is listening");
 
             _listenerThread = new(() => ListenForIncomingConnections()) { IsBackground = true };
             _listenerThread.Start();
+
+            SyncEvents.onIsOpenChanged?.Invoke(true);
+            Debug.Log("Server is listening");
         }
 
         ~SyncServer()
@@ -72,13 +59,16 @@ namespace jKnepel.UnitySync
                             _connectedClients.RemoveAt(i);
                         }
                     }
-
+                    if (_listenerThread != null && _listenerThread.IsAlive)
+					{
+                        _listenerThread.Abort();
+					}
                     if (_listener != null)
                     {
-                        _listenerThread.Abort();
                         _listener.Close();
-                        SyncEvents.onIsOpenChanged?.Invoke(false);
                     }
+
+                    SyncEvents.onIsOpenChanged?.Invoke(false);
                     Debug.Log("Server was closed");
                 }
                 catch (SocketException ex) { Debug.Log(ex); }
@@ -106,7 +96,10 @@ namespace jKnepel.UnitySync
 
         public void AddBytesToSend(byte[] bytes)
 		{
-            lock(_bytesToSend) { _bytesToSend.Enqueue(bytes); }
+            lock(_bytesToSend)
+            { 
+                _bytesToSend.Enqueue(bytes);
+            }
 		}
 
 		#endregion
@@ -119,14 +112,13 @@ namespace jKnepel.UnitySync
             {
                 while (true)
                 {
-                    Socket handler = _listener.Accept();
+                    if (_connectedClients.Count >= _maximumNumberConnections) continue;
 
+                    Socket handler = _listener.Accept();
                     SyncClientHandler connectedClient = new(handler);
                     lock (_connectedClients) 
                     { 
-                        _connectedClients.Add(
-                            connectedClient
-                        );
+                        _connectedClients.Add(connectedClient);
                     }
                 }
             }

@@ -1,22 +1,13 @@
 using System;
-using System.IO;
 using System.Linq;
 using System.Globalization;
-using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEditor;
-using UnityEditor.SceneManagement;
-using GLTF;
-using GLTF.Schema;
-using UnityGLTF;
-using Toph.GLTFSerializer.Components;
 
 namespace jKnepel.UnitySync
 {
@@ -38,6 +29,8 @@ namespace jKnepel.UnitySync
             _senderThread.Start();
             _receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
             _receiverThread.Start();
+
+            Debug.Log("Client registered with Server");
         }
 
 		~SyncClientHandler()
@@ -69,6 +62,7 @@ namespace jKnepel.UnitySync
                         _client.Shutdown(SocketShutdown.Both);
                         _client.Close();
                     }
+
                     Debug.Log("Connection was closed");
                 }
                 catch (SocketException ex) { Debug.Log(ex); }
@@ -104,11 +98,17 @@ namespace jKnepel.UnitySync
                     }
                 }
             }
-            catch (SocketException ex)
+            catch (Exception ex)
             {
-                Debug.Log("Socket Exception " + ex.ToString());
+                if (ex is SocketException)
+                {
+                    Debug.Log("Socket Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ThreadAbortException) { }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
-            catch (ThreadAbortException) {}
         }
 
         private void SocketReceiveThread()
@@ -145,11 +145,17 @@ namespace jKnepel.UnitySync
                     }
                 }
             }
-            catch (SocketException ex)
+            catch (Exception ex)
             {
-                Debug.Log("Socket Exception " + ex.ToString());
+                if (ex is SocketException)
+                {
+                    Debug.Log("Socket Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ThreadAbortException) { }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
-            catch (ThreadAbortException) {}
         }
 
 		#endregion

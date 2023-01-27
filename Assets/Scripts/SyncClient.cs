@@ -1,22 +1,14 @@
 using System;
-using System.IO;
 using System.Linq;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 using UnityEditor;
-using UnityEditor.SceneManagement;
-using GLTF;
-using GLTF.Schema;
-using UnityGLTF;
-using Toph.GLTFSerializer.Components;
 
 namespace jKnepel.UnitySync
 {
@@ -32,26 +24,21 @@ namespace jKnepel.UnitySync
 
         public SyncClient(string ip, int port)
         {
-            try
-            {
-                IPHostEntry host = Dns.GetHostEntry(ip);
-                if (ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
-                IPAddress ipAddress = host.AddressList[0];
-                IPEndPoint remoteEP = new(ipAddress, port);
+            IPHostEntry host = Dns.GetHostEntry(ip);
+            if (ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
+            IPAddress ipAddress = host.AddressList[0];
+            IPEndPoint remoteEP = new(ipAddress, port);
 
-                _client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-                _client.Connect(remoteEP);
-                SyncEvents.onIsConnectedChanged?.Invoke(true);
+            _client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+            _client.Connect(remoteEP);
 
-                _senderThread = new(() => SocketSendThread()) { IsBackground = true };
-                _senderThread.Start();
-                _receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
-                _receiverThread.Start();
-            }
-            catch (SocketException ex)
-            {
-                Debug.Log("Socket Exception " + ex);
-            }
+            _senderThread = new(() => SocketSendThread()) { IsBackground = true };
+            _senderThread.Start();
+            _receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
+            _receiverThread.Start();
+
+            SyncEvents.onIsConnectedChanged?.Invoke(true);
+            Debug.Log("Client connected to Server");
         }
 
         ~SyncClient()
@@ -83,6 +70,8 @@ namespace jKnepel.UnitySync
                         _client.Shutdown(SocketShutdown.Both);
                         _client.Close();
                     }
+
+                    SyncEvents.onIsConnectedChanged?.Invoke(false);
                     Debug.Log("Connection was closed");
                 }
                 catch (SocketException ex) { Debug.Log(ex); }
@@ -123,11 +112,17 @@ namespace jKnepel.UnitySync
                     }
                 }
             }
-            catch (SocketException ex)
+            catch (Exception ex)
             {
-                Debug.Log("Socket Exception " + ex.ToString());
+                if (ex is SocketException)
+                {
+                    Debug.Log("Socket Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ThreadAbortException) { }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
-            catch (ThreadAbortException) { }
         }
 
         private void SocketReceiveThread()
@@ -164,11 +159,17 @@ namespace jKnepel.UnitySync
                     }
                 }
             }
-            catch (SocketException ex)
+            catch (Exception ex)
             {
-                Debug.Log("Socket Exception " + ex.ToString());
+                if (ex is SocketException)
+                {
+                    Debug.Log("Socket Exception " + ex.ToString());
+                    return;
+                }
+                if (ex is ThreadAbortException) { }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
-            catch (ThreadAbortException) { }
         }
 
         #endregion
