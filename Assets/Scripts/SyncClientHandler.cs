@@ -113,49 +113,7 @@ namespace jKnepel.UnitySync
 
         private void SocketReceiveThread()
         {
-            try
-            {
-                while (true)
-                {
-                    byte[] lengthBytes = new byte[4];
-                    _client.Receive(lengthBytes, SocketFlags.None);
-                    int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
-
-                    if (dataLength <= 0)
-                    {
-                        if (!IsConnected(_client))
-                        {
-                            Dispose(true);
-                        }
-                        continue;
-                    }
-
-                    byte[] receivedBytes = new byte[dataLength];
-                    _client.Receive(receivedBytes, SocketFlags.None);
-                    Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
-
-                    if (receivedBytes.Length == dataLength)
-                    {
-                        /*
-                        string hashedBytes = GetHashedBytes(receivedBytes);
-                        _client.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
-                        Debug.Log("Send Hash: " + hashedBytes);
-                        */
-                        SyncManager.AddReceivedBytes(receivedBytes);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                if (ex is SocketException)
-                {
-                    Debug.Log("Socket Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ThreadAbortException) { }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
-            }
+            
         }
 
 		#endregion

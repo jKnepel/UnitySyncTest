@@ -1,14 +1,21 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEditor;
+using GLTF;
+using GLTF.Schema;
+using UnityGLTF;
+using Toph.GLTFSerializer.Components;
 
 namespace jKnepel.UnitySync
 {
@@ -19,11 +26,16 @@ namespace jKnepel.UnitySync
         private Thread _receiverThread;
 
         private static readonly Queue<byte[]> _bytesToSend = new();
+        private static readonly Queue<byte[]> _receivedBytes = new();
+
+        private Scene _scene;
 
         #region lifecycle
 
-        public SyncClient(string ip, int port)
+        public SyncClient(string ip, int port, Scene scene)
         {
+            _scene = scene;
+
             IPHostEntry host = Dns.GetHostEntry(ip);
             if (ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
             IPAddress ipAddress = host.AddressList[0];
@@ -80,7 +92,14 @@ namespace jKnepel.UnitySync
 
         public void Update()
         {
-            
+            lock (_receivedBytes)
+			{
+                while(_receivedBytes.Count > 0)
+				{
+                    byte[] bytes = _receivedBytes.Dequeue();
+                    ImportHierarchy(bytes);
+				}
+			}
         }
 
         #endregion
@@ -92,37 +111,18 @@ namespace jKnepel.UnitySync
             lock (_bytesToSend) { _bytesToSend.Enqueue(bytes); }
         }
 
+        private void AddReceivedBytes(byte[] bytes)
+		{
+            lock (_receivedBytes) { _receivedBytes.Enqueue(bytes); }
+		}
+
         #endregion
 
         #region private methods
 
         private void SocketSendThread()
         {
-            try
-            {
-                while (true)
-                {
-                    lock (_bytesToSend)
-                    {
-                        if (_bytesToSend.Count == 0) continue;
 
-                        byte[] bytes = _bytesToSend.Dequeue();
-                        _client.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
-                        _client.Send(bytes, SocketFlags.None);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                if (ex is SocketException)
-                {
-                    Debug.Log("Socket Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ThreadAbortException) { }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
-            }
         }
 
         private void SocketReceiveThread()
@@ -155,7 +155,7 @@ namespace jKnepel.UnitySync
                         _client.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
                         Debug.Log("Send Hash: " + hashedBytes);
                         */
-                        SyncManager.AddReceivedBytes(receivedBytes);
+                        AddReceivedBytes(receivedBytes);
                     }
                 }
             }
@@ -170,6 +170,36 @@ namespace jKnepel.UnitySync
 
                 ExceptionDispatchInfo.Capture(ex).Throw();
             }
+        }
+
+        private async void ImportHierarchy(byte[] hierarchy)
+        {
+            Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
+            {
+                if (createdObject is null)
+                {
+                    return;
+                }
+                SceneManager.MoveGameObjectToScene(createdObject, _scene);
+
+                //if (_isDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
+            };
+
+            using MemoryStream memoryStream = new();
+            await memoryStream.WriteAsync(hierarchy);
+            await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
+
+            //if (_isDebug) Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
+
+            return;
+        }
+
+        private async Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream, Action<GameObject, ExceptionDispatchInfo> onLoadComplete)
+        {
+            GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
+
+            GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
+            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), true, -1, true, onLoadComplete);
         }
 
         #endregion

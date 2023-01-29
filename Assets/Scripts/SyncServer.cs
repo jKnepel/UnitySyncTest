@@ -21,6 +21,7 @@ namespace jKnepel.UnitySync
         private List<SyncClientHandler> _connectedClients = new();
 
         private readonly Queue<byte[]> _bytesToSend = new();
+        private readonly Queue<Action> _mainThreadActions = new();
 
         private Scene _scene;
 
@@ -98,7 +99,16 @@ namespace jKnepel.UnitySync
 					}
 				}
 			}
-		}
+
+            lock (_mainThreadActions)
+            {
+                while (_mainThreadActions.Count > 0)
+                {
+                    Action action = _mainThreadActions.Dequeue();
+                    action?.Invoke();
+                }
+            }
+        }
 
         #endregion
 
@@ -116,27 +126,6 @@ namespace jKnepel.UnitySync
 
         #region private methods
 
-        private void ChangesPublished(ref ObjectChangeEventStream stream)
-        {
-            ChangeGameObjectOrComponentPropertiesEventArgs obj;
-            stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-            if (obj.scene == _scene)
-            {
-                UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
-                GameObject go;
-                try { go = ((Component)o).gameObject; }
-                catch (InvalidCastException) { go = (GameObject)o; }
-                SerializeHierarchy(go);
-            }
-        }
-
-        private async void SerializeHierarchy(GameObject go)
-        {
-            GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
-            byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
-            AddBytesToSend(bytes);
-        }
-
         private void ListenForIncomingConnections()
         {
             try
@@ -147,10 +136,11 @@ namespace jKnepel.UnitySync
 
                     Socket handler = _listener.Accept();
                     SyncClientHandler connectedClient = new(handler);
-                    lock (_connectedClients) 
-                    { 
+                    lock (_connectedClients)
+                    {
                         _connectedClients.Add(connectedClient);
                     }
+                    _mainThreadActions.Enqueue(() => ExportSceneToClient(connectedClient));
                 }
             }
             catch (Exception ex)
@@ -165,6 +155,43 @@ namespace jKnepel.UnitySync
             }
         }
 
-		#endregion
-	}
+        private void ChangesPublished(ref ObjectChangeEventStream stream)
+        {
+            ChangeGameObjectOrComponentPropertiesEventArgs obj;
+            stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
+            if (obj.scene == _scene)
+            {
+                UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
+                GameObject go;
+                try { go = ((Component)o).gameObject; }
+                catch (InvalidCastException) { go = (GameObject)o; }
+                SendHierarchy(go);
+            }
+        }
+
+        private async void SendHierarchy(GameObject go)
+        {
+            GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
+            byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
+            AddBytesToSend(bytes);
+        }
+
+        private async void ExportSceneToClient(SyncClientHandler client)
+        {
+            List<GameObject> rootGameObjects = GLTFSceneHelper.GetSceneRootGameObjects(_scene).ToList();
+            List<GLTFRootGameObject> rootComponents = GLTFSceneHelper.AddOrGetSceneRootComponents(rootGameObjects);
+            rootComponents.ForEach(r => r.Init());
+
+            List<byte[]> byteArrays = new();
+            foreach (GLTFRootGameObject rootComponent in rootComponents)
+            {
+                byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
+                client.AddBytesToSend(bytes);
+
+                //if (_isDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
+            }
+        }
+
+        #endregion
+    }
 }

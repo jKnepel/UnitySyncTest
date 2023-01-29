@@ -1,19 +1,11 @@
 using System;
-using System.IO;
-using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEditor;
 using UnityEditor.SceneManagement;
-using GLTF;
-using GLTF.Schema;
-using UnityGLTF;
-using Toph.GLTFSerializer.Components;
 
 namespace jKnepel.UnitySync
 {
@@ -25,11 +17,6 @@ namespace jKnepel.UnitySync
         private static bool _isDebug = true;
         private static SyncServer _server;
         private static SyncClient _client;
-
-        private static Scene _exportScene;
-        private static Scene _importScene;
-
-        private static readonly Queue<byte[]> _receivedBytes = new();
 
         #endregion
 
@@ -48,19 +35,7 @@ namespace jKnepel.UnitySync
 
         private static void Update()
         {
-            lock (_receivedBytes)
-            {
-                while (_receivedBytes.Count > 0)
-                {
-                    byte[] bytes = _receivedBytes.Dequeue();
-                    ImportHierarchy(bytes);
-                }
-            }
-        }
 
-        public static void AddReceivedBytes(byte[] bytes)
-        {
-            _receivedBytes.Enqueue(bytes);
         }
 
 		#endregion
@@ -77,17 +52,16 @@ namespace jKnepel.UnitySync
                 return;
 			}
 
-            Scene scene = SceneManager.GetSceneByName(sceneName);
-            if (!scene.IsValid() || !scene.isLoaded)
+            Scene exportScene = SceneManager.GetSceneByName(sceneName);
+            if (!exportScene.IsValid() || !exportScene.isLoaded)
 			{
                 Debug.LogWarning($"The Scene {sceneName} is not valid!");
                 return;
 			}
-            _exportScene = scene;
 
             try
 			{
-                _server = new(port, scene);
+                _server = new(port, exportScene);
 			}
             catch (Exception ex)
             {
@@ -123,6 +97,7 @@ namespace jKnepel.UnitySync
         {
             EditorApplication.update -= _server.Update;
             _server.Dispose();
+            _server = null;
         }
 
         #endregion
@@ -144,13 +119,13 @@ namespace jKnepel.UnitySync
                 return;
             }
 
-            _importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            _importScene.name = sceneName;
-            SceneManager.SetActiveScene(_importScene);
+            Scene importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+            importScene.name = sceneName;
+            SceneManager.SetActiveScene(importScene);
 
             try
             {
-                _client = new(ip, port);
+                _client = new(ip, port, importScene);
             }
             catch (Exception ex)
             {
@@ -184,61 +159,12 @@ namespace jKnepel.UnitySync
 
         private static void CloseClient()
 		{
+            EditorApplication.update -= _client.Update;
             _client.Dispose();
+            _client = null;
         }
 
 		#endregion
-
-		#endregion
-
-		#region serializer
-
-		private async static void ExportScene()
-        {
-            List<GameObject> rootGameObjects = GLTFSceneHelper.GetSceneRootGameObjects(_exportScene).ToList();
-            List<GLTFRootGameObject> rootComponents = GLTFSceneHelper.AddOrGetSceneRootComponents(rootGameObjects);
-            rootComponents.ForEach(r => r.Init());
-
-            List<byte[]> byteArrays = new();
-            foreach (GLTFRootGameObject rootComponent in rootComponents)
-            {
-                byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
-                _server.AddBytesToSend(bytes);
-
-                if (_isDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
-            }
-        }
-
-        private async static void ImportHierarchy(byte[] hierarchy)
-        {
-            Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
-            {
-                Debug.Log(createdObject.name);
-                if (createdObject is null)
-                {
-                    return;
-                }
-                SceneManager.MoveGameObjectToScene(createdObject, _importScene);
-
-                if (_isDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
-            };
-
-			using MemoryStream memoryStream = new();
-			await memoryStream.WriteAsync(hierarchy);
-			await DeserializeGameObject(_importScene, new ImportOptions(), memoryStream, onLoadComplete);
-
-			if (_isDebug) Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
-
-			return;
-        }
-
-        private async static Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream, Action<GameObject, ExceptionDispatchInfo> onLoadComplete)
-        {
-            GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
-
-            GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), _isDebug, -1, true, onLoadComplete);
-        }
 
 		#endregion
     }
