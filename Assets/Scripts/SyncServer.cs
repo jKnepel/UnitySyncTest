@@ -3,8 +3,13 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
+using System.Runtime.ExceptionServices;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEditor;
+using UnityGLTF;
+using Toph.GLTFSerializer.Components;
 
 namespace jKnepel.UnitySync
 {
@@ -15,12 +20,16 @@ namespace jKnepel.UnitySync
         private int _maximumNumberConnections = 10;
         private List<SyncClientHandler> _connectedClients = new();
 
-        private static readonly Queue<byte[]> _bytesToSend = new();
+        private readonly Queue<byte[]> _bytesToSend = new();
+
+        private Scene _scene;
 
         #region lifecycle
 
-        public SyncServer(int port)
+        public SyncServer(int port, Scene scene)
         {
+            _scene = scene;
+
             IPAddress ipAddress = Dns.GetHostEntry("127.0.0.1").AddressList[0];
             IPEndPoint localEndPoint = new(ipAddress, port);
 
@@ -32,6 +41,7 @@ namespace jKnepel.UnitySync
             _listenerThread.Start();
 
             SyncEvents.onIsOpenChanged?.Invoke(true);
+            ObjectChangeEvents.changesPublished += ChangesPublished;
             Debug.Log("Server is listening");
         }
 
@@ -81,18 +91,18 @@ namespace jKnepel.UnitySync
 			{
                 while(_bytesToSend.Count > 0)
 				{
+                    byte[] bytes = _bytesToSend.Dequeue();
                     foreach (SyncClientHandler client in _connectedClients)
 					{
-                        byte[] bytes = _bytesToSend.Dequeue();
                         client.AddBytesToSend(bytes);
 					}
 				}
 			}
 		}
 
-		#endregion
+        #endregion
 
-		#region public methods
+        #region public methods
 
         public void AddBytesToSend(byte[] bytes)
 		{
@@ -102,11 +112,32 @@ namespace jKnepel.UnitySync
             }
 		}
 
-		#endregion
+        #endregion
 
-		#region private methods
+        #region private methods
 
-		private void ListenForIncomingConnections()
+        private void ChangesPublished(ref ObjectChangeEventStream stream)
+        {
+            ChangeGameObjectOrComponentPropertiesEventArgs obj;
+            stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
+            if (obj.scene == _scene)
+            {
+                UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
+                GameObject go;
+                try { go = ((Component)o).gameObject; }
+                catch (InvalidCastException) { go = (GameObject)o; }
+                SerializeHierarchy(go);
+            }
+        }
+
+        private async void SerializeHierarchy(GameObject go)
+        {
+            GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
+            byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
+            AddBytesToSend(bytes);
+        }
+
+        private void ListenForIncomingConnections()
         {
             try
             {
@@ -122,9 +153,15 @@ namespace jKnepel.UnitySync
                     }
                 }
             }
-            catch (SocketException ex)
+            catch (Exception ex)
             {
-                Debug.Log("Socket Exception " + ex);
+                if (ex is ThreadStartException || ex is OutOfMemoryException)
+                {
+                    Debug.Log("Thread Exception " + ex.ToString());
+                    return;
+                }
+
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
         }
 

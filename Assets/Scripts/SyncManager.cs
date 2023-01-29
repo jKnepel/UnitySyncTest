@@ -29,9 +29,6 @@ namespace jKnepel.UnitySync
         private static Scene _exportScene;
         private static Scene _importScene;
 
-        private static Dictionary<int, GameObject> _exportGameObjectIds = new();
-        private static Dictionary<int, GameObject> _importGameObjectIds = new();
-
         private static readonly Queue<byte[]> _receivedBytes = new();
 
         #endregion
@@ -86,31 +83,14 @@ namespace jKnepel.UnitySync
                 Debug.LogWarning($"The Scene {sceneName} is not valid!");
                 return;
 			}
-
-            ObjectChangeEvents.changesPublished += LogEvent;
-
-            // TODO : also add nested gameobjects
-            GameObject[] rootGameObjects = scene.GetRootGameObjects();
-            foreach (GameObject go in rootGameObjects)
-            {
-                if (go.activeInHierarchy)
-                {
-                    _exportGameObjectIds.Add(go.GetInstanceID(), go);
-                    foreach (Component co in go.GetComponents(typeof(Component)))
-                    {
-                        _exportGameObjectIds.Add(co.GetInstanceID(), go);
-                    }
-                }
-            }
-
             _exportScene = scene;
+
             try
 			{
-                _server = new(port);
+                _server = new(port, scene);
 			}
             catch (Exception ex)
             {
-                ObjectChangeEvents.changesPublished -= LogEvent;
                 if (_server != null)
                 {
                     _server.Dispose();
@@ -137,35 +117,12 @@ namespace jKnepel.UnitySync
             }
 
             EditorApplication.update += _server.Update;
-
-            // TODO : figure why tf this blocks the main thread
-            //ExportScene();
         }
 
         private static void CloseTCPSocket()
         {
             EditorApplication.update -= _server.Update;
             _server.Dispose();
-
-            ObjectChangeEvents.changesPublished -= LogEvent;
-        }
-
-        private static void LogEvent(ref ObjectChangeEventStream stream)
-        {
-            ChangeGameObjectOrComponentPropertiesEventArgs obj;
-            stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-            SerializeDasJetzt(obj);
-        }
-
-        private async static void SerializeDasJetzt(ChangeGameObjectOrComponentPropertiesEventArgs obj)
-        {
-            if (obj.scene == _exportScene)
-            {
-                GameObject go = _exportGameObjectIds[obj.instanceId];
-                GLTFRootGameObject gltf = go.GetOrAddComponent<GLTFRootGameObject>();
-                byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
-                _server.AddBytesToSend(bytes);
-            }
         }
 
         #endregion
