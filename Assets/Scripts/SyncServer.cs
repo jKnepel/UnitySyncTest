@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Threading;
 using System.Runtime.ExceptionServices;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEditor;
@@ -20,8 +21,8 @@ namespace jKnepel.UnitySync
         private Thread _listenerThread;
         private List<SyncClientHandler> _connectedClients = new();
 
-        private readonly Queue<byte[]> _bytesToSend = new();
-        private readonly Queue<Action> _mainThreadActions = new();
+        private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
+        private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 
         private Scene _scene;
 
@@ -76,12 +77,12 @@ namespace jKnepel.UnitySync
                 if (disposing)
                 {
                     lock (_connectedClients)
-                    {
+					{
                         for (int i = _connectedClients.Count - 1; i >= 0; i--)
                         {
                             RemoveClientHandler(_connectedClients.ElementAt(i), null);
                         }
-                    }
+					}
                     if (_listenerThread != null)
                     {
                         _listenerThread = null;
@@ -106,25 +107,23 @@ namespace jKnepel.UnitySync
 
         public void Update()
         {
-            lock(_bytesToSend)
-			{
-                while(_bytesToSend.Count > 0)
-				{
-                    byte[] bytes = _bytesToSend.Dequeue();
-                    foreach (SyncClientHandler client in _connectedClients)
-					{
-                        client.AddBytesToSend(bytes);
-					}
-				}
-			}
-
-            lock (_mainThreadActions)
+            while (_bytesToSend.Count > 0)
             {
-                while (_mainThreadActions.Count > 0)
-                {
-                    Action action = _mainThreadActions.Dequeue();
-                    action?.Invoke();
-                }
+                bool success = _bytesToSend.TryDequeue(out byte[] bytes);
+                if (!success) continue;
+                lock (_connectedClients)
+				{
+                    foreach (SyncClientHandler client in _connectedClients)
+                    {
+                        client.AddBytesToSend(bytes);
+                    }
+				}
+            }
+
+            while (_mainThreadActions.Count > 0)
+            {
+                bool success = _mainThreadActions.TryDequeue(out Action action);
+                if (success) action?.Invoke();
             }
         }
 
@@ -134,11 +133,8 @@ namespace jKnepel.UnitySync
 
         public void AddBytesToSend(byte[] bytes)
 		{
-            lock(_bytesToSend)
-            { 
-                _bytesToSend.Enqueue(bytes);
-            }
-		}
+            _bytesToSend.Enqueue(bytes);
+        }
 
         #endregion
 
@@ -154,10 +150,7 @@ namespace jKnepel.UnitySync
 
                     Socket handler = _listener.Accept();
                     SyncClientHandler connectedClient = new(handler, (handler, ex) => RemoveClientHandler(handler, ex));
-                    lock (_connectedClients)
-                    {
-                        _connectedClients.Add(connectedClient);
-                    }
+                    lock (_connectedClients) _connectedClients.Add(connectedClient);
                     _mainThreadActions.Enqueue(() => ExportSceneToClient(connectedClient));
                 }
             }
@@ -189,12 +182,9 @@ namespace jKnepel.UnitySync
                 }
             }
 
-            lock (_connectedClients)
-			{
-                handler.Dispose();
-                _connectedClients.Remove(handler);
-			}
-		}
+            handler.Dispose();
+			lock (_connectedClients) _connectedClients.Remove(handler);
+        }
 
         private void ChangesPublished(ref ObjectChangeEventStream stream)
         {
@@ -229,7 +219,8 @@ namespace jKnepel.UnitySync
                 byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
                 client.AddBytesToSend(bytes);
 
-                if (SyncManager.IsDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
+                if (SyncManager.IsDebug) 
+                    Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
             }
         }
 

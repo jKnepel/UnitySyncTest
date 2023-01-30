@@ -7,7 +7,7 @@ using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -26,9 +26,9 @@ namespace jKnepel.UnitySync
         private Thread _senderThread;
         private Thread _receiverThread;
 
-        private readonly Queue<Action> _mainThreadActions = new();
-        private readonly Queue<byte[]> _bytesToSend = new();
-        private readonly Queue<byte[]> _receivedBytes = new();
+        private readonly ConcurrentQueue<Action> _mainThreadActions = new();
+        private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
+        private readonly ConcurrentQueue<byte[]> _receivedBytes = new();
 
         private Scene _scene;
 
@@ -117,23 +117,17 @@ namespace jKnepel.UnitySync
 
         public void Update()
         {
-            lock (_mainThreadActions)
+            while (_mainThreadActions.Count > 0)
             {
-                while (_mainThreadActions.Count > 0)
-                {
-                    Action action = _mainThreadActions.Dequeue();
-                    action?.Invoke();
-                }
+                bool success = _mainThreadActions.TryDequeue(out Action action);
+                if (success) action?.Invoke();
             }
 
-            lock (_receivedBytes)
-			{
-                while(_receivedBytes.Count > 0 && _scene.isLoaded)
-				{
-                    byte[] bytes = _receivedBytes.Dequeue();
-                    ImportHierarchy(bytes);
-				}
-			}
+            while (_receivedBytes.Count > 0 && _scene.isLoaded)
+            {
+                bool success = _receivedBytes.TryDequeue(out byte[] bytes);
+                if (success) ImportHierarchy(bytes);
+            }
         }
 
         #endregion
@@ -142,13 +136,13 @@ namespace jKnepel.UnitySync
 
         public void AddBytesToSend(byte[] bytes)
         {
-            lock (_bytesToSend) { _bytesToSend.Enqueue(bytes); }
+            _bytesToSend.Enqueue(bytes);
         }
 
         private void AddReceivedBytes(byte[] bytes)
 		{
-            lock (_receivedBytes) { _receivedBytes.Enqueue(bytes); }
-		}
+            _receivedBytes.Enqueue(bytes);
+        }
 
         #endregion
 

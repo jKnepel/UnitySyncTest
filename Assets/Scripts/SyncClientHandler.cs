@@ -2,9 +2,9 @@ using System;
 using System.Linq;
 using System.Globalization;
 using System.Net.Sockets;
-using System.Security.Cryptography;
 using System.Threading;
-using System.Collections.Generic;
+using System.Security.Cryptography;
+using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEditor;
@@ -17,7 +17,7 @@ namespace jKnepel.UnitySync
         private Thread _senderThread;
         private Thread _receiverThread;
 
-        private readonly Queue<byte[]> _bytesToSend = new();
+        private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
 
         private Action<SyncClientHandler, ExceptionDispatchInfo> _connectionAbolished;
         private int _disposeCount;
@@ -83,7 +83,7 @@ namespace jKnepel.UnitySync
 
         public void AddBytesToSend(byte[] bytes)
         {
-            lock (_bytesToSend) { _bytesToSend.Enqueue(bytes); }
+            _bytesToSend.Enqueue(bytes);
         }
 
 		#endregion
@@ -96,14 +96,12 @@ namespace jKnepel.UnitySync
             {
                 while (IsConnected())
                 {
-                    lock (_bytesToSend)
-                    {
-                        if (_bytesToSend.Count == 0) continue;
+                    if (_bytesToSend.Count == 0) continue;
 
-                        byte[] bytes = _bytesToSend.Dequeue();
-                        _client.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
-                        _client.Send(bytes, SocketFlags.None);
-                    }
+                    bool success = _bytesToSend.TryDequeue(out byte[] bytes);
+                    if (!success) continue;
+                    _client.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
+                    _client.Send(bytes, SocketFlags.None);
                 }
                 if (_disposeCount == 0) _connectionAbolished?.Invoke(this, null);
             }

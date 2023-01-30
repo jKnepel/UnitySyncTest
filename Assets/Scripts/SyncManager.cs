@@ -45,8 +45,6 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region sync manager
-
 		#region server logic
 
 		private static void OpenTCPSocket(string sceneName, int port)
@@ -154,8 +152,6 @@ namespace jKnepel.UnitySync
             _client.Dispose();
             _client = null;
         }
-
-        #endregion
 
         #endregion
     }
