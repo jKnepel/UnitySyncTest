@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEditor;
+using GLTF;
 using UnityGLTF;
 using Toph.GLTFSerializer.Components;
 
@@ -17,7 +18,6 @@ namespace jKnepel.UnitySync
     {
         private Socket _listener;
         private Thread _listenerThread;
-        private int _maximumNumberConnections = 10;
         private List<SyncClientHandler> _connectedClients = new();
 
         private readonly Queue<byte[]> _bytesToSend = new();
@@ -25,24 +25,37 @@ namespace jKnepel.UnitySync
 
         private Scene _scene;
 
+        private Action<ExceptionDispatchInfo> _connectionAbolished;
+        private int _disposeCount;
+
         #region lifecycle
 
-        public SyncServer(int port, Scene scene)
+        public SyncServer(int port, Scene scene, Action<ExceptionDispatchInfo> connectionAbolished)
         {
-            _scene = scene;
+            try
+			{
+                _scene = scene;
+                _connectionAbolished = connectionAbolished;
 
-            IPAddress ipAddress = Dns.GetHostEntry("127.0.0.1").AddressList[0];
-            IPEndPoint localEndPoint = new(ipAddress, port);
+                IPAddress ipAddress = Dns.GetHostEntry("127.0.0.1").AddressList[0];
+                IPEndPoint localEndPoint = new(ipAddress, port);
 
-            _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            _listener.Bind(localEndPoint);
-            _listener.Listen(_maximumNumberConnections);
+                _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                _listener.Bind(localEndPoint);
+                _listener.Listen(SyncManager.MaximumNumberConnections);
 
-            _listenerThread = new(() => ListenForIncomingConnections()) { IsBackground = true };
-            _listenerThread.Start();
+                _listenerThread = new(() => ListenForIncomingConnections()) { IsBackground = true };
+                _listenerThread.Start();
+			}
+            catch(Exception ex)
+			{
+                _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+                return;
+            }
 
-            SyncEvents.onIsOpenChanged?.Invoke(true);
             ObjectChangeEvents.changesPublished += ChangesPublished;
+            EditorApplication.update += Update;
+            SyncEvents.onIsOpenChanged?.Invoke(true);
             Debug.Log("Server is listening");
         }
 
@@ -56,33 +69,38 @@ namespace jKnepel.UnitySync
             Dispose(true);
         }
 
-        public void Dispose(bool safeToDispose)
+        public void Dispose(bool disposing)
 		{
-            if (safeToDispose)
-			{
-                try
+            if (Interlocked.Increment(ref _disposeCount) == 1)
+            {
+                if (disposing)
                 {
                     lock (_connectedClients)
                     {
                         for (int i = _connectedClients.Count - 1; i >= 0; i--)
                         {
-                            _connectedClients.ElementAt(i).Dispose();
-                            _connectedClients.RemoveAt(i);
+                            RemoveClientHandler(_connectedClients.ElementAt(i), null);
                         }
                     }
-                    if (_listenerThread != null && _listenerThread.IsAlive)
-					{
-                        _listenerThread.Abort();
-					}
+                    if (_listenerThread != null)
+                    {
+                        _listenerThread = null;
+                    }
+
+                    ObjectChangeEvents.changesPublished -= ChangesPublished;
+                    EditorApplication.update -= Update;
+                    SyncEvents.onIsOpenChanged?.Invoke(false);
+                    Debug.Log("Server was closed");
+                }
+
+                try
+                {
                     if (_listener != null)
                     {
                         _listener.Close();
                     }
-
-                    SyncEvents.onIsOpenChanged?.Invoke(false);
-                    Debug.Log("Server was closed");
                 }
-                catch (SocketException ex) { Debug.Log(ex); }
+                catch (ObjectDisposedException) { }
             }
 		}
 
@@ -130,12 +148,12 @@ namespace jKnepel.UnitySync
         {
             try
             {
-                while (true)
+                while (_disposeCount == 0)
                 {
-                    if (_connectedClients.Count >= _maximumNumberConnections) continue;
+                    if (_connectedClients.Count >= SyncManager.MaximumNumberConnections) continue;
 
                     Socket handler = _listener.Accept();
-                    SyncClientHandler connectedClient = new(handler);
+                    SyncClientHandler connectedClient = new(handler, (handler, ex) => RemoveClientHandler(handler, ex));
                     lock (_connectedClients)
                     {
                         _connectedClients.Add(connectedClient);
@@ -145,15 +163,38 @@ namespace jKnepel.UnitySync
             }
             catch (Exception ex)
             {
-                if (ex is ThreadStartException || ex is OutOfMemoryException)
-                {
-                    Debug.Log("Thread Exception " + ex.ToString());
-                    return;
-                }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
+                if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
             }
         }
+
+        private void RemoveClientHandler(SyncClientHandler handler, ExceptionDispatchInfo ex)
+		{
+            if (ex != null)
+            {
+                switch (ex.SourceException)
+                {
+                    case SocketException:
+                        Debug.Log("Socket Exception " + ex.ToString());
+                        break;
+                    case ObjectDisposedException:
+                        Debug.Log("Object Disposed Exception " + ex.ToString());
+                        break;
+                    case ThreadStartException:
+                    case OutOfMemoryException:
+                        Debug.Log("Thread Exception " + ex.ToString());
+                        break;
+                    default:
+                        ex.Throw();
+                        break;
+                }
+            }
+
+            lock (_connectedClients)
+			{
+                handler.Dispose();
+                _connectedClients.Remove(handler);
+			}
+		}
 
         private void ChangesPublished(ref ObjectChangeEventStream stream)
         {
@@ -188,7 +229,7 @@ namespace jKnepel.UnitySync
                 byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
                 client.AddBytesToSend(bytes);
 
-                //if (_isDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
+                if (SyncManager.IsDebug) Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
             }
         }
 

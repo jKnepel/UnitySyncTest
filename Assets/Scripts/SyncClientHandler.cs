@@ -17,13 +17,17 @@ namespace jKnepel.UnitySync
         private Thread _senderThread;
         private Thread _receiverThread;
 
-        private static readonly Queue<byte[]> _bytesToSend = new();
+        private readonly Queue<byte[]> _bytesToSend = new();
+
+        private Action<SyncClientHandler, ExceptionDispatchInfo> _connectionAbolished;
+        private int _disposeCount;
 
         #region lifecycle
 
-        public SyncClientHandler(Socket handler)
+        public SyncClientHandler(Socket handler, Action<SyncClientHandler, ExceptionDispatchInfo> connectionAbolished)
 		{
             _client = handler;
+            _connectionAbolished = connectionAbolished;
 
             _senderThread = new(() => SocketSendThread()) { IsBackground = true };
             _senderThread.Start();
@@ -43,31 +47,35 @@ namespace jKnepel.UnitySync
 			Dispose(true);
 		}
 
-		public void Dispose(bool safeToDispose)
+		public void Dispose(bool disposing)
 		{
-            if (safeToDispose)
+            if (Interlocked.Increment(ref _disposeCount) == 1)
             {
-                try
+                if (disposing)
                 {
                     if (_senderThread != null)
-					{
-                        _senderThread.Abort();
-					}
+                    {
+                        _senderThread = null;
+                    }
                     if (_receiverThread != null)
-					{
-                        _receiverThread.Abort();
-					}
+                    {
+                        _receiverThread = null;
+                    }
+
+                    Debug.Log("Clients connection was closed");
+                }
+
+                try
+                {
                     if (_client != null)
                     {
                         _client.Shutdown(SocketShutdown.Both);
                         _client.Close();
                     }
-
-                    Debug.Log("Connection was closed");
                 }
-                catch (SocketException ex) { Debug.Log(ex); }
-			}
-		}
+                catch (ObjectDisposedException) { }
+            }
+        }
 
         #endregion
 
@@ -86,7 +94,7 @@ namespace jKnepel.UnitySync
 		{
             try
             {
-                while (true)
+                while (IsConnected())
                 {
                     lock (_bytesToSend)
                     {
@@ -97,17 +105,11 @@ namespace jKnepel.UnitySync
                         _client.Send(bytes, SocketFlags.None);
                     }
                 }
+                if (_disposeCount == 0) _connectionAbolished?.Invoke(this, null);
             }
             catch (Exception ex)
             {
-                if (ex is SocketException)
-                {
-                    Debug.Log("Socket Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ThreadAbortException) { }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
+                if (_disposeCount == 0) _connectionAbolished?.Invoke(this, ExceptionDispatchInfo.Capture(ex));
             }
         }
 
@@ -144,11 +146,11 @@ namespace jKnepel.UnitySync
             return a1.SequenceEqual(a2);
         }
 
-        private static bool IsConnected(Socket socket)
+        private bool IsConnected()
         {
             try
             {
-                return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
+                return !(_client.Poll(1, SelectMode.SelectRead) && _client.Available == 0);
             }
             catch (SocketException) { return false; }
         }

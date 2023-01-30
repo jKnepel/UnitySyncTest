@@ -12,6 +12,7 @@ using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEditor;
+using UnityEditor.SceneManagement;
 using GLTF;
 using GLTF.Schema;
 using UnityGLTF;
@@ -25,30 +26,49 @@ namespace jKnepel.UnitySync
         private Thread _senderThread;
         private Thread _receiverThread;
 
-        private static readonly Queue<byte[]> _bytesToSend = new();
-        private static readonly Queue<byte[]> _receivedBytes = new();
+        private readonly Queue<Action> _mainThreadActions = new();
+        private readonly Queue<byte[]> _bytesToSend = new();
+        private readonly Queue<byte[]> _receivedBytes = new();
 
         private Scene _scene;
 
+        private Action<ExceptionDispatchInfo> _connectionAbolished;
+        private int _disposeCount;
+
         #region lifecycle
 
-        public SyncClient(string ip, int port, Scene scene)
+        public SyncClient(string ip, int port, string sceneName, Action<ExceptionDispatchInfo> connectionAbolished)
         {
-            _scene = scene;
+            try
+			{
+                _connectionAbolished = connectionAbolished;
 
-            IPHostEntry host = Dns.GetHostEntry(ip);
-            if (ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
-            IPAddress ipAddress = host.AddressList[0];
-            IPEndPoint remoteEP = new(ipAddress, port);
+                _scene = Application.isEditor
+                    ? EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive)
+                    : SceneManager.CreateScene(sceneName);
+                _scene.name = sceneName;
+                SceneManager.SetActiveScene(_scene);
 
-            _client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-            _client.Connect(remoteEP);
+                IPHostEntry host = Dns.GetHostEntry(ip);
+                if (ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
+                IPAddress ipAddress = host.AddressList[0];
+                IPEndPoint remoteEP = new(ipAddress, port);
 
-            _senderThread = new(() => SocketSendThread()) { IsBackground = true };
-            _senderThread.Start();
-            _receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
-            _receiverThread.Start();
+                _client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+                _client.Connect(remoteEP);
 
+                _senderThread = new(() => SocketSendThread()) { IsBackground = true };
+                _senderThread.Start();
+                _receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
+                _receiverThread.Start();
+            }
+            catch (Exception ex)
+            {
+                _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+                return;
+            }
+
+            EditorApplication.update += Update;
             SyncEvents.onIsConnectedChanged?.Invoke(true);
             Debug.Log("Client connected to Server");
         }
@@ -63,38 +83,52 @@ namespace jKnepel.UnitySync
             Dispose(true);
         }
 
-        public void Dispose(bool safeToDispose)
+        public void Dispose(bool disposing)
         {
-            if (safeToDispose)
+            if (Interlocked.Increment(ref _disposeCount) == 1)
             {
-                try
+                if (disposing)
                 {
                     if (_senderThread != null)
                     {
-                        _senderThread.Abort();
+                        _senderThread = null;
                     }
                     if (_receiverThread != null)
                     {
-                        _receiverThread.Abort();
+                        _receiverThread = null;
                     }
+
+                    EditorApplication.update -= Update;
+                    SyncEvents.onIsConnectedChanged?.Invoke(false);
+                    Debug.Log("Connection was closed");
+                }
+
+                try
+                {
                     if (_client != null)
                     {
                         _client.Shutdown(SocketShutdown.Both);
                         _client.Close();
                     }
-
-                    SyncEvents.onIsConnectedChanged?.Invoke(false);
-                    Debug.Log("Connection was closed");
                 }
-                catch (SocketException ex) { Debug.Log(ex); }
+                catch (ObjectDisposedException) { }
             }
         }
 
         public void Update()
         {
+            lock (_mainThreadActions)
+            {
+                while (_mainThreadActions.Count > 0)
+                {
+                    Action action = _mainThreadActions.Dequeue();
+                    action?.Invoke();
+                }
+            }
+
             lock (_receivedBytes)
 			{
-                while(_receivedBytes.Count > 0)
+                while(_receivedBytes.Count > 0 && _scene.isLoaded)
 				{
                     byte[] bytes = _receivedBytes.Dequeue();
                     ImportHierarchy(bytes);
@@ -122,31 +156,24 @@ namespace jKnepel.UnitySync
 
         private void SocketSendThread()
         {
-
+            
         }
 
         private void SocketReceiveThread()
         {
             try
             {
-                while (true)
+                while (IsSocketConnected() && _disposeCount == 0)
                 {
                     byte[] lengthBytes = new byte[4];
                     _client.Receive(lengthBytes, SocketFlags.None);
                     int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
 
-                    if (dataLength <= 0)
-                    {
-                        if (!IsConnected(_client))
-                        {
-                            Dispose(true);
-                        }
-                        continue;
-                    }
+                    if (dataLength <= 0) continue;
 
                     byte[] receivedBytes = new byte[dataLength];
                     _client.Receive(receivedBytes, SocketFlags.None);
-                    Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
+                    if (SyncManager.IsDebug) Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
 
                     if (receivedBytes.Length == dataLength)
                     {
@@ -158,17 +185,11 @@ namespace jKnepel.UnitySync
                         AddReceivedBytes(receivedBytes);
                     }
                 }
+                if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
             }
             catch (Exception ex)
             {
-                if (ex is SocketException)
-                {
-                    Debug.Log("Socket Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ThreadAbortException) { }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
+                if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
             }
         }
 
@@ -182,14 +203,14 @@ namespace jKnepel.UnitySync
                 }
                 SceneManager.MoveGameObjectToScene(createdObject, _scene);
 
-                //if (_isDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
+                if (SyncManager.IsDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
             };
 
             using MemoryStream memoryStream = new();
             await memoryStream.WriteAsync(hierarchy);
             await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
 
-            //if (_isDebug) Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
+            if (SyncManager.IsDebug) Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
 
             return;
         }
@@ -199,7 +220,7 @@ namespace jKnepel.UnitySync
             GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
             GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), true, -1, true, onLoadComplete);
+            await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncManager.IsDebug, -1, true, onLoadComplete);
         }
 
         #endregion
@@ -230,13 +251,13 @@ namespace jKnepel.UnitySync
             return a1.SequenceEqual(a2);
         }
 
-        private static bool IsConnected(Socket socket)
+        private bool IsSocketConnected()
         {
             try
             {
-                return !(socket.Poll(1, SelectMode.SelectRead) && socket.Available == 0);
+                return !(_client.Poll(1, SelectMode.SelectRead) && _client.Available == 0);
             }
-            catch (SocketException) { return false; }
+            catch (Exception) { return false; }
         }
 
         #endregion

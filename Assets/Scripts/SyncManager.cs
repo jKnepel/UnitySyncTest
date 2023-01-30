@@ -5,16 +5,21 @@ using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEditor;
-using UnityEditor.SceneManagement;
 
 namespace jKnepel.UnitySync
 {
     [InitializeOnLoad()]
     public static class SyncManager
     {
+        #region public members
+
+        public static bool IsDebug = true;
+        public static int MaximumNumberConnections = 10;
+
+        #endregion
+
         #region private members
 
-        private static bool _isDebug = true;
         private static SyncServer _server;
         private static SyncClient _client;
 
@@ -59,43 +64,38 @@ namespace jKnepel.UnitySync
                 return;
 			}
 
-            try
-			{
-                _server = new(port, exportScene);
-			}
-            catch (Exception ex)
+            static void connectionAbolished(ExceptionDispatchInfo ex)
             {
-                if (_server != null)
+                if (ex != null)
                 {
-                    _server.Dispose();
-                    _server = null;
+                    switch (ex.SourceException)
+                    {
+                        case SocketException:
+                            Debug.Log("Socket Exception " + ex.ToString());
+                            break;
+                        case ObjectDisposedException:
+                            Debug.Log("Object Disposed Exception " + ex.ToString());
+                            break;
+                        case ThreadStartException:
+                        case OutOfMemoryException:
+                            Debug.Log("Thread Exception " + ex.ToString());
+                            break;
+                        default:
+                            ex.Throw();
+                            break;
+                    }
                 }
 
-                if (ex is SocketException)
-                {
-                    Debug.Log("Socket Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ObjectDisposedException)
-                {
-                    Debug.Log("Object Disposed Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ThreadStartException || ex is OutOfMemoryException)
-				{
-                    Debug.Log("Thread Exception " + ex.ToString());
-                    return;
-                }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
+                CloseTCPSocket();
             }
 
-            EditorApplication.update += _server.Update;
+            _server = new(port, exportScene, connectionAbolished);
         }
 
         private static void CloseTCPSocket()
         {
-            EditorApplication.update -= _server.Update;
+            if (_server == null) return;
+
             _server.Dispose();
             _server = null;
         }
@@ -119,53 +119,44 @@ namespace jKnepel.UnitySync
                 return;
             }
 
-            Scene importScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            importScene.name = sceneName;
-            SceneManager.SetActiveScene(importScene);
+			static void connectionAbolished(ExceptionDispatchInfo ex)
+			{
+				if (ex != null)
+				{
+					switch (ex.SourceException)
+					{
+						case SocketException:
+							Debug.Log("Socket Exception " + ex.ToString());
+							break;
+						case ObjectDisposedException:
+							Debug.Log("Object Disposed Exception " + ex.ToString());
+							break;
+						case ThreadStartException:
+						case OutOfMemoryException:
+							Debug.Log("Thread Exception " + ex.ToString());
+							break;
+						default:
+							ex.Throw();
+							break;
+					}
+				}
 
-            try
-            {
-                _client = new(ip, port, importScene);
-            }
-            catch (Exception ex)
-            {
-                if (_client != null)
-                {
-                    _client.Dispose();
-                    _client = null;
-                }
+				CloseClient();
+			}
 
-                if (ex is SocketException)
-                {
-                    Debug.Log("Socket Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ObjectDisposedException)
-                {
-                    Debug.Log("Object Disposed Exception " + ex.ToString());
-                    return;
-                }
-                if (ex is ThreadStartException || ex is OutOfMemoryException)
-                {
-                    Debug.Log("Thread Exception " + ex.ToString());
-                    return;
-                }
-
-                ExceptionDispatchInfo.Capture(ex).Throw();
-            }
-
-            EditorApplication.update += _client.Update;
+			_client = new(ip, port, sceneName, connectionAbolished);
         }
 
         private static void CloseClient()
 		{
-            EditorApplication.update -= _client.Update;
+            if (_client == null) return;
+
             _client.Dispose();
             _client = null;
         }
 
-		#endregion
+        #endregion
 
-		#endregion
+        #endregion
     }
 }
