@@ -43,7 +43,7 @@ namespace jKnepel.UnitySync
 			{
                 _connectionAbolished = connectionAbolished;
 
-                _scene = Application.isEditor
+                _scene = Application.isEditor && !Application.isPlaying
                     ? EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive)
                     : SceneManager.CreateScene(sceneName);
                 _scene.name = sceneName;
@@ -68,9 +68,9 @@ namespace jKnepel.UnitySync
                 return;
             }
 
-            EditorApplication.update += Update;
+            SyncManager.OnUpdate += Update;
             SyncEvents.onIsConnectedChanged?.Invoke(true);
-            Debug.Log("Client connected to Server");
+            SyncManager.AddDebugMessage("Client connected to Server");
         }
 
         ~SyncClient()
@@ -98,9 +98,9 @@ namespace jKnepel.UnitySync
                         _receiverThread = null;
                     }
 
-                    EditorApplication.update -= Update;
+                    SyncManager.OnUpdate -= Update;
                     SyncEvents.onIsConnectedChanged?.Invoke(false);
-                    Debug.Log("Connection was closed");
+                    SyncManager.AddDebugMessage("Connection was closed");
                 }
 
                 try
@@ -167,7 +167,7 @@ namespace jKnepel.UnitySync
 
                     byte[] receivedBytes = new byte[dataLength];
                     _client.Receive(receivedBytes, SocketFlags.None);
-                    if (SyncManager.IsDebug) Debug.Log("Received " + receivedBytes.Length + " Should have been " + dataLength);
+                    SyncManager.AddDebugMessage("Received " + receivedBytes.Length + " Should have been " + dataLength);
 
                     if (receivedBytes.Length == dataLength)
                     {
@@ -197,14 +197,14 @@ namespace jKnepel.UnitySync
                 }
                 SceneManager.MoveGameObjectToScene(createdObject, _scene);
 
-                if (SyncManager.IsDebug) Debug.Log($"GameObject '{createdObject.name}' imported.");
+                SyncManager.AddDebugMessage($"GameObject '{createdObject.name}' imported.");
             };
 
             using MemoryStream memoryStream = new();
             await memoryStream.WriteAsync(hierarchy);
             await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
 
-            if (SyncManager.IsDebug) Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
+            SyncManager.AddDebugMessage($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
 
             return;
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Threading;
 using System.Runtime.ExceptionServices;
@@ -16,12 +17,18 @@ namespace jKnepel.UnitySync
         public static bool IsDebug = true;
         public static int MaximumNumberConnections = 10;
 
+        public static Action OnUpdate;
+        public static Action OnAwake;
+        public static Action OnStart;
+
         #endregion
 
         #region private members
 
         private static SyncServer _server;
         private static SyncClient _client;
+
+        private static ConcurrentQueue<Action> _mainThreadActions = new();
 
         #endregion
 
@@ -34,20 +41,53 @@ namespace jKnepel.UnitySync
             SyncEvents.onConnectClient += ConnectClient;
             SyncEvents.onCloseClient += CloseClient;
 
-            // TODO : test if it works in build / find an alternative
-            EditorApplication.update += Update;
+            if (Application.isEditor) EditorApplication.update += Update;
+            else
+			{
+                GameObject go = new();
+                SyncRuntimeManager runtime = go.AddComponent<SyncRuntimeManager>();
+                runtime.name = typeof(SyncRuntimeManager).ToString();
+                runtime.hideFlags = HideFlags.HideInHierarchy;
+                GameObject.DontDestroyOnLoad(runtime);
+                runtime.OnUpdate += Update;
+			}
         }
 
         private static void Update()
         {
+            OnUpdate?.Invoke();
 
+            bool success = _mainThreadActions.TryDequeue(out Action action);
+            if (success) action?.Invoke();
         }
+
+        private static void Awake()
+        {
+            OnAwake?.Invoke();
+        }
+
+        private static void Start()
+        {
+            OnStart?.Invoke();
+        }
+
+		#endregion
+
+		#region public methods
+
+        public static void AddDebugMessage(string text)
+		{
+            if (!IsDebug) return;
+
+            Debug.Log(text);
+            _mainThreadActions.Enqueue(() => SyncEvents.onDebugTextAdded?.Invoke(text));
+		}
 
 		#endregion
 
 		#region server logic
 
-		private static void OpenTCPSocket(string sceneName, int port)
+		private static void OpenTCPSocket(string sceneName, string ip, int port)
         {
             if (_server != null)
 			{
@@ -62,21 +102,20 @@ namespace jKnepel.UnitySync
                 return;
 			}
 
-            static void connectionAbolished(ExceptionDispatchInfo ex)
-            {
+            _server = new(ip, port, exportScene, (ExceptionDispatchInfo ex) => {
                 if (ex != null)
                 {
                     switch (ex.SourceException)
                     {
                         case SocketException:
-                            Debug.Log("Socket Exception " + ex.ToString());
+                            Debug.Log("Socket Exception " + ex.SourceException.ToString());
                             break;
                         case ObjectDisposedException:
-                            Debug.Log("Object Disposed Exception " + ex.ToString());
+                            Debug.Log("Object Disposed Exception " + ex.SourceException.ToString());
                             break;
                         case ThreadStartException:
                         case OutOfMemoryException:
-                            Debug.Log("Thread Exception " + ex.ToString());
+                            Debug.Log("Thread Exception " + ex.SourceException.ToString());
                             break;
                         default:
                             ex.Throw();
@@ -85,9 +124,7 @@ namespace jKnepel.UnitySync
                 }
 
                 CloseTCPSocket();
-            }
-
-            _server = new(port, exportScene, connectionAbolished);
+            });
         }
 
         private static void CloseTCPSocket()
@@ -117,32 +154,29 @@ namespace jKnepel.UnitySync
                 return;
             }
 
-			static void connectionAbolished(ExceptionDispatchInfo ex)
-			{
-				if (ex != null)
-				{
-					switch (ex.SourceException)
-					{
-						case SocketException:
-							Debug.Log("Socket Exception " + ex.ToString());
-							break;
-						case ObjectDisposedException:
-							Debug.Log("Object Disposed Exception " + ex.ToString());
-							break;
-						case ThreadStartException:
-						case OutOfMemoryException:
-							Debug.Log("Thread Exception " + ex.ToString());
-							break;
-						default:
-							ex.Throw();
-							break;
-					}
-				}
+			_client = new(ip, port, sceneName, (ExceptionDispatchInfo ex) => {
+                if (ex != null)
+                {
+                    switch (ex.SourceException)
+                    {
+                        case SocketException:
+                            Debug.Log("Socket Exception " + ex.SourceException.ToString());
+                            break;
+                        case ObjectDisposedException:
+                            Debug.Log("Object Disposed Exception " + ex.SourceException.ToString());
+                            break;
+                        case ThreadStartException:
+                        case OutOfMemoryException:
+                            Debug.Log("Thread Exception " + ex.SourceException.ToString());
+                            break;
+                        default:
+                            ex.Throw();
+                            break;
+                    }
+                }
 
-				CloseClient();
-			}
-
-			_client = new(ip, port, sceneName, connectionAbolished);
+                CloseClient();
+            });
         }
 
         private static void CloseClient()

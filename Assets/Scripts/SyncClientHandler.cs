@@ -34,7 +34,7 @@ namespace jKnepel.UnitySync
             _receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
             _receiverThread.Start();
 
-            Debug.Log("Client registered with Server");
+            SyncManager.AddDebugMessage("Client registered with Server");
         }
 
 		~SyncClientHandler()
@@ -62,7 +62,7 @@ namespace jKnepel.UnitySync
                         _receiverThread = null;
                     }
 
-                    Debug.Log("Clients connection was closed");
+                    SyncManager.AddDebugMessage("Clients connection was closed");
                 }
 
                 try

@@ -50,7 +50,7 @@ namespace jKnepel.UnitySync
 
             if (GUI.Button(new Rect(5, 60, 100, 30), new GUIContent("Open Socket", "Open Socket")))
             {
-                SyncEvents.onOpenTCPSocket?.Invoke(_exportSceneName, int.Parse(_port));
+                SyncEvents.onOpenTCPSocket?.Invoke(_exportSceneName, _ip, int.Parse(_port));
             }
 
             if (GUI.Button(new Rect(115, 60, 100, 30), new GUIContent("Close Socket", "Close Socket")))

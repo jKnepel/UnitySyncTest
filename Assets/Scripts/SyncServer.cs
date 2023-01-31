@@ -31,14 +31,14 @@ namespace jKnepel.UnitySync
 
         #region lifecycle
 
-        public SyncServer(int port, Scene scene, Action<ExceptionDispatchInfo> connectionAbolished)
+        public SyncServer(string ip, int port, Scene scene, Action<ExceptionDispatchInfo> connectionAbolished)
         {
             try
 			{
                 _scene = scene;
                 _connectionAbolished = connectionAbolished;
 
-                IPAddress ipAddress = Dns.GetHostEntry("127.0.0.1").AddressList[0];
+                IPAddress ipAddress = Dns.GetHostEntry(ip).AddressList[0];
                 IPEndPoint localEndPoint = new(ipAddress, port);
 
                 _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
@@ -55,9 +55,9 @@ namespace jKnepel.UnitySync
             }
 
             ObjectChangeEvents.changesPublished += ChangesPublished;
-            EditorApplication.update += Update;
+            SyncManager.OnUpdate += Update;
             SyncEvents.onIsOpenChanged?.Invoke(true);
-            Debug.Log("Server is listening");
+            SyncManager.AddDebugMessage("Server is listening");
         }
 
         ~SyncServer()
@@ -89,9 +89,9 @@ namespace jKnepel.UnitySync
                     }
 
                     ObjectChangeEvents.changesPublished -= ChangesPublished;
-                    EditorApplication.update -= Update;
+                    SyncManager.OnUpdate -= Update;
                     SyncEvents.onIsOpenChanged?.Invoke(false);
-                    Debug.Log("Server was closed");
+                    SyncManager.AddDebugMessage("Server was closed");
                 }
 
                 try
@@ -167,14 +167,14 @@ namespace jKnepel.UnitySync
                 switch (ex.SourceException)
                 {
                     case SocketException:
-                        Debug.Log("Socket Exception " + ex.ToString());
+                        SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
                         break;
                     case ObjectDisposedException:
-                        Debug.Log("Object Disposed Exception " + ex.ToString());
+                        SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
                         break;
                     case ThreadStartException:
                     case OutOfMemoryException:
-                        Debug.Log("Thread Exception " + ex.ToString());
+                        SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
                         break;
                     default:
                         ex.Throw();
@@ -219,8 +219,7 @@ namespace jKnepel.UnitySync
                 byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
                 client.AddBytesToSend(bytes);
 
-                if (SyncManager.IsDebug) 
-                    Debug.Log($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
+                SyncManager.AddDebugMessage($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
             }
         }
 
