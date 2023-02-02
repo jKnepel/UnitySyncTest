@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.44657898, g: 0.4964133, b: 0.5748178, a: 1}
+  m_IndirectSpecularColor: {r: 0.37311953, g: 0.38074014, b: 0.3587274, a: 1}
   m_UseRadianceAmbientProbe: 0
 --- !u!157 &3
 LightmapSettings:
@@ -150,7 +150,7 @@ SphereCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 602374914}
-  m_Material: {fileID: 1323952870}
+  m_Material: {fileID: 1193149790}
   m_IsTrigger: 0
   m_Enabled: 1
   serializedVersion: 2
@@ -214,12 +214,12 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 602374914}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -1.54, y: 0, z: -2.37}
+  m_LocalPosition: {x: 2.2, y: 0, z: -0.08}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 0
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &602374919
 MonoBehaviour:
@@ -233,7 +233,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 55af15fba5b27ca4eb24ca6fcfee2c57, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _id: 0b7f5b0f-7cbe-4be4-a7c9-21d298985c28
+  _id: d8fd9404-a677-4fdd-9394-bb555dfeaca7
+--- !u!134 &904393159
+PhysicMaterial:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_Name: 
+  dynamicFriction: 0.6
+  staticFriction: 0.6
+  bounciness: 0
+  frictionCombine: 0
+  bounceCombine: 0
 --- !u!1 &924273794
 GameObject:
   m_ObjectHideFlags: 0
@@ -261,7 +273,7 @@ BoxCollider:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 924273794}
-  m_Material: {fileID: 1205077123}
+  m_Material: {fileID: 904393159}
   m_IsTrigger: 0
   m_Enabled: 1
   serializedVersion: 2
@@ -330,7 +342,7 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_RootOrder: 1
+  m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!114 &924273799
 MonoBehaviour:
@@ -344,26 +356,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 55af15fba5b27ca4eb24ca6fcfee2c57, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _id: aff022ad-9b60-41f0-8f26-afb693ef23d4
---- !u!134 &1205077123
+  _id: a04c7c92-e09f-42aa-aa26-891657caebf1
+--- !u!134 &1193149790
 PhysicMaterial:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: ' (Instance) (Instance) (Instance)'
-  dynamicFriction: 0.6
-  staticFriction: 0.6
-  bounciness: 0
-  frictionCombine: 0
-  bounceCombine: 0
---- !u!134 &1323952870
-PhysicMaterial:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_Name: ' (Instance) (Instance) (Instance) (Instance) (Instance) (Instance)'
+  m_Name: ' (Instance) (Instance) (Instance) (Instance)'
   dynamicFriction: 0.6
   staticFriction: 0.6
   bounciness: 0

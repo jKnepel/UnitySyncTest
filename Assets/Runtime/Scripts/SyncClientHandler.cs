@@ -6,8 +6,6 @@ using System.Threading;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
-using UnityEngine;
-using UnityEditor;
 
 namespace jKnepel.UnitySync
 {
@@ -19,7 +17,7 @@ namespace jKnepel.UnitySync
 
         private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
 
-        private Action<SyncClientHandler, ExceptionDispatchInfo> _connectionAbolished;
+        private readonly Action<SyncClientHandler, ExceptionDispatchInfo> _connectionAbolished;
         private int _disposeCount;
 
         #region lifecycle

@@ -8,10 +8,13 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using UnityEditor;
 using GLTF;
 using UnityGLTF;
 using Toph.GLTFSerializer.Components;
+using jKnepel.UnitySync;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace jKnepel.UnitySync
 {
@@ -26,7 +29,7 @@ namespace jKnepel.UnitySync
 
         private Scene _scene;
 
-        private Action<ExceptionDispatchInfo> _connectionAbolished;
+        private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
         private int _disposeCount;
 
         #region lifecycle
@@ -53,8 +56,9 @@ namespace jKnepel.UnitySync
                 _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
                 return;
             }
-
+#if UNITY_EDITOR
             ObjectChangeEvents.changesPublished += ChangesPublished;
+#endif
             SyncManager.OnUpdate += Update;
             SyncEvents.onIsOpenChanged?.Invoke(true);
             SyncManager.AddDebugMessage("Server is listening");
@@ -88,7 +92,9 @@ namespace jKnepel.UnitySync
                         _listenerThread = null;
                     }
 
+#if UNITY_EDITOR
                     ObjectChangeEvents.changesPublished -= ChangesPublished;
+#endif
                     SyncManager.OnUpdate -= Update;
                     SyncEvents.onIsOpenChanged?.Invoke(false);
                     SyncManager.AddDebugMessage("Server was closed");
@@ -186,6 +192,7 @@ namespace jKnepel.UnitySync
 			lock (_connectedClients) _connectedClients.Remove(handler);
         }
 
+#if UNITY_EDITOR
         private void ChangesPublished(ref ObjectChangeEventStream stream)
         {
             ChangeGameObjectOrComponentPropertiesEventArgs obj;
@@ -199,6 +206,7 @@ namespace jKnepel.UnitySync
                 SendHierarchy(go);
             }
         }
+#endif
 
         private async void SendHierarchy(GameObject go)
         {
