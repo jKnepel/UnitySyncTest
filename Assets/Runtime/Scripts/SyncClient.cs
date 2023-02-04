@@ -59,9 +59,7 @@ namespace jKnepel.UnitySync
 				_receiverThread.Start();
 
 #if UNITY_EDITOR
-				_scene = Application.isPlaying
-					? SceneManager.CreateScene(sceneName)
-					: EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
 #else
                 _scene = SceneManager.CreateScene(sceneName);
 #endif
@@ -75,6 +73,7 @@ namespace jKnepel.UnitySync
 			}
 
 			SyncManager.OnUpdate += Update;
+			EditorApplication.playModeStateChanged += PreventPlayMode;
 			SyncEvents.onIsConnectedChanged?.Invoke(true);
 			SyncManager.AddDebugMessage("Client connected to Server");
 		}
@@ -105,6 +104,7 @@ namespace jKnepel.UnitySync
 					}
 
 					SyncManager.OnUpdate -= Update;
+					EditorApplication.playModeStateChanged -= PreventPlayMode;
 					SyncEvents.onIsConnectedChanged?.Invoke(false);
 					SyncManager.AddDebugMessage("Connection was closed");
 				}
@@ -122,14 +122,7 @@ namespace jKnepel.UnitySync
 				if (_scene.IsValid())
 				{
 #if UNITY_EDITOR
-					if (Application.isPlaying)
-					{
-						SceneManager.UnloadSceneAsync(_scene);
-					}
-					else
-					{
-						EditorSceneManager.UnloadSceneAsync(_scene);
-					}
+					EditorSceneManager.UnloadSceneAsync(_scene);
 #else
                     SceneManager.UnloadSceneAsync(_scene);
 #endif
@@ -242,6 +235,14 @@ namespace jKnepel.UnitySync
 		#endregion
 
 		#region helper methods
+
+		private static void PreventPlayMode(PlayModeStateChange state)
+		{
+			if (state == PlayModeStateChange.ExitingEditMode)
+			{
+				EditorApplication.isPlaying = false;
+			}
+		}
 
 		private static string GetHashedBytes(byte[] bytes)
 		{

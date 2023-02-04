@@ -60,6 +60,7 @@ namespace jKnepel.UnitySync
             ObjectChangeEvents.changesPublished += ChangesPublished;
 #endif
             SyncManager.OnUpdate += Update;
+            EditorApplication.playModeStateChanged += PreventPlayMode;
             SyncEvents.onIsOpenChanged?.Invoke(true);
             SyncManager.AddDebugMessage("Server is listening");
         }
@@ -96,6 +97,7 @@ namespace jKnepel.UnitySync
                     ObjectChangeEvents.changesPublished -= ChangesPublished;
 #endif
                     SyncManager.OnUpdate -= Update;
+                    EditorApplication.playModeStateChanged -= PreventPlayMode;
                     SyncEvents.onIsOpenChanged?.Invoke(false);
                     SyncManager.AddDebugMessage("Server was closed");
                 }
@@ -227,7 +229,21 @@ namespace jKnepel.UnitySync
                 byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
                 client.AddBytesToSend(bytes);
 
-                SyncManager.AddDebugMessage($"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}");
+                SyncManager.AddDebugMessage(
+                    $"GameObject '{rootComponent.name}' exported:\n{new GLTFParser().ParseToReadableText(bytes)}"
+                );
+            }
+        }
+
+        #endregion
+
+        #region helper methods
+
+        private static void PreventPlayMode(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.ExitingEditMode)
+            {
+                EditorApplication.isPlaying = false;
             }
         }
 
