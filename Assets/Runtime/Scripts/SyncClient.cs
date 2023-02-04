@@ -60,10 +60,10 @@ namespace jKnepel.UnitySync
 
 #if UNITY_EDITOR
 				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+				_scene.name = sceneName;
 #else
                 _scene = SceneManager.CreateScene(sceneName);
 #endif
-				_scene.name = sceneName;
 				SceneManager.SetActiveScene(_scene);
 			}
 			catch (Exception ex)
@@ -147,20 +147,6 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region public methods
-
-		public void AddBytesToSend(byte[] bytes)
-		{
-			_bytesToSend.Enqueue(bytes);
-		}
-
-		private void AddReceivedBytes(byte[] bytes)
-		{
-			_receivedBytes.Enqueue(bytes);
-		}
-
-		#endregion
-
 		#region private methods
 
 		private void SocketSendThread()
@@ -174,16 +160,16 @@ namespace jKnepel.UnitySync
 			{
 				while (IsSocketConnected() && _disposeCount == 0)
 				{
+					byte[] protocolId = new byte[1];
+					_client.Receive(protocolId, SocketFlags.None);
+					if (protocolId[0] != SyncManager.PROTOCOL_ID)
+						continue;
+
 					byte[] lengthBytes = new byte[4];
 					_client.Receive(lengthBytes, SocketFlags.None);
 					int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
-
-					if (dataLength <= 0) continue;
-
-					string bitString = "";
-					foreach (byte bytee in lengthBytes)
-						bitString += Convert.ToString(bytee, 2).PadLeft(8, '0');
-					SyncManager.AddDebugMessage("Received: " + bitString);
+					if (dataLength <= 0)
+						continue;
 
 					byte[] receivedBytes = new byte[dataLength];
 					_client.Receive(receivedBytes, SocketFlags.None);
@@ -196,7 +182,7 @@ namespace jKnepel.UnitySync
                         _client.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
                         Debug.Log("Send Hash: " + hashedBytes);
                         */
-						AddReceivedBytes(receivedBytes);
+						_receivedBytes.Enqueue(receivedBytes);
 					}
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
@@ -234,7 +220,7 @@ namespace jKnepel.UnitySync
 			GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
 			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncManager.IsDebug, -1, true, onLoadComplete);
+			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncManager.IS_DEBUG, -1, true, onLoadComplete);
 		}
 
 		#endregion

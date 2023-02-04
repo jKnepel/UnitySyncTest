@@ -18,8 +18,9 @@ namespace jKnepel.UnitySync
 	{
 		#region public members
 
-		public static bool IsDebug = true;
-		public static int MaximumNumberConnections = 10;
+		public const bool IS_DEBUG = true;
+		public const int MAX_NUMBER_CONNECTIONS = 10;
+		public const byte PROTOCOL_ID = 224;
 
 		public static Action OnUpdate;
 		public static Action OnAwake;
@@ -82,7 +83,7 @@ namespace jKnepel.UnitySync
 
 		public static void AddDebugMessage(string text)
 		{
-			if (!IsDebug) return;
+			if (!IS_DEBUG) return;
 
 			Debug.Log(text);
 			_mainThreadActions.Enqueue(() => SyncEvents.onDebugTextAdded?.Invoke(text));

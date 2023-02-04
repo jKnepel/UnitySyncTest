@@ -46,7 +46,7 @@ namespace jKnepel.UnitySync
 
                 _listener = new Socket(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
                 _listener.Bind(localEndPoint);
-                _listener.Listen(SyncManager.MaximumNumberConnections);
+                _listener.Listen(SyncManager.MAX_NUMBER_CONNECTIONS);
 
                 _listenerThread = new(() => ListenForIncomingConnections()) { IsBackground = true };
                 _listenerThread.Start();
@@ -154,7 +154,7 @@ namespace jKnepel.UnitySync
             {
                 while (_disposeCount == 0)
                 {
-                    if (_connectedClients.Count >= SyncManager.MaximumNumberConnections) continue;
+                    if (_connectedClients.Count >= SyncManager.MAX_NUMBER_CONNECTIONS) continue;
 
                     Socket handler = _listener.Accept();
                     SyncClientHandler connectedClient = new(handler, (handler, ex) => RemoveClientHandler(handler, ex));
@@ -223,7 +223,6 @@ namespace jKnepel.UnitySync
             List<GLTFRootGameObject> rootComponents = GLTFSceneHelper.AddOrGetSceneRootComponents(rootGameObjects);
             rootComponents.ForEach(r => r.Init());
 
-            List<byte[]> byteArrays = new();
             foreach (GLTFRootGameObject rootComponent in rootComponents)
             {
                 byte[] bytes = await rootComponent.SerializeGameObject(new ExportOptions());
