@@ -98,7 +98,15 @@ namespace jKnepel.UnitySync
 
                     bool success = _bytesToSend.TryDequeue(out byte[] bytes);
                     if (!success) continue;
-                    _client.Send(BitConverter.GetBytes((uint)bytes.Length), SocketFlags.None);
+
+                    byte[] lengthBytes = BitConverter.GetBytes((uint)bytes.Length);
+                    string bitString = "";
+                    foreach (byte bytee in lengthBytes)
+                        bitString += Convert.ToString(bytee, 2).PadLeft(8, '0');
+                    SyncManager.AddDebugMessage("Send: " + bitString);
+
+
+                    _client.Send(lengthBytes, SocketFlags.None);
                     _client.Send(bytes, SocketFlags.None);
                 }
                 if (_disposeCount == 0) _connectionAbolished?.Invoke(this, null);

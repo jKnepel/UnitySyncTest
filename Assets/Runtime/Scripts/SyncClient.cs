@@ -180,6 +180,11 @@ namespace jKnepel.UnitySync
 
 					if (dataLength <= 0) continue;
 
+					string bitString = "";
+					foreach (byte bytee in lengthBytes)
+						bitString += Convert.ToString(bytee, 2).PadLeft(8, '0');
+					SyncManager.AddDebugMessage("Received: " + bitString);
+
 					byte[] receivedBytes = new byte[dataLength];
 					_client.Receive(receivedBytes, SocketFlags.None);
 					SyncManager.AddDebugMessage("Received " + receivedBytes.Length + " Should have been " + dataLength);
