@@ -99,10 +99,10 @@ namespace jKnepel.UnitySync
                     bool success = _bytesToSend.TryDequeue(out byte[] data);
                     if (!success) continue;
 
-                    byte[] bytes = new byte[1 + 4 + data.Length];
-                    bytes[0] = SyncManager.PROTOCOL_ID;
-                    BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, 1);
-                    data.CopyTo(bytes, 5);
+                    byte[] bytes = new byte[4 + 4 + data.Length];
+                    BitConverter.GetBytes(SyncManager.PROTOCOL_ID).CopyTo(bytes, 0);
+                    BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, 4);
+                    data.CopyTo(bytes, 8);
 
                     _client.Send(bytes, SocketFlags.None);
                 }

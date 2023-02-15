@@ -164,9 +164,9 @@ namespace jKnepel.UnitySync
 			{
 				while (IsSocketConnected() && _disposeCount == 0)
 				{
-					byte[] protocolId = new byte[1];
+					byte[] protocolId = new byte[4];
 					_client.Receive(protocolId, SocketFlags.None);
-					if (protocolId[0] != SyncManager.PROTOCOL_ID)
+					if (BitConverter.ToUInt32(protocolId) != SyncManager.PROTOCOL_ID)
 						continue;
 
 					byte[] lengthBytes = new byte[4];
