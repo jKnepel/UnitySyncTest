@@ -72,8 +72,10 @@ namespace jKnepel.UnitySync
 				return;
 			}
 
-			SyncManager.OnUpdate += Update;
+#if UNITY_EDITOR
 			EditorApplication.playModeStateChanged += PreventPlayMode;
+#endif
+			SyncManager.OnUpdate += Update;
 			SyncEvents.onIsConnectedChanged?.Invoke(true);
 			SyncManager.AddDebugMessage("Client connected to Server");
 		}
@@ -103,8 +105,10 @@ namespace jKnepel.UnitySync
 						_receiverThread = null;
 					}
 
-					SyncManager.OnUpdate -= Update;
+#if UNITY_EDITOR
 					EditorApplication.playModeStateChanged -= PreventPlayMode;
+#endif
+					SyncManager.OnUpdate -= Update;
 					SyncEvents.onIsConnectedChanged?.Invoke(false);
 					SyncManager.AddDebugMessage("Connection was closed");
 				}
@@ -227,6 +231,7 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
+#if UNITY_EDITOR
 		private static void PreventPlayMode(PlayModeStateChange state)
 		{
 			if (state == PlayModeStateChange.ExitingEditMode)
@@ -234,6 +239,7 @@ namespace jKnepel.UnitySync
 				EditorApplication.isPlaying = false;
 			}
 		}
+#endif
 
 		private static string GetHashedBytes(byte[] bytes)
 		{

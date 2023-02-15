@@ -58,9 +58,9 @@ namespace jKnepel.UnitySync
             }
 #if UNITY_EDITOR
             ObjectChangeEvents.changesPublished += ChangesPublished;
+            EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
             SyncManager.OnUpdate += Update;
-            EditorApplication.playModeStateChanged += PreventPlayMode;
             SyncEvents.onIsOpenChanged?.Invoke(true);
             SyncManager.AddDebugMessage("Server is listening");
         }
@@ -95,9 +95,9 @@ namespace jKnepel.UnitySync
 
 #if UNITY_EDITOR
                     ObjectChangeEvents.changesPublished -= ChangesPublished;
+                    EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
                     SyncManager.OnUpdate -= Update;
-                    EditorApplication.playModeStateChanged -= PreventPlayMode;
                     SyncEvents.onIsOpenChanged?.Invoke(false);
                     SyncManager.AddDebugMessage("Server was closed");
                 }
@@ -238,6 +238,7 @@ namespace jKnepel.UnitySync
 
         #region helper methods
 
+#if UNITY_EDITOR
         private static void PreventPlayMode(PlayModeStateChange state)
         {
             if (state == PlayModeStateChange.ExitingEditMode)
@@ -245,7 +246,8 @@ namespace jKnepel.UnitySync
                 EditorApplication.isPlaying = false;
             }
         }
-
+#endif
+    
         #endregion
     }
 }
