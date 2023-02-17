@@ -179,12 +179,14 @@ namespace jKnepel.UnitySync
 					_client.Receive(receivedBytes, SocketFlags.None);
 					SyncManager.AddDebugMessage("Received " + receivedBytes.Length + " Should have been " + dataLength);
 
+					/*
 					string debugOut = "Received Bytes: ";
 					foreach (byte d in receivedBytes)
 					{
 						debugOut += Convert.ToString(d, 16).PadLeft(2, '0') + " ";
 					}
 					SyncManager.AddDebugMessage(debugOut);
+					*/
 
 					if (receivedBytes.Length == dataLength)
 					{
