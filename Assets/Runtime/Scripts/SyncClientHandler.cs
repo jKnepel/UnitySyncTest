@@ -104,6 +104,13 @@ namespace jKnepel.UnitySync
                     BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, 4);
                     data.CopyTo(bytes, 8);
 
+                    string debugOut = "Send Bytes: ";
+                    foreach (byte d in data)
+                    {
+                        debugOut += Convert.ToString(d, 16).PadLeft(2, '0') + " ";
+                    }
+                    SyncManager.AddDebugMessage(debugOut);
+
                     _client.Send(bytes, SocketFlags.None);
                 }
                 if (_disposeCount == 0) _connectionAbolished?.Invoke(this, null);

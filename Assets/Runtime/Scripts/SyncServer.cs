@@ -11,7 +11,6 @@ using UnityEngine.SceneManagement;
 using GLTF;
 using UnityGLTF;
 using Toph.GLTFSerializer.Components;
-using jKnepel.UnitySync;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
