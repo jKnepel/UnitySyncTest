@@ -176,7 +176,12 @@ namespace jKnepel.UnitySync
 						continue;
 
 					byte[] receivedBytes = new byte[dataLength];
-					_client.Receive(receivedBytes, SocketFlags.None);
+					for (int i = 0; i < dataLength; i++)
+					{
+						byte[] receivedByte = new byte[1];
+						_client.Receive(receivedByte, SocketFlags.None);
+						receivedBytes[i] = receivedByte[0];
+					}
 					SyncManager.AddDebugMessage("Received " + receivedBytes.Length + " Should have been " + dataLength);
 
 					/*
@@ -188,15 +193,7 @@ namespace jKnepel.UnitySync
 					SyncManager.AddDebugMessage(debugOut);
 					*/
 
-					if (receivedBytes.Length == dataLength)
-					{
-						/*
-                        string hashedBytes = GetHashedBytes(receivedBytes);
-                        _client.Send(ParseStringToByteArray(hashedBytes), SocketFlags.None);
-                        Debug.Log("Send Hash: " + hashedBytes);
-                        */
-						_receivedBytes.Enqueue(receivedBytes);
-					}
+					_receivedBytes.Enqueue(receivedBytes);
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
