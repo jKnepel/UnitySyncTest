@@ -19,8 +19,6 @@ namespace jKnepel.UnitySync
 		#region public members
 
 		public const bool IS_DEBUG = true;
-		public const int MAX_NUMBER_CONNECTIONS = 10;
-		public const uint PROTOCOL_ID = 876237842;
 
 		public static Action OnUpdate;
 		public static Action OnAwake;

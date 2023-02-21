@@ -1,11 +1,9 @@
 using System;
+using System.Collections;
 using System.IO;
 using System.Linq;
-using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
-using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
@@ -42,6 +40,15 @@ namespace jKnepel.UnitySync
 
 		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
 		private int _disposeCount;
+
+		public const int UPD_HEADER_LENGTH = 8;
+		public const uint PROTOCOL_ID = 876237842;
+		public const int PROTOCOL_ID_LENGTH = 4;
+		// TODO : public const int DATA_TYPE_LENGTH = 4;
+		public const int DATA_FLAG_LENGTH = 4;
+		// TODO : public const int ROOM_NAME_LENGTH = ?
+		// TODO : public const int SEQUENCE_LENGTH = 4;
+		public const int HEADER_LENGTH = PROTOCOL_ID_LENGTH + DATA_FLAG_LENGTH;
 
 		#region lifecycle
 
@@ -147,7 +154,7 @@ namespace jKnepel.UnitySync
 				if (success) action?.Invoke();
 			}
 
-			while (_receivedBytes.Count > 0 && _scene.isLoaded)
+			while (_receivedBytes.Count > 0)
 			{
 				bool success = _receivedBytes.TryDequeue(out byte[] bytes);
 				if (success) ImportHierarchy(bytes);
@@ -169,12 +176,12 @@ namespace jKnepel.UnitySync
 					bool success = _bytesToSend.TryDequeue(out byte[] data);
 					if (!success) continue;
 
-					byte[] bytes = new byte[4 + 4 + data.Length];
-					BitConverter.GetBytes(SyncManager.PROTOCOL_ID).CopyTo(bytes, 0);
-					BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, 4);
-					data.CopyTo(bytes, 8);
+					byte[] bytes = new byte[HEADER_LENGTH + data.Length];
+					BitConverter.GetBytes(PROTOCOL_ID).CopyTo(bytes, 0);
+					BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, PROTOCOL_ID_LENGTH);
+					data.CopyTo(bytes, HEADER_LENGTH);
 					_sender.Send(bytes, bytes.Length, _endpoint);
-					Debug.Log("Send");
+					Debug.Log("Send Bytes");
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
@@ -242,8 +249,14 @@ namespace jKnepel.UnitySync
 				GameObject go;
 				try { go = ((Component)o).gameObject; }
 				catch (InvalidCastException) { go = (GameObject)o; }
-				SendHierarchy(go);
+				SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
+
+				// Limit hierarchy syncs to 1 per second
+				ObjectChangeEvents.changesPublished -= ChangesPublished;
+				Task.Delay(1000).ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
 			}
+
+			// TODO : add functionality for sending hierarchy only on hierarchy changes
 		}
 #endif
 
