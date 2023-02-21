@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
@@ -24,9 +25,14 @@ namespace jKnepel.UnitySync
 {
 	public class SyncClient : IDisposable
 	{
-		private Socket _client;
+		private UdpClient _sender;
+		private UdpClient _listener;
+		private IPEndPoint _endpoint;
+
 		private Thread _senderThread;
 		private Thread _receiverThread;
+
+		private Scene _exportScene;
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 		private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
@@ -39,24 +45,14 @@ namespace jKnepel.UnitySync
 
 		#region lifecycle
 
-		public SyncClient(string ip, int port, string sceneName, Action<ExceptionDispatchInfo> connectionAbolished)
+		public SyncClient(int port, Scene exportScene, string sceneName, Action<ExceptionDispatchInfo> connectionAbolished)
 		{
 			try
 			{
 				_connectionAbolished = connectionAbolished;
 
-				IPHostEntry host = Dns.GetHostEntry(ip);
-				if (ip == "localhost") { host = Dns.GetHostEntry("127.0.01"); }
-				IPAddress ipAddress = host.AddressList[0];
-				IPEndPoint remoteEP = new(ipAddress, port);
-
-				_client = new(ipAddress.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
-				_client.Connect(remoteEP);
-
-				_senderThread = new(() => SocketSendThread()) { IsBackground = true };
-				_senderThread.Start();
-				_receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
-				_receiverThread.Start();
+				_sender = new();
+				_endpoint = new(IPAddress.Broadcast, port);
 
 #if UNITY_EDITOR
 				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
@@ -65,6 +61,12 @@ namespace jKnepel.UnitySync
                 _scene = SceneManager.CreateScene(sceneName);
 #endif
 				SceneManager.SetActiveScene(_scene);
+				_exportScene = exportScene;
+
+				_senderThread = new(() => SocketSendThread()) { IsBackground = true };
+				_senderThread.Start();
+				_receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
+				_receiverThread.Start();
 			}
 			catch (Exception ex)
 			{
@@ -73,6 +75,7 @@ namespace jKnepel.UnitySync
 			}
 
 #if UNITY_EDITOR
+			ObjectChangeEvents.changesPublished += ChangesPublished;
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			SyncManager.OnUpdate += Update;
@@ -106,6 +109,7 @@ namespace jKnepel.UnitySync
 					}
 
 #if UNITY_EDITOR
+					ObjectChangeEvents.changesPublished -= ChangesPublished;
 					EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 					SyncManager.OnUpdate -= Update;
@@ -115,10 +119,11 @@ namespace jKnepel.UnitySync
 
 				try
 				{
-					if (_client != null)
+					if (_sender != null)
 					{
-						_client.Shutdown(SocketShutdown.Both);
-						_client.Close();
+						_sender.Client.Shutdown(SocketShutdown.Both);
+						_sender.Close();
+						_sender.Dispose();
 					}
 				}
 				catch (ObjectDisposedException) { }
@@ -155,11 +160,33 @@ namespace jKnepel.UnitySync
 
 		private void SocketSendThread()
 		{
+			try
+			{
+				while(_disposeCount == 0)
+				{
+					if (_bytesToSend.Count == 0) continue;
 
+					bool success = _bytesToSend.TryDequeue(out byte[] data);
+					if (!success) continue;
+
+					byte[] bytes = new byte[4 + 4 + data.Length];
+					BitConverter.GetBytes(SyncManager.PROTOCOL_ID).CopyTo(bytes, 0);
+					BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, 4);
+					data.CopyTo(bytes, 8);
+					_sender.Send(bytes, bytes.Length, _endpoint);
+					Debug.Log("Send");
+				}
+				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
+			}
+			catch (Exception ex)
+			{
+				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+			}
 		}
 
 		private void SocketReceiveThread()
 		{
+			/*
 			try
 			{
 				while (IsSocketConnected() && _disposeCount == 0)
@@ -191,7 +218,7 @@ namespace jKnepel.UnitySync
 						debugOut += Convert.ToString(d, 16).PadLeft(2, '0') + " ";
 					}
 					SyncManager.AddDebugMessage(debugOut);
-					*/
+					
 
 					_receivedBytes.Enqueue(receivedBytes);
 				}
@@ -201,6 +228,30 @@ namespace jKnepel.UnitySync
 			{
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
 			}
+			*/
+		}
+
+#if UNITY_EDITOR
+		private void ChangesPublished(ref ObjectChangeEventStream stream)
+		{
+			ChangeGameObjectOrComponentPropertiesEventArgs obj;
+			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
+			if (obj.scene == _exportScene)
+			{
+				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
+				GameObject go;
+				try { go = ((Component)o).gameObject; }
+				catch (InvalidCastException) { go = (GameObject)o; }
+				SendHierarchy(go);
+			}
+		}
+#endif
+
+		private async void SendHierarchy(GameObject go)
+		{
+			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
+			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
+			_bytesToSend.Enqueue(bytes);
 		}
 
 		private async void ImportHierarchy(byte[] hierarchy)
@@ -246,39 +297,6 @@ namespace jKnepel.UnitySync
 			}
 		}
 #endif
-
-		private static string GetHashedBytes(byte[] bytes)
-		{
-			using var sha1 = new SHA1CryptoServiceProvider();
-			string hashedBytes = string.Concat(sha1.ComputeHash(bytes).Select(x => x.ToString("X2")));
-			return hashedBytes;
-		}
-
-		private static byte[] ParseStringToByteArray(string bytes)
-		{
-			byte[] arr = new byte[bytes.Length / 2];
-			for (int index = 0; index < arr.Length; index++)
-			{
-				string byteValue = bytes.Substring(index * 2, 2);
-				arr[index] = byte.Parse(byteValue, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-			}
-
-			return arr;
-		}
-
-		private static bool ByteArrayCompare(ReadOnlySpan<byte> a1, ReadOnlySpan<byte> a2)
-		{
-			return a1.SequenceEqual(a2);
-		}
-
-		private bool IsSocketConnected()
-		{
-			try
-			{
-				return !(_client.Poll(1, SelectMode.SelectRead) && _client.Available == 0);
-			}
-			catch (Exception) { return false; }
-		}
 
 		#endregion
 

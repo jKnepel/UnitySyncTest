@@ -30,7 +30,6 @@ namespace jKnepel.UnitySync
 
 		#region private members
 
-		private static SyncServer _server;
 		private static SyncClient _client;
 
 		private static readonly ConcurrentQueue<Action> _mainThreadActions = new();
@@ -41,8 +40,6 @@ namespace jKnepel.UnitySync
 
 		static SyncManager()
 		{
-			SyncEvents.onOpenTCPSocket += OpenTCPSocket;
-			SyncEvents.onCloseTCPSocket += CloseTCPSocket;
 			SyncEvents.onConnectClient += ConnectClient;
 			SyncEvents.onCloseClient += CloseClient;
 
@@ -91,62 +88,9 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region server logic
-
-		private static void OpenTCPSocket(string sceneName, string ip, int port)
-		{
-			if (_server != null)
-			{
-				Debug.LogWarning($"The server is already listening!");
-				return;
-			}
-
-			Scene exportScene = SceneManager.GetSceneByName(sceneName);
-			if (!exportScene.IsValid() || !exportScene.isLoaded)
-			{
-				Debug.LogWarning($"The Scene {sceneName} is not valid!");
-				return;
-			}
-
-			_server = new(ip, port, exportScene, (ExceptionDispatchInfo ex) =>
-			{
-				if (ex != null)
-				{
-					switch (ex.SourceException)
-					{
-						case SocketException:
-							AddDebugMessage("Socket Exception " + ex.SourceException.ToString());
-							break;
-						case ObjectDisposedException:
-							AddDebugMessage("Object Disposed Exception " + ex.SourceException.ToString());
-							break;
-						case ThreadStartException:
-						case OutOfMemoryException:
-							AddDebugMessage("Thread Exception " + ex.SourceException.ToString());
-							break;
-						default:
-							ex.Throw();
-							break;
-					}
-				}
-
-				CloseTCPSocket();
-			});
-		}
-
-		private static void CloseTCPSocket()
-		{
-			if (_server == null) return;
-
-			_server.Dispose();
-			_server = null;
-		}
-
-		#endregion
-
 		#region client logic
 
-		private static void ConnectClient(string sceneName, string ip, int port)
+		private static void ConnectClient(string exportSceneName, string importSceneName, int port)
 		{
 			if (_client != null)
 			{
@@ -154,14 +98,21 @@ namespace jKnepel.UnitySync
 				return;
 			}
 
-			Scene scene = SceneManager.GetSceneByName(sceneName);
-			if (scene.IsValid() || scene.isLoaded)
+			Scene exportScene = SceneManager.GetSceneByName(exportSceneName);
+			if (!exportScene.IsValid() || !exportScene.isLoaded)
 			{
-				Debug.LogWarning($"The Scene {sceneName} already exists!");
+				Debug.LogWarning($"The Scene {exportSceneName} is not valid!");
 				return;
 			}
 
-			_client = new(ip, port, sceneName, (ExceptionDispatchInfo ex) =>
+			Scene scene = SceneManager.GetSceneByName(importSceneName);
+			if (scene.IsValid() || scene.isLoaded)
+			{
+				Debug.LogWarning($"The Scene {importSceneName} already exists!");
+				return;
+			}
+
+			_client = new(port, exportScene, importSceneName, (ExceptionDispatchInfo ex) =>
 			{
 				if (ex != null)
 				{
