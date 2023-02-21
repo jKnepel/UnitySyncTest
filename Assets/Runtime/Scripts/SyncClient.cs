@@ -28,7 +28,7 @@ namespace jKnepel.UnitySync
 		private IPEndPoint _endpoint;
 
 		private Thread _senderThread;
-		private Thread _receiverThread;
+		private Thread _listenerThread;
 
 		private Scene _exportScene;
 
@@ -37,6 +37,10 @@ namespace jKnepel.UnitySync
 		private readonly ConcurrentQueue<byte[]> _receivedBytes = new();
 
 		private Scene _scene;
+
+		private Vector3 _lastCameraPosition;
+		private Vector3 _lastCameraRotation;
+		private int _sceneCameraDelay = 1000;
 
 		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
 		private int _disposeCount;
@@ -70,10 +74,10 @@ namespace jKnepel.UnitySync
 				SceneManager.SetActiveScene(_scene);
 				_exportScene = exportScene;
 
-				_senderThread = new(() => SocketSendThread()) { IsBackground = true };
+				_senderThread = new(() => SenderThread()) { IsBackground = true };
 				_senderThread.Start();
-				_receiverThread = new(() => SocketReceiveThread()) { IsBackground = true };
-				_receiverThread.Start();
+				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
+				_listenerThread.Start();
 			}
 			catch (Exception ex)
 			{
@@ -110,9 +114,9 @@ namespace jKnepel.UnitySync
 					{
 						_senderThread = null;
 					}
-					if (_receiverThread != null)
+					if (_listenerThread != null)
 					{
-						_receiverThread = null;
+						_listenerThread = null;
 					}
 
 #if UNITY_EDITOR
@@ -121,14 +125,13 @@ namespace jKnepel.UnitySync
 #endif
 					SyncManager.OnUpdate -= Update;
 					SyncEvents.onIsConnectedChanged?.Invoke(false);
-					SyncManager.AddDebugMessage("Connection was closed");
+					SyncManager.AddDebugMessage("Connection was closed"); //
 				}
 
 				try
 				{
 					if (_sender != null)
 					{
-						_sender.Client.Shutdown(SocketShutdown.Both);
 						_sender.Close();
 						_sender.Dispose();
 					}
@@ -159,13 +162,18 @@ namespace jKnepel.UnitySync
 				bool success = _receivedBytes.TryDequeue(out byte[] bytes);
 				if (success) ImportHierarchy(bytes);
 			}
+
+#if UNITY_EDITOR
+			if (SceneView.lastActiveSceneView.camera.transform.hasChanged) 
+				SceneCameraMoved();
+#endif
 		}
 
 		#endregion
 
-		#region private methods
+		#region network logic
 
-		private void SocketSendThread()
+		private void SenderThread()
 		{
 			try
 			{
@@ -181,7 +189,7 @@ namespace jKnepel.UnitySync
 					BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, PROTOCOL_ID_LENGTH);
 					data.CopyTo(bytes, HEADER_LENGTH);
 					_sender.Send(bytes, bytes.Length, _endpoint);
-					Debug.Log("Send Bytes");
+					SyncManager.AddDebugMessage("Send Bytes");
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
@@ -191,7 +199,7 @@ namespace jKnepel.UnitySync
 			}
 		}
 
-		private void SocketReceiveThread()
+		private void ListenerThread()
 		{
 			/*
 			try
@@ -216,16 +224,8 @@ namespace jKnepel.UnitySync
 						_client.Receive(receivedByte, SocketFlags.None);
 						receivedBytes[i] = receivedByte[0];
 					}
-					SyncManager.AddDebugMessage("Received " + receivedBytes.Length + " Should have been " + dataLength);
 
-					/*
-					string debugOut = "Received Bytes: ";
-					foreach (byte d in receivedBytes)
-					{
-						debugOut += Convert.ToString(d, 16).PadLeft(2, '0') + " ";
-					}
-					SyncManager.AddDebugMessage(debugOut);
-					
+					DebugBytesLog(receivedBytes, "Received Bytes: ");					
 
 					_receivedBytes.Enqueue(receivedBytes);
 				}
@@ -237,6 +237,10 @@ namespace jKnepel.UnitySync
 			}
 			*/
 		}
+
+		#endregion
+
+		#region editor updates
 
 #if UNITY_EDITOR
 		private void ChangesPublished(ref ObjectChangeEventStream stream)
@@ -258,7 +262,48 @@ namespace jKnepel.UnitySync
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
 		}
+
+		private void SceneCameraMoved()
+		{
+			Transform t = SceneView.lastActiveSceneView.camera.transform;
+			// limit camera syncs to 1 per second
+			if (_sceneCameraDelay < 1000)
+			{
+				t.hasChanged = false;
+				_sceneCameraDelay++;
+				return;
+			}
+
+			if (_lastCameraPosition != null 
+				&& t.position.Equals(_lastCameraPosition) 
+				&& t.eulerAngles.Equals(_lastCameraRotation))
+			{
+				_lastCameraPosition = t.position;
+				_lastCameraRotation = t.eulerAngles;
+				t.hasChanged = false;
+				return;
+			}
+
+			// TODO : optimize this
+			byte[] bytes = new byte[sizeof(float) * 6];
+			Buffer.BlockCopy(BitConverter.GetBytes(t.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(t.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(t.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
+			_bytesToSend.Enqueue(bytes);
+
+			DebugBytesLog(bytes, "Camera Update Bytes: ");
+
+			t.hasChanged = false;
+			_sceneCameraDelay = 0;
+		}
 #endif
+
+		#endregion
+
+		#region serialization
 
 		private async void SendHierarchy(GameObject go)
 		{
@@ -310,6 +355,16 @@ namespace jKnepel.UnitySync
 			}
 		}
 #endif
+
+		private static void DebugBytesLog(byte[] bytes, string msg, bool inBinary = false)
+		{
+			string debugOut = msg;
+			foreach (byte d in bytes)
+			{
+				debugOut += Convert.ToString(d, inBinary ? 2 : 16).PadLeft(inBinary ? 8 : 2, '0') + " ";
+			}
+			SyncManager.AddDebugMessage(debugOut);
+		}
 
 		#endregion
 
