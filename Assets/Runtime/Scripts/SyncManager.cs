@@ -18,6 +18,9 @@ namespace jKnepel.UnitySync
 	{
 		#region public members
 
+		public const uint PROTOCOL_ID = 876237842;
+		public static bool IsConnected { get; private set; }
+
 		public static Action OnUpdate;
 		public static Action OnAwake;
 		public static Action OnStart;
@@ -48,6 +51,8 @@ namespace jKnepel.UnitySync
 			SyncRuntimeManager.Instance.OnStart += Start;
 			SyncRuntimeManager.Instance.OnUpdate += Update;
 #endif
+
+			SyncSettings _ = SyncSettings.Instance;
 		}
 
 		public static void Init() { }
@@ -86,7 +91,7 @@ namespace jKnepel.UnitySync
 
 		#region client logic
 
-		private static void ConnectClient(string exportSceneName, string importSceneName, int port)
+		private static void ConnectClient()
 		{
 			if (_client != null)
 			{
@@ -102,21 +107,21 @@ namespace jKnepel.UnitySync
 			}
 #endif
 
-			Scene exportScene = SceneManager.GetSceneByName(exportSceneName);
+			Scene exportScene = SceneManager.GetSceneByName(SyncSettings.Instance.ExportSceneName);
 			if (!exportScene.IsValid() || !exportScene.isLoaded)
 			{
-				Debug.LogWarning($"The Scene {exportSceneName} is not valid!");
+				Debug.LogWarning($"The Scene {SyncSettings.Instance.ExportSceneName} is not valid!");
 				return;
 			}
 
-			Scene scene = SceneManager.GetSceneByName(importSceneName);
+			Scene scene = SceneManager.GetSceneByName(SyncSettings.Instance.ImportSceneName);
 			if (scene.IsValid() || scene.isLoaded)
 			{
-				Debug.LogWarning($"The Scene {importSceneName} already exists!");
+				Debug.LogWarning($"The Scene {SyncSettings.Instance.ImportSceneName} already exists!");
 				return;
 			}
 
-			_client = new(port, exportScene, importSceneName, (ExceptionDispatchInfo ex) =>
+			_client = new(exportScene, (ExceptionDispatchInfo ex) =>
 			{
 				if (ex != null)
 				{
@@ -140,12 +145,14 @@ namespace jKnepel.UnitySync
 
 				CloseClient();
 			});
+			IsConnected = true;
 		}
 
 		private static void CloseClient()
 		{
-			if (_client == null) return;
+			if (!IsConnected) return;
 
+			IsConnected = false;
 			_client.Dispose();
 			_client = null;
 		}

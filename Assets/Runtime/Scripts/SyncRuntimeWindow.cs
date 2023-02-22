@@ -25,7 +25,7 @@ namespace jKnepel.UnitySync
 
 		public void ConnectClient()
 		{
-			SyncEvents.onConnectClient?.Invoke(_exportSceneName.text, _importSceneName.text, int.Parse(_port.text));
+			SyncEvents.onConnectClient?.Invoke();
 		}
 
 		public void CloseClient()

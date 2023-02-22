@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -31,6 +30,7 @@ namespace jKnepel.UnitySync
 
 		private Thread _senderThread;
 		private Thread _listenerThread;
+		private Thread _heartbeatThread;
 
 		private Scene _exportScene;
 
@@ -39,7 +39,7 @@ namespace jKnepel.UnitySync
 		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
 
 		// TODO : replace transform with client struct for names, position etc.
-		private readonly ConcurrentDictionary<string, Transform> _connectedClients = new();
+		private readonly ConcurrentDictionary<string, SyncConnectedClient> _connectedClients = new();
 
 		private Scene _scene;
 
@@ -50,21 +50,26 @@ namespace jKnepel.UnitySync
 		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
 		private int _disposeCount;
 
-		#region constants
+		#region packet length constants
 
-		public const uint PROTOCOL_ID = 876237842;
-		public const int PROTOCOL_ID_LENGTH = 4;
+		// headers
+		private const int PROTOCOL_ID_LENGTH = 4;
 		// TODO : public const int ROOM_NAME_LENGTH = ?
-		public const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
+		private const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
 		// TODO : public const int SEQUENCE_LENGTH = 4;
-		public const int DATA_TYPE_LENGTH = 1; // id of the packet type
-		public const int DATA_FLAG_LENGTH = 4; // flag containing data length
+		private const int DATA_TYPE_LENGTH = 1; // id of the packet type
+		private const int DATA_FLAG_LENGTH = 4; // flag containing data length
+
+		// data
+		private const int COLOR_FLAG_LENGTH = 3;
+		private const int CLIENT_CAMERA_DATA_LENGTH = 24;
+		private const int Transform_DATA_LENGTH = 24;
 
 		#endregion
 
 		#region lifecycle
 
-		public SyncClient(int port, Scene exportScene, string sceneName, Action<ExceptionDispatchInfo> connectionAbolished)
+		public SyncClient(Scene exportScene, Action<ExceptionDispatchInfo> connectionAbolished)
 		{
 			try
 			{
@@ -74,15 +79,15 @@ namespace jKnepel.UnitySync
 
 				_sender = new();
 				_sender.EnableBroadcast = true;
-				_listener = new(port);
+				_listener = new(SyncSettings.Instance.Port);
 				_listener.EnableBroadcast = true;
 
-				_broadCastEndpoint = new(IPAddress.Broadcast, port);
-				_receiveEndpoint = new(IPAddress.Any, port);
+				_broadCastEndpoint = new(IPAddress.Broadcast, SyncSettings.Instance.Port);
+				_receiveEndpoint = new(IPAddress.Any, SyncSettings.Instance.Port);
 
 #if UNITY_EDITOR
 				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-				_scene.name = sceneName;
+				_scene.name = SyncSettings.Instance.ImportSceneName;
 #else
                 _scene = SceneManager.CreateScene(sceneName);
 #endif
@@ -93,6 +98,8 @@ namespace jKnepel.UnitySync
 				_senderThread.Start();
 				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
 				_listenerThread.Start();
+				_heartbeatThread = new(() => HeartbeatThread()) { IsBackground = true };
+				_heartbeatThread.Start();
 			}
 			catch (Exception ex)
 			{
@@ -105,7 +112,6 @@ namespace jKnepel.UnitySync
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			SyncManager.OnUpdate += Update;
-			SyncEvents.onIsConnectedChanged?.Invoke(true);
 			SyncManager.AddDebugMessage("Client connected to Server");
 		}
 
@@ -139,16 +145,15 @@ namespace jKnepel.UnitySync
 					EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 					SyncManager.OnUpdate -= Update;
-					SyncEvents.onIsConnectedChanged?.Invoke(false);
 					SyncManager.AddDebugMessage("Connection was closed");
 				}
 
-				foreach (Transform client in _connectedClients.Values)
+				foreach (SyncConnectedClient client in _connectedClients.Values)
 				{
 #if UNITY_EDITOR
-					GameObject.DestroyImmediate(client.gameObject);
+					GameObject.DestroyImmediate(client.Visualizer.gameObject);
 #else
-					GameObject.Destroy(client.gameObject);
+					GameObject.Destroy(client.Visualizer.gameObject);
 #endif
 				}
 
@@ -190,13 +195,16 @@ namespace jKnepel.UnitySync
 
 			while (_receivedPackets.Count > 0)
 			{
-				// TODO : implement different functionalities depending on packet type
+				// TODO : maybe implement unpacking on different threads to increase efficiency
 				if (_receivedPackets.TryDequeue(out SyncPacket packet))
 				{
 					switch (packet.Type)
 					{
+						case SyncPacketType.Heartbeat:
+							UpdateHeartbeat(packet.Sender, packet.Data);
+							break;
 						case SyncPacketType.ClientCamera:
-							UpdateEditorCamera(packet.Sender, packet.Data);
+							UpdateClientCamera(packet.Sender, packet.Data);
 							break;
 						default: break;
 					}
@@ -218,6 +226,32 @@ namespace jKnepel.UnitySync
 		#region network logic
 
 		#region send logic
+
+		private void HeartbeatThread()
+		{
+			try
+			{
+				while (_disposeCount == 0)
+				{
+					byte[] color = { SyncSettings.Instance.Color.r, SyncSettings.Instance.Color.g, SyncSettings.Instance.Color.b };
+
+					// prepare data with room name, username and -color
+					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + COLOR_FLAG_LENGTH];
+					data[CRC32_LENGTH] = (byte)SyncPacketType.Heartbeat;
+					Array.Copy(color, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, COLOR_FLAG_LENGTH);
+					CalculateAndAddChecksum(data);
+
+					_sender.Send(data, data.Length, _broadCastEndpoint);
+					DebugBytesLog(data, "Send Heartbeat Bytes: ");
+					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
+				}
+				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
+			}
+			catch (Exception ex)
+			{
+				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+			}
+		}
 
 		private void SenderThread()
 		{
@@ -282,18 +316,20 @@ namespace jKnepel.UnitySync
 
 					// check crc32 checksum
 					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-					DebugBytesLog(checksum, "Received Checksum: ");
 					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH, receivedBytes.Length - checksum.Length);
-					DebugBytesLog(remainder, "Received Data: ");
 					if (!checksum.SequenceEqual(GetCRCChecksumBytes(remainder)))
 						continue;
 
 					// handle data depending on packet type
 					DebugBytesLog(receivedBytes, "Received Bytes: ");
+					byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
 					switch ((SyncPacketType)remainder[0])
 					{
+						case SyncPacketType.Heartbeat:
+							_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
+							break;
 						case SyncPacketType.ClientCamera:
-							ReceiveClientCameraBytes(sender, GetBytesFromArray(remainder, 1, 24));
+							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
 							break;
 						default: break;
 					}
@@ -304,11 +340,6 @@ namespace jKnepel.UnitySync
 			{
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
 			}
-		}
-
-		private void ReceiveClientCameraBytes(string sender, byte[] bytes)
-		{
-			_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, bytes));
 		}
 
 		#endregion
@@ -384,8 +415,32 @@ namespace jKnepel.UnitySync
 
 		#region consume updates
 
+		// TODO : remove client with no heartbeat
+		private void UpdateHeartbeat(string sender, byte[] data)
+		{
+			Color32 color = new(data[0], data[1], data[2], 255);
+			if (!_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
+			{
+				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab);
+				client = new(sender, "", obj.transform, color);
+				_connectedClients.TryAdd(sender, client);
+			}
+
+			if (!SyncSettings.Instance.ShowSyncObjectInHiearchy) 
+				client.Visualizer.hideFlags = HideFlags.HideInHierarchy;
+			// TODO : add username
+			client.Color = color;
+			client.Visualizer.name = sender;
+			// TODO : possible bug, shared material causes all clients to have same color?
+			client.Visualizer.GetChild(1).GetComponent<Renderer>().sharedMaterial.SetColor("_Color", color);
+			TMPro.TMP_Text tag = client.Visualizer.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>();
+			tag.text = sender;
+			tag.color = color;
+			client.lastHeartbeat = DateTime.Now;
+		}
+
 		// TODO : optimize this
-		private void UpdateEditorCamera(string sender, byte[] data)
+		private void UpdateClientCamera(string sender, byte[] data)
 		{
 			int size = sizeof(float);
 			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
@@ -395,34 +450,17 @@ namespace jKnepel.UnitySync
 			byte[] rotationY = GetBytesFromArray(data, 4 * size, size);
 			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
 
-			if (_connectedClients.TryGetValue(sender, out Transform camera))
+			if (_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
-				if (camera == null)
-				{
-					_connectedClients.TryRemove(sender, out Transform _);
-					return;
-				}
-
-				camera.position = new Vector3(BitConverter.ToSingle(positionX),
+				client.IsVisible = true;
+				client.Visualizer.position = new Vector3(BitConverter.ToSingle(positionX),
 					BitConverter.ToSingle(positionY),
 					BitConverter.ToSingle(positionZ));
-				camera.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
+				client.Visualizer.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
 					BitConverter.ToSingle(rotationY),
 					BitConverter.ToSingle(rotationZ));
 				return;
 			}
-
-			GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab);
-			if (!SyncSettings.Instance.ShowSyncObjectInHiearchy) obj.hideFlags = HideFlags.HideInHierarchy;
-			obj.name = sender;
-			obj.transform.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>().text = sender;
-			obj.transform.position = new Vector3(BitConverter.ToSingle(positionX),
-				BitConverter.ToSingle(positionY),
-				BitConverter.ToSingle(positionZ));
-			obj.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
-				BitConverter.ToSingle(rotationY),
-				BitConverter.ToSingle(rotationZ));
-			_connectedClients.TryAdd(sender, obj.transform);
 		}
 
 		private async void ImportHierarchy(byte[] hierarchy)
@@ -472,8 +510,10 @@ namespace jKnepel.UnitySync
 
 		private byte[] GetCRCChecksumBytes(byte[] data)
 		{
+			// calculate crc32 checksum from protocol id, room id and data
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
-			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
+			Array.Copy(BitConverter.GetBytes(SyncManager.PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
+			// TODO : add room id
 			Array.Copy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
 			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
 		}

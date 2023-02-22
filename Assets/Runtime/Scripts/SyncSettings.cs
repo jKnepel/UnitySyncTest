@@ -20,12 +20,23 @@ public class SyncSettings : ScriptableObject
 		}
 	}
     
+    // debug settings
     public bool IsDebug = true;
     public bool AllowReceivingOwnPackets = false;
     public bool ShowSyncObjectInHiearchy = false;
 
+    // packet frequency settings
     public int GameObjectAndComponentUpdateDelay = 500;
     public int ClientCameraUpdateDelay = 50;
+    public int HeartbeatDelay = 5000;
 
+    // user settings
+    public int Port = 8080;
+    public string Username = "Username";
+    public Color32 Color = new(255, 255, 255, 255);
+    public string ExportSceneName = "ExportScene";
+    public string ImportSceneName = "ImportScene";
+
+    // prefabs
     public GameObject ClientTransformPrefab;
 }
