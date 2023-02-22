@@ -45,7 +45,7 @@ namespace jKnepel.UnitySync
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
-		private int _sceneCameraDelay = 1000;
+		private int _cameraUpdateDelay = 1000;
 
 		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
 		private int _disposeCount;
@@ -141,6 +141,15 @@ namespace jKnepel.UnitySync
 					SyncManager.AddDebugMessage("Connection was closed"); //
 				}
 
+				foreach (Transform client in _connectedClients.Values)
+				{
+#if UNITY_EDITOR
+					GameObject.DestroyImmediate(client.gameObject);
+#else
+					GameObject.Destroy(client.gameObject);
+#endif
+				}
+
 				try
 				{
 					if (_sender != null)
@@ -179,7 +188,7 @@ namespace jKnepel.UnitySync
 
 			while (_receivedPackets.Count > 0)
 			{
-				// TODO : implement different functionalities depending on byte type
+				// TODO : implement different functionalities depending on packet type
 				if (_receivedPackets.TryDequeue(out SyncPacket packet))
 				{
 					switch (packet.Type)
@@ -194,10 +203,13 @@ namespace jKnepel.UnitySync
 				}
 			}
 
+			_cameraUpdateDelay++;
 #if UNITY_EDITOR
-			_sceneCameraDelay++;
-			if (SceneView.lastActiveSceneView.camera.transform.hasChanged) 
-				SceneCameraMoved();
+			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
+				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
+#else
+			if (Camera.main.transform && Camera.main.transform.hasChanged)
+				CurrentCameraMoved(Camera.current.transform);
 #endif
 		}
 
@@ -209,7 +221,7 @@ namespace jKnepel.UnitySync
 		{
 			try
 			{
-				while(_disposeCount == 0)
+				while (_disposeCount == 0)
 				{
 					if (_bytesToSend.Count == 0)
 						continue;
@@ -243,7 +255,7 @@ namespace jKnepel.UnitySync
 				{
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(_localIPAddress) && !SyncSettings.instance.AllowReceivingOwnPackets)
+					if (sender.Equals(_localIPAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
 						continue;
 
 					DebugBytesLog(receivedBytes, "Received Bytes: ");
@@ -283,48 +295,47 @@ namespace jKnepel.UnitySync
 
 				// Limit hierarchy syncs
 				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(SyncSettings.instance.GameObjectAndComponentUpdateDelay)
+				Task.Delay(SyncSettings.Instance.GameObjectAndComponentUpdateDelay)
 					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
 			}
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
 		}
+#endif
 
 		// TODO : implement build alternative
-		private void SceneCameraMoved()
+		private void CurrentCameraMoved(Transform camera)
 		{
-			Transform t = SceneView.lastActiveSceneView.camera.transform;
 			// limit camera syncs
-			if (_sceneCameraDelay < SyncSettings.instance.EditorCameraUpdateDelay)
+			if (_cameraUpdateDelay < SyncSettings.Instance.EditorCameraUpdateDelay)
 			{
-				t.hasChanged = false;
+				camera.hasChanged = false;
 				return;
 			}
 
 			if (_lastCameraPosition != null
-				&& t.position.Equals(_lastCameraPosition) 
-				&& t.eulerAngles.Equals(_lastCameraRotation))
+				&& camera.position.Equals(_lastCameraPosition)
+				&& camera.eulerAngles.Equals(_lastCameraRotation))
 			{
-				t.hasChanged = false;
+				camera.hasChanged = false;
 				return;
 			}
 
 			// TODO : optimize this
 			byte[] bytes = new byte[sizeof(float) * 6];
-			Buffer.BlockCopy(BitConverter.GetBytes(t.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(t.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(t.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(camera.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(camera.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(camera.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(camera.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(camera.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
+			Buffer.BlockCopy(BitConverter.GetBytes(camera.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
 			_bytesToSend.Enqueue(bytes);
 
-			_lastCameraPosition = t.position;
-			_lastCameraRotation = t.eulerAngles;
-			t.hasChanged = false;
-			_sceneCameraDelay = 0;
+			_lastCameraPosition = camera.position;
+			_lastCameraRotation = camera.eulerAngles;
+			camera.hasChanged = false;
+			_cameraUpdateDelay = 0;
 		}
-#endif
 
 		private async void SendHierarchy(GameObject go)
 		{
@@ -335,7 +346,7 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region apply updates
+		#region consume updates
 
 		// TODO : optimize this
 		// TODO : implement build alternative
@@ -366,13 +377,13 @@ namespace jKnepel.UnitySync
 				return;
 			}
 
-			GameObject obj = GameObject.Instantiate(SyncSettings.instance.ClientTransformPrefab);
-			obj.hideFlags = HideFlags.HideInHierarchy;
+			GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab);
+			if (!SyncSettings.Instance.ShowSyncObjectInHiearchy) obj.hideFlags = HideFlags.HideInHierarchy;
 			obj.name = sender;
 			obj.transform.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>().text = sender;
 			obj.transform.position = new Vector3(BitConverter.ToSingle(positionX),
-					BitConverter.ToSingle(positionY),
-					BitConverter.ToSingle(positionZ));
+				BitConverter.ToSingle(positionY),
+				BitConverter.ToSingle(positionZ));
 			obj.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
 				BitConverter.ToSingle(rotationY),
 				BitConverter.ToSingle(rotationZ));
@@ -406,7 +417,7 @@ namespace jKnepel.UnitySync
 			GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
 			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncSettings.instance.IsDebug, -1, true, onLoadComplete);
+			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncSettings.Instance.IsDebug, -1, true, onLoadComplete);
 		}
 
 		#endregion

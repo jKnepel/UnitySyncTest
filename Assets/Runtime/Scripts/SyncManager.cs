@@ -76,7 +76,7 @@ namespace jKnepel.UnitySync
 
 		public static void AddDebugMessage(string text)
 		{
-			if (!SyncSettings.instance.IsDebug) return;
+			if (!SyncSettings.Instance.IsDebug) return;
 
 			Debug.Log(text);
 			_mainThreadActions.Enqueue(() => SyncEvents.onDebugTextAdded?.Invoke(text));
@@ -93,6 +93,14 @@ namespace jKnepel.UnitySync
 				Debug.LogWarning($"The client is already connected!");
 				return;
 			}
+
+#if UNITY_EDITOR
+			if (EditorApplication.isPlaying)
+			{
+				Debug.LogWarning($"This is not possible in the Editor Playmode");
+				return;
+			}
+#endif
 
 			Scene exportScene = SceneManager.GetSceneByName(exportSceneName);
 			if (!exportScene.IsValid() || !exportScene.isLoaded)
