@@ -25,7 +25,7 @@ public class SyncSettings : ScriptableObject
     public bool ShowSyncObjectInHiearchy = false;
 
     public int GameObjectAndComponentUpdateDelay = 500;
-    public int EditorCameraUpdateDelay = 500;
+    public int ClientCameraUpdateDelay = 50;
 
     public GameObject ClientTransformPrefab;
 }

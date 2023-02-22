@@ -303,11 +303,10 @@ namespace jKnepel.UnitySync
 		}
 #endif
 
-		// TODO : implement build alternative
 		private void CurrentCameraMoved(Transform camera)
 		{
 			// limit camera syncs
-			if (_cameraUpdateDelay < SyncSettings.Instance.EditorCameraUpdateDelay)
+			if (_cameraUpdateDelay < SyncSettings.Instance.ClientCameraUpdateDelay)
 			{
 				camera.hasChanged = false;
 				return;
@@ -349,7 +348,6 @@ namespace jKnepel.UnitySync
 		#region consume updates
 
 		// TODO : optimize this
-		// TODO : implement build alternative
 		private void UpdateEditorCamera(string sender, byte[] data)
 		{
 			int size = sizeof(float);
