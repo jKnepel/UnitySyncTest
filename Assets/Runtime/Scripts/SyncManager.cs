@@ -56,8 +56,8 @@ namespace jKnepel.UnitySync
 		{
 			OnUpdate?.Invoke();
 
-			bool success = _mainThreadActions.TryDequeue(out Action action);
-			if (success) action?.Invoke();
+			if (_mainThreadActions.TryDequeue(out Action action))
+				action?.Invoke();
 		}
 
 		private static void Awake()

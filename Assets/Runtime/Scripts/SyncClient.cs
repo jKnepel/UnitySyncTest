@@ -173,15 +173,14 @@ namespace jKnepel.UnitySync
 		{
 			while (_mainThreadActions.Count > 0)
 			{
-				bool success = _mainThreadActions.TryDequeue(out Action action);
-				if (success) action?.Invoke();
+				if (_mainThreadActions.TryDequeue(out Action action))
+					action?.Invoke();
 			}
 
 			while (_receivedPackets.Count > 0)
 			{
-				bool success = _receivedPackets.TryDequeue(out SyncPacket packet);
 				// TODO : implement different functionalities depending on byte type
-				if (success)
+				if (_receivedPackets.TryDequeue(out SyncPacket packet))
 				{
 					switch (packet.Type)
 					{
@@ -212,10 +211,11 @@ namespace jKnepel.UnitySync
 			{
 				while(_disposeCount == 0)
 				{
-					if (_bytesToSend.Count == 0) continue;
+					if (_bytesToSend.Count == 0)
+						continue;
 
-					bool success = _bytesToSend.TryDequeue(out byte[] data);
-					if (!success) continue;
+					if (!_bytesToSend.TryDequeue(out byte[] data))
+						continue;
 
 					byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
 					Buffer.BlockCopy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
