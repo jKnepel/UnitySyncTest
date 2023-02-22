@@ -49,7 +49,7 @@ namespace jKnepel.UnitySync
                 SyncEvents.onConnectClient?.Invoke(_exportSceneName, _importSceneName, int.Parse(_port));
             if (GUI.Button(new Rect(115, 140, 100, 30), new GUIContent("Close Client", "Close Client")))
                 SyncEvents.onCloseClient?.Invoke();
-            GUI.Label(new Rect(225, 140, 100, 30), _isConnected ? "Connected" : "Disconnected");
+            GUI.Label(new Rect(225, 147.5f, 100, 30), _isConnected ? "Connected" : "Disconnected");
         }
 
 		#region setters

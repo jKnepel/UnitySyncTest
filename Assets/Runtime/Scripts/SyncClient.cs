@@ -23,9 +23,11 @@ namespace jKnepel.UnitySync
 {
 	public class SyncClient : IDisposable
 	{
-		private UdpClient _sender;
-		private UdpClient _listener;
-		private IPEndPoint _endpoint;
+		private readonly UdpClient _sender;
+		private readonly UdpClient _listener;
+		private readonly IPEndPoint _broadCastEndpoint;
+		private IPEndPoint _receiveEndpoint;
+		private string _localIPAddress;
 
 		private Thread _senderThread;
 		private Thread _listenerThread;
@@ -34,7 +36,10 @@ namespace jKnepel.UnitySync
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 		private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
-		private readonly ConcurrentQueue<byte[]> _receivedBytes = new();
+		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
+
+		// TODO : replace transform with client struct for names, position etc.
+		private readonly ConcurrentDictionary<string, Transform> _connectedClients = new();
 
 		private Scene _scene;
 
@@ -48,6 +53,7 @@ namespace jKnepel.UnitySync
 		public const int UPD_HEADER_LENGTH = 8;
 		public const uint PROTOCOL_ID = 876237842;
 		public const int PROTOCOL_ID_LENGTH = 4;
+		// TODO : public const int CRC_LENGTH = 4;
 		// TODO : public const int DATA_TYPE_LENGTH = 4;
 		public const int DATA_FLAG_LENGTH = 4;
 		// TODO : public const int ROOM_NAME_LENGTH = ?
@@ -62,8 +68,15 @@ namespace jKnepel.UnitySync
 			{
 				_connectionAbolished = connectionAbolished;
 
+				FindLocalIPAddress();
+
 				_sender = new();
-				_endpoint = new(IPAddress.Broadcast, port);
+				_sender.EnableBroadcast = true;
+				_listener = new(port);
+				_listener.EnableBroadcast = true;
+
+				_broadCastEndpoint = new(IPAddress.Broadcast, port);
+				_receiveEndpoint = new(IPAddress.Any, port);
 
 #if UNITY_EDITOR
 				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
@@ -135,9 +148,16 @@ namespace jKnepel.UnitySync
 						_sender.Close();
 						_sender.Dispose();
 					}
+					if (_listener != null)
+					{
+						_listener.Client.Shutdown(SocketShutdown.Both);
+						_listener.Close();
+						_listener.Dispose();
+					}
 				}
 				catch (ObjectDisposedException) { }
 
+				// TODO : doesnt work on recompile, fix
 				if (_scene.IsValid())
 				{
 #if UNITY_EDITOR
@@ -157,13 +177,26 @@ namespace jKnepel.UnitySync
 				if (success) action?.Invoke();
 			}
 
-			while (_receivedBytes.Count > 0)
+			while (_receivedPackets.Count > 0)
 			{
-				bool success = _receivedBytes.TryDequeue(out byte[] bytes);
-				if (success) ImportHierarchy(bytes);
+				bool success = _receivedPackets.TryDequeue(out SyncPacket packet);
+				// TODO : implement different functionalities depending on byte type
+				if (success)
+				{
+					switch (packet.Type)
+					{
+						case SyncPacketType.EditorCamera:
+							UpdateEditorCamera(packet.Sender, packet.Data);
+							break;
+						case SyncPacketType.Hierarchy: break;
+						case SyncPacketType.Component: break;
+						case SyncPacketType.Transform: break;
+					}
+				}
 			}
 
 #if UNITY_EDITOR
+			_sceneCameraDelay++;
 			if (SceneView.lastActiveSceneView.camera.transform.hasChanged) 
 				SceneCameraMoved();
 #endif
@@ -184,12 +217,15 @@ namespace jKnepel.UnitySync
 					bool success = _bytesToSend.TryDequeue(out byte[] data);
 					if (!success) continue;
 
-					byte[] bytes = new byte[HEADER_LENGTH + data.Length];
-					BitConverter.GetBytes(PROTOCOL_ID).CopyTo(bytes, 0);
-					BitConverter.GetBytes((uint)data.Length).CopyTo(bytes, PROTOCOL_ID_LENGTH);
-					data.CopyTo(bytes, HEADER_LENGTH);
-					_sender.Send(bytes, bytes.Length, _endpoint);
-					SyncManager.AddDebugMessage("Send Bytes");
+					byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
+					Buffer.BlockCopy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
+					// TODO : add CRC
+					// TODO : add sequence ids
+					// TODO : add package type id
+					Buffer.BlockCopy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
+
+					_sender.Send(bytes, bytes.Length, _broadCastEndpoint);
+					DebugBytesLog(bytes, "Send Bytes: ");
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
@@ -201,33 +237,24 @@ namespace jKnepel.UnitySync
 
 		private void ListenerThread()
 		{
-			/*
 			try
 			{
-				while (IsSocketConnected() && _disposeCount == 0)
+				while (_disposeCount == 0)
 				{
-					byte[] protocolId = new byte[4];
-					_client.Receive(protocolId, SocketFlags.None);
-					if (BitConverter.ToUInt32(protocolId) != SyncManager.PROTOCOL_ID)
+					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
+					string sender = _receiveEndpoint.Address.ToString();
+					if (sender.Equals(_localIPAddress) && !SyncSettings.instance.AllowReceivingOwnPackets)
 						continue;
 
-					byte[] lengthBytes = new byte[4];
-					_client.Receive(lengthBytes, SocketFlags.None);
-					int dataLength = (int)BitConverter.ToUInt32(lengthBytes);
-					if (dataLength <= 0)
+					DebugBytesLog(receivedBytes, "Received Bytes: ");
+					byte[] protocolId = GetBytesFromArray(receivedBytes, 0, PROTOCOL_ID_LENGTH);
+					if (BitConverter.ToUInt32(protocolId) != PROTOCOL_ID)
 						continue;
 
-					byte[] receivedBytes = new byte[dataLength];
-					for (int i = 0; i < dataLength; i++)
-					{
-						byte[] receivedByte = new byte[1];
-						_client.Receive(receivedByte, SocketFlags.None);
-						receivedBytes[i] = receivedByte[0];
-					}
+					byte[] data = GetBytesFromArray(receivedBytes, PROTOCOL_ID_LENGTH, 24);
+					DebugBytesLog(data, "Received Data Bytes: ");
 
-					DebugBytesLog(receivedBytes, "Received Bytes: ");					
-
-					_receivedBytes.Enqueue(receivedBytes);
+					_receivedPackets.Enqueue(new(SyncPacketType.EditorCamera, sender, data));
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
@@ -235,12 +262,11 @@ namespace jKnepel.UnitySync
 			{
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
 			}
-			*/
 		}
 
 		#endregion
 
-		#region editor updates
+		#region notify updates
 
 #if UNITY_EDITOR
 		private void ChangesPublished(ref ObjectChangeEventStream stream)
@@ -255,31 +281,30 @@ namespace jKnepel.UnitySync
 				catch (InvalidCastException) { go = (GameObject)o; }
 				SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
 
-				// Limit hierarchy syncs to 1 per second
+				// Limit hierarchy syncs
 				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(1000).ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
+				Task.Delay(SyncSettings.instance.GameObjectAndComponentUpdateDelay)
+					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
 			}
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
 		}
 
+		// TODO : implement build alternative
 		private void SceneCameraMoved()
 		{
 			Transform t = SceneView.lastActiveSceneView.camera.transform;
-			// limit camera syncs to 1 per second
-			if (_sceneCameraDelay < 1000)
+			// limit camera syncs
+			if (_sceneCameraDelay < SyncSettings.instance.EditorCameraUpdateDelay)
 			{
 				t.hasChanged = false;
-				_sceneCameraDelay++;
 				return;
 			}
 
-			if (_lastCameraPosition != null 
+			if (_lastCameraPosition != null
 				&& t.position.Equals(_lastCameraPosition) 
 				&& t.eulerAngles.Equals(_lastCameraRotation))
 			{
-				_lastCameraPosition = t.position;
-				_lastCameraRotation = t.eulerAngles;
 				t.hasChanged = false;
 				return;
 			}
@@ -294,22 +319,64 @@ namespace jKnepel.UnitySync
 			Buffer.BlockCopy(BitConverter.GetBytes(t.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
 			_bytesToSend.Enqueue(bytes);
 
-			DebugBytesLog(bytes, "Camera Update Bytes: ");
-
+			_lastCameraPosition = t.position;
+			_lastCameraRotation = t.eulerAngles;
 			t.hasChanged = false;
 			_sceneCameraDelay = 0;
 		}
 #endif
-
-		#endregion
-
-		#region serialization
 
 		private async void SendHierarchy(GameObject go)
 		{
 			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
 			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
 			_bytesToSend.Enqueue(bytes);
+		}
+
+		#endregion
+
+		#region apply updates
+
+		// TODO : optimize this
+		// TODO : implement build alternative
+		private void UpdateEditorCamera(string sender, byte[] data)
+		{
+			int size = sizeof(float);
+			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
+			byte[] positionY = GetBytesFromArray(data, 1 * size, size);
+			byte[] positionZ = GetBytesFromArray(data, 2 * size, size);
+			byte[] rotationX = GetBytesFromArray(data, 3 * size, size);
+			byte[] rotationY = GetBytesFromArray(data, 4 * size, size);
+			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
+
+			if (_connectedClients.TryGetValue(sender, out Transform camera))
+			{
+				if (camera == null)
+				{
+					_connectedClients.TryRemove(sender, out Transform _);
+					return;
+				}
+
+				camera.position = new Vector3(BitConverter.ToSingle(positionX),
+					BitConverter.ToSingle(positionY),
+					BitConverter.ToSingle(positionZ));
+				camera.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
+					BitConverter.ToSingle(rotationY),
+					BitConverter.ToSingle(rotationZ));
+				return;
+			}
+
+			GameObject obj = GameObject.Instantiate(SyncSettings.instance.ClientTransformPrefab);
+			obj.hideFlags = HideFlags.HideInHierarchy;
+			obj.name = sender;
+			obj.transform.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>().text = sender;
+			obj.transform.position = new Vector3(BitConverter.ToSingle(positionX),
+					BitConverter.ToSingle(positionY),
+					BitConverter.ToSingle(positionZ));
+			obj.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
+				BitConverter.ToSingle(rotationY),
+				BitConverter.ToSingle(rotationZ));
+			_connectedClients.TryAdd(sender, obj.transform);
 		}
 
 		private async void ImportHierarchy(byte[] hierarchy)
@@ -339,12 +406,36 @@ namespace jKnepel.UnitySync
 			GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
 			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncManager.IS_DEBUG, -1, true, onLoadComplete);
+			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncSettings.instance.IsDebug, -1, true, onLoadComplete);
 		}
 
 		#endregion
 
 		#region helper methods
+
+		// TODO : doesnt work without running uplink, fix
+		private void FindLocalIPAddress()
+		{
+			using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+			{
+				socket.Connect("8.8.8.8", 65530);
+				IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
+				_localIPAddress = endPoint.Address.ToString();
+			}
+		}
+
+		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
+		{
+			if (offset > array.Length || offset + size > array.Length)
+				return null;
+
+			byte[] bytes = new byte[size];
+			for (int i = 0; i < size; i++)
+			{
+				bytes[i] = array[i + offset];
+			}
+			return bytes;
+		}
 
 #if UNITY_EDITOR
 		private static void PreventPlayMode(PlayModeStateChange state)

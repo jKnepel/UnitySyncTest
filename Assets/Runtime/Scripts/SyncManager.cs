@@ -18,8 +18,6 @@ namespace jKnepel.UnitySync
 	{
 		#region public members
 
-		public const bool IS_DEBUG = true;
-
 		public static Action OnUpdate;
 		public static Action OnAwake;
 		public static Action OnStart;
@@ -78,7 +76,7 @@ namespace jKnepel.UnitySync
 
 		public static void AddDebugMessage(string text)
 		{
-			if (!IS_DEBUG) return;
+			if (!SyncSettings.instance.IsDebug) return;
 
 			Debug.Log(text);
 			_mainThreadActions.Enqueue(() => SyncEvents.onDebugTextAdded?.Invoke(text));
