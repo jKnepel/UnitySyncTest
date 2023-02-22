@@ -291,7 +291,7 @@ namespace jKnepel.UnitySync
 				GameObject go;
 				try { go = ((Component)o).gameObject; }
 				catch (InvalidCastException) { go = (GameObject)o; }
-				SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
+				//SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
 
 				// Limit hierarchy syncs
 				ObjectChangeEvents.changesPublished -= ChangesPublished;
