@@ -50,15 +50,18 @@ namespace jKnepel.UnitySync
 		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
 		private int _disposeCount;
 
+		#region constants
+
 		public const int UPD_HEADER_LENGTH = 8;
 		public const uint PROTOCOL_ID = 876237842;
 		public const int PROTOCOL_ID_LENGTH = 4;
-		// TODO : public const int CRC_LENGTH = 4;
-		// TODO : public const int DATA_TYPE_LENGTH = 4;
-		public const int DATA_FLAG_LENGTH = 4;
 		// TODO : public const int ROOM_NAME_LENGTH = ?
+		public const int CRC32_LENGTH = 4;
 		// TODO : public const int SEQUENCE_LENGTH = 4;
-		public const int HEADER_LENGTH = PROTOCOL_ID_LENGTH + DATA_FLAG_LENGTH;
+		// TODO : public const int DATA_TYPE_LENGTH = 1;
+		public const int DATA_FLAG_LENGTH = 4;
+
+		#endregion
 
 		#region lifecycle
 
@@ -229,9 +232,8 @@ namespace jKnepel.UnitySync
 					if (!_bytesToSend.TryDequeue(out byte[] data))
 						continue;
 
-					byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
-					Buffer.BlockCopy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
-					// TODO : add CRC
+					byte[] bytes = new byte[CRC32_LENGTH + data.Length];
+					Buffer.BlockCopy(GetCRCChecksumBytes(data), 0, bytes, 0, CRC32_LENGTH);
 					// TODO : add sequence ids
 					// TODO : add package type id
 					Buffer.BlockCopy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
@@ -253,18 +255,22 @@ namespace jKnepel.UnitySync
 			{
 				while (_disposeCount == 0)
 				{
+					// check if packet comes from other client
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 					string sender = _receiveEndpoint.Address.ToString();
 					if (sender.Equals(_localIPAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
 						continue;
 
-					DebugBytesLog(receivedBytes, "Received Bytes: ");
-					byte[] protocolId = GetBytesFromArray(receivedBytes, 0, PROTOCOL_ID_LENGTH);
-					if (BitConverter.ToUInt32(protocolId) != PROTOCOL_ID)
+					// check crc32 checksum
+					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
+					byte[] remainder = new byte[receivedBytes.Length - checksum.Length];
+					Buffer.BlockCopy(receivedBytes, CRC32_LENGTH, remainder, 0, remainder.Length);
+					if (!checksum.SequenceEqual(GetCRCChecksumBytes(remainder)))
 						continue;
 
-					byte[] data = GetBytesFromArray(receivedBytes, PROTOCOL_ID_LENGTH, 24);
-					DebugBytesLog(data, "Received Data Bytes: ");
+					// get data
+					byte[] data = GetBytesFromArray(receivedBytes, CRC32_LENGTH, 24);
+					DebugBytesLog(receivedBytes, "Received Bytes: ");
 
 					_receivedPackets.Enqueue(new(SyncPacketType.EditorCamera, sender, data));
 				}
@@ -431,6 +437,14 @@ namespace jKnepel.UnitySync
 				IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
 				_localIPAddress = endPoint.Address.ToString();
 			}
+		}
+
+		private byte[] GetCRCChecksumBytes(byte[] data)
+		{
+			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
+			Buffer.BlockCopy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
+			Buffer.BlockCopy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
+			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
