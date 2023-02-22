@@ -2,9 +2,12 @@ namespace jKnepel.UnitySync
 {
     public enum SyncPacketType
     {
-        EditorCamera,
-        Hierarchy,
+        ACK,
+        Heartbeat,
+        ClientCamera,
+        Transform,
+        GameObject,
         Component,
-        Transform
+        Hierarchy
     }
 }

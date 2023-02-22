@@ -12,5 +12,12 @@ namespace jKnepel.UnitySync
             Sender = sender;
             Data = data;
 		}
+
+        public SyncPacket(SyncPacketType type, byte[] data)
+        {
+            Type = type;
+            Sender = "";
+            Data = data;
+        }
     }
 }

@@ -35,7 +35,7 @@ namespace jKnepel.UnitySync
 		private Scene _exportScene;
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
-		private readonly ConcurrentQueue<byte[]> _bytesToSend = new();
+		private readonly ConcurrentQueue<SyncPacket> _packetsToSend = new();
 		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
 
 		// TODO : replace transform with client struct for names, position etc.
@@ -52,14 +52,13 @@ namespace jKnepel.UnitySync
 
 		#region constants
 
-		public const int UPD_HEADER_LENGTH = 8;
 		public const uint PROTOCOL_ID = 876237842;
 		public const int PROTOCOL_ID_LENGTH = 4;
 		// TODO : public const int ROOM_NAME_LENGTH = ?
-		public const int CRC32_LENGTH = 4;
+		public const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
 		// TODO : public const int SEQUENCE_LENGTH = 4;
-		// TODO : public const int DATA_TYPE_LENGTH = 1;
-		public const int DATA_FLAG_LENGTH = 4;
+		public const int DATA_TYPE_LENGTH = 1; // id of the packet type
+		public const int DATA_FLAG_LENGTH = 4; // flag containing data length
 
 		#endregion
 
@@ -141,7 +140,7 @@ namespace jKnepel.UnitySync
 #endif
 					SyncManager.OnUpdate -= Update;
 					SyncEvents.onIsConnectedChanged?.Invoke(false);
-					SyncManager.AddDebugMessage("Connection was closed"); //
+					SyncManager.AddDebugMessage("Connection was closed");
 				}
 
 				foreach (Transform client in _connectedClients.Values)
@@ -196,12 +195,10 @@ namespace jKnepel.UnitySync
 				{
 					switch (packet.Type)
 					{
-						case SyncPacketType.EditorCamera:
+						case SyncPacketType.ClientCamera:
 							UpdateEditorCamera(packet.Sender, packet.Data);
 							break;
-						case SyncPacketType.Hierarchy: break;
-						case SyncPacketType.Component: break;
-						case SyncPacketType.Transform: break;
+						default: break;
 					}
 				}
 			}
@@ -220,26 +217,24 @@ namespace jKnepel.UnitySync
 
 		#region network logic
 
+		#region send logic
+
 		private void SenderThread()
 		{
 			try
 			{
 				while (_disposeCount == 0)
 				{
-					if (_bytesToSend.Count == 0)
+					if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
 						continue;
 
-					if (!_bytesToSend.TryDequeue(out byte[] data))
-						continue;
-
-					byte[] bytes = new byte[CRC32_LENGTH + data.Length];
-					Buffer.BlockCopy(GetCRCChecksumBytes(data), 0, bytes, 0, CRC32_LENGTH);
-					// TODO : add sequence ids
-					// TODO : add package type id
-					Buffer.BlockCopy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
-
-					_sender.Send(bytes, bytes.Length, _broadCastEndpoint);
-					DebugBytesLog(bytes, "Send Bytes: ");
+					switch (packet.Type)
+					{
+						case SyncPacketType.ClientCamera:
+							SendClientCameraBytes(packet.Data);
+							break;
+						default: break;
+					}
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
@@ -248,6 +243,30 @@ namespace jKnepel.UnitySync
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
 			}
 		}
+
+		private void SendClientCameraBytes(byte[] bytes)
+		{
+			byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + bytes.Length];
+			// TODO : add sequence ids
+			data[CRC32_LENGTH] = (byte)SyncPacketType.ClientCamera;
+			Array.Copy(bytes, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, bytes.Length);
+
+			CalculateAndAddChecksum(data);
+
+			_sender.Send(data, data.Length, _broadCastEndpoint);
+			DebugBytesLog(data, "Send Camera Bytes: ");
+		}
+
+		private void CalculateAndAddChecksum(byte[] packet)
+		{
+			// calculate crc32 checksum from packet and add it to the start
+			byte[] checksum = GetBytesFromArray(packet, CRC32_LENGTH, packet.Length - CRC32_LENGTH);
+			Array.Copy(GetCRCChecksumBytes(checksum), 0, packet, 0, CRC32_LENGTH);
+		}
+
+		#endregion
+
+		#region receive logic
 
 		private void ListenerThread()
 		{
@@ -263,16 +282,21 @@ namespace jKnepel.UnitySync
 
 					// check crc32 checksum
 					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-					byte[] remainder = new byte[receivedBytes.Length - checksum.Length];
-					Buffer.BlockCopy(receivedBytes, CRC32_LENGTH, remainder, 0, remainder.Length);
+					DebugBytesLog(checksum, "Received Checksum: ");
+					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH, receivedBytes.Length - checksum.Length);
+					DebugBytesLog(remainder, "Received Data: ");
 					if (!checksum.SequenceEqual(GetCRCChecksumBytes(remainder)))
 						continue;
 
-					// get data
-					byte[] data = GetBytesFromArray(receivedBytes, CRC32_LENGTH, 24);
+					// handle data depending on packet type
 					DebugBytesLog(receivedBytes, "Received Bytes: ");
-
-					_receivedPackets.Enqueue(new(SyncPacketType.EditorCamera, sender, data));
+					switch ((SyncPacketType)remainder[0])
+					{
+						case SyncPacketType.ClientCamera:
+							ReceiveClientCameraBytes(sender, GetBytesFromArray(remainder, 1, 24));
+							break;
+						default: break;
+					}
 				}
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
@@ -281,6 +305,13 @@ namespace jKnepel.UnitySync
 				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
 			}
 		}
+
+		private void ReceiveClientCameraBytes(string sender, byte[] bytes)
+		{
+			_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, bytes));
+		}
+
+		#endregion
 
 		#endregion
 
@@ -328,13 +359,13 @@ namespace jKnepel.UnitySync
 
 			// TODO : optimize this
 			byte[] bytes = new byte[sizeof(float) * 6];
-			Buffer.BlockCopy(BitConverter.GetBytes(camera.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(camera.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(camera.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(camera.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(camera.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
-			Buffer.BlockCopy(BitConverter.GetBytes(camera.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
-			_bytesToSend.Enqueue(bytes);
+			Array.Copy(BitConverter.GetBytes(camera.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
+			Array.Copy(BitConverter.GetBytes(camera.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
+			Array.Copy(BitConverter.GetBytes(camera.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
+			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
+			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
+			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
+			_packetsToSend.Enqueue(new(SyncPacketType.ClientCamera, bytes));
 
 			_lastCameraPosition = camera.position;
 			_lastCameraRotation = camera.eulerAngles;
@@ -346,7 +377,7 @@ namespace jKnepel.UnitySync
 		{
 			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
 			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
-			_bytesToSend.Enqueue(bytes);
+			_packetsToSend.Enqueue(new(SyncPacketType.Hierarchy, bytes));
 		}
 
 		#endregion
@@ -442,21 +473,15 @@ namespace jKnepel.UnitySync
 		private byte[] GetCRCChecksumBytes(byte[] data)
 		{
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
-			Buffer.BlockCopy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
-			Buffer.BlockCopy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
+			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
+			Array.Copy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
 			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
 		{
-			if (offset > array.Length || offset + size > array.Length)
-				return null;
-
 			byte[] bytes = new byte[size];
-			for (int i = 0; i < size; i++)
-			{
-				bytes[i] = array[i + offset];
-			}
+			Array.Copy(array, offset, bytes, 0, size);
 			return bytes;
 		}
 
