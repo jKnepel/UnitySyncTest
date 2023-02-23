@@ -21,14 +21,15 @@ namespace jKnepel.UnitySync
 
 		void OnGUI()
         {
-            EditorGUILayout.BeginVertical();
+            EditorGUILayout.BeginVertical(EditorStyles.inspectorDefaultMargins);
 			{
                 GUILayout.Label("UnitySync", EditorStyles.largeLabel);
 
-                SyncSettings.Instance.Port = EditorGUILayout.IntField("Port: ", SyncSettings.Instance.Port);
-                SyncSettings.Instance.ExportSceneName = EditorGUILayout.TextField("Export Scene Name: ", SyncSettings.Instance.ExportSceneName);
-                SyncSettings.Instance.ImportSceneName = EditorGUILayout.TextField("Import Scene Name: ", SyncSettings.Instance.ImportSceneName);
-                SyncSettings.Instance.Color = EditorGUILayout.ColorField("Color: ", SyncSettings.Instance.Color);
+                SyncSettings.Instance.Port = EditorGUILayout.IntField("Port:", SyncSettings.Instance.Port);
+                SyncSettings.Instance.ExportSceneName = EditorGUILayout.TextField("Export Scene Name:", SyncSettings.Instance.ExportSceneName);
+                SyncSettings.Instance.ImportSceneName = EditorGUILayout.TextField("Import Scene Name:", SyncSettings.Instance.ImportSceneName);
+                SyncSettings.Instance.Username = EditorGUILayout.TextField("Username:", SyncSettings.Instance.Username);
+                SyncSettings.Instance.Color = EditorGUILayout.ColorField("Color:", SyncSettings.Instance.Color);
 
                 EditorGUILayout.BeginHorizontal();
 				{

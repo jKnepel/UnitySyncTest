@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Timers;
 using System.Threading;
 using System.Threading.Tasks;
@@ -60,9 +61,11 @@ namespace jKnepel.UnitySync
 		private const int DATA_FLAG_LENGTH = 4; // flag containing data length
 
 		// data
-		private const int COLOR_FLAG_LENGTH = 3;
+		private const int ROOMNAME_FLAG_LENGTH = 1;
+		private const int USERNAME_FLAG_LENGTH = 1;
+		private const int COLOR_LENGTH = 3;
 		private const int CLIENT_CAMERA_DATA_LENGTH = 24;
-		private const int Transform_DATA_LENGTH = 24;
+		private const int Transform_DATA_LENGTH = 36;
 
 		#endregion
 
@@ -231,12 +234,15 @@ namespace jKnepel.UnitySync
 			{
 				while (_disposeCount == 0)
 				{
+					byte[] username = Encoding.ASCII.GetBytes(SyncSettings.Instance.Username);
 					byte[] color = { SyncSettings.Instance.Color.r, SyncSettings.Instance.Color.g, SyncSettings.Instance.Color.b };
 
 					// prepare data with room name, username and -color
-					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + COLOR_FLAG_LENGTH];
+					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + USERNAME_FLAG_LENGTH + username.Length + COLOR_LENGTH];
 					data[CRC32_LENGTH] = (byte)SyncPacketType.Heartbeat;
-					Array.Copy(color, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, COLOR_FLAG_LENGTH);
+					data[CRC32_LENGTH + DATA_TYPE_LENGTH] = (byte)username.Length;
+					Array.Copy(username, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH + USERNAME_FLAG_LENGTH, username.Length);
+					Array.Copy(color, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH + USERNAME_FLAG_LENGTH + username.Length, COLOR_LENGTH);
 					CalculateAndAddChecksum(data);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
@@ -287,13 +293,6 @@ namespace jKnepel.UnitySync
 
 			_sender.Send(data, data.Length, _broadCastEndpoint);
 			DebugBytesLog(data, "Send Camera Bytes: ");
-		}
-
-		private void CalculateAndAddChecksum(byte[] packet)
-		{
-			// calculate crc32 checksum from packet and add it to the start
-			byte[] checksum = GetBytesFromArray(packet, CRC32_LENGTH, packet.Length - CRC32_LENGTH);
-			Array.Copy(GetCRCChecksumBytes(checksum), 0, packet, 0, CRC32_LENGTH);
 		}
 
 		#endregion
@@ -413,10 +412,16 @@ namespace jKnepel.UnitySync
 
 		#region consume updates
 
-		// TODO : remove client with no heartbeat
 		private void UpdateHeartbeat(string sender, byte[] data)
 		{
-			Color32 color = new(data[0], data[1], data[2], 255);
+			// read username and color from data
+			int usernameLength = data[0];
+			byte[] usernameBytes = new byte[usernameLength];
+			Array.Copy(data, 1, usernameBytes, 0, usernameLength);
+			string username = Encoding.ASCII.GetString(usernameBytes);
+			Color32 color = new(data[usernameLength + 1], data[usernameLength + 2], data[usernameLength + 3], 255);
+
+			// create client and add it to dictionary if it doesn't exist yet
 			if (!_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab);
@@ -432,22 +437,23 @@ namespace jKnepel.UnitySync
 					}
 				};
 				timeoutTimer.Elapsed += new(TimeoutClient);
-				timeoutTimer.Start();
+				//timeoutTimer.Start();
 
 				// add client to list
-				client = new(sender, "", obj.transform, color, timeoutTimer);
+				client = new(sender, username, obj.transform, color, timeoutTimer);
 				_connectedClients.TryAdd(sender, client);
 			}
 
+			// update client values
+			// TODO : move updates to creation if color/username are deciding on being static
 			if (!SyncSettings.Instance.ShowSyncObjectInHiearchy) 
 				client.Visualizer.hideFlags = HideFlags.HideInHierarchy;
-			// TODO : add username
 			client.Color = color;
-			client.Visualizer.name = sender;
+			client.Visualizer.name = $"{username}@{sender}";
 			// TODO : possible bug, shared material causes all clients to have same color?
 			client.Visualizer.GetChild(1).GetComponent<Renderer>().sharedMaterial.SetColor("_Color", color);
 			TMPro.TMP_Text tag = client.Visualizer.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>();
-			tag.text = sender;
+			tag.text = username;
 			tag.color = color;
 			client.LastHeartbeat = DateTime.Now;
 		}
@@ -531,6 +537,13 @@ namespace jKnepel.UnitySync
 			// TODO : add room id
 			Array.Copy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
 			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
+		}
+
+		private void CalculateAndAddChecksum(byte[] packet)
+		{
+			// calculate crc32 checksum from packet and add it to the start
+			byte[] checksum = GetBytesFromArray(packet, CRC32_LENGTH, packet.Length - CRC32_LENGTH);
+			Array.Copy(GetCRCChecksumBytes(checksum), 0, packet, 0, CRC32_LENGTH);
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
