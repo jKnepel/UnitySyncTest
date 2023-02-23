@@ -26,9 +26,10 @@ public class SyncSettings : ScriptableObject
     public bool ShowSyncObjectInHiearchy = false;
 
     // packet frequency settings
+    public int HeartbeatDelay = 2500;
+    public double ClientTimeoutDelay = 6000;
     public int GameObjectAndComponentUpdateDelay = 500;
     public int ClientCameraUpdateDelay = 50;
-    public int HeartbeatDelay = 5000;
 
     // user settings
     public int Port = 8080;

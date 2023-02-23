@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Timers;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
@@ -155,6 +156,7 @@ namespace jKnepel.UnitySync
 #else
 					GameObject.Destroy(client.Visualizer.gameObject);
 #endif
+					client.TimeoutTimer.Dispose();
 				}
 
 				try
@@ -187,6 +189,8 @@ namespace jKnepel.UnitySync
 
 		public void Update()
 		{
+			Debug.Log(_connectedClients.Count);
+
 			while (_mainThreadActions.Count > 0)
 			{
 				if (_mainThreadActions.TryDequeue(out Action action))
@@ -422,7 +426,22 @@ namespace jKnepel.UnitySync
 			if (!_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab);
-				client = new(sender, "", obj.transform, color);
+
+				// create timer for removing client on timeout
+				System.Timers.Timer timeoutTimer = new(SyncSettings.Instance.ClientTimeoutDelay);
+				void TimeoutClient(object caller, ElapsedEventArgs e)
+				{
+					if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
+					{
+						_connectedClients.TryRemove(sender, out SyncConnectedClient _);
+						client.TimeoutTimer.Dispose();
+					}
+				};
+				timeoutTimer.Elapsed += new(TimeoutClient);
+				timeoutTimer.Start();
+
+				// add client to list
+				client = new(sender, "", obj.transform, color, timeoutTimer);
 				_connectedClients.TryAdd(sender, client);
 			}
 
@@ -436,7 +455,7 @@ namespace jKnepel.UnitySync
 			TMPro.TMP_Text tag = client.Visualizer.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>();
 			tag.text = sender;
 			tag.color = color;
-			client.lastHeartbeat = DateTime.Now;
+			client.LastHeartbeat = DateTime.Now;
 		}
 
 		// TODO : optimize this
@@ -452,13 +471,15 @@ namespace jKnepel.UnitySync
 
 			if (_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
-				client.IsVisible = true;
+				client.LastHeartbeat = DateTime.Now;
 				client.Visualizer.position = new Vector3(BitConverter.ToSingle(positionX),
 					BitConverter.ToSingle(positionY),
 					BitConverter.ToSingle(positionZ));
 				client.Visualizer.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
 					BitConverter.ToSingle(rotationY),
 					BitConverter.ToSingle(rotationZ));
+				if (!client.Visualizer.gameObject.activeSelf) 
+					client.Visualizer.gameObject.SetActive(true);
 				return;
 			}
 		}
