@@ -153,12 +153,7 @@ namespace jKnepel.UnitySync
 
 				foreach (SyncConnectedClient client in _connectedClients.Values)
 				{
-#if UNITY_EDITOR
-					GameObject.DestroyImmediate(client.Visualizer.gameObject);
-#else
-					GameObject.Destroy(client.Visualizer.gameObject);
-#endif
-					client.TimeoutTimer.Dispose();
+					client.Dispose();
 				}
 
 				try
@@ -191,8 +186,6 @@ namespace jKnepel.UnitySync
 
 		public void Update()
 		{
-			Debug.Log(_connectedClients.Count);
-
 			while (_mainThreadActions.Count > 0)
 			{
 				if (_mainThreadActions.TryDequeue(out Action action))
@@ -201,7 +194,6 @@ namespace jKnepel.UnitySync
 
 			while (_receivedPackets.Count > 0)
 			{
-				// TODO : maybe implement unpacking on different threads to increase efficiency
 				if (_receivedPackets.TryDequeue(out SyncPacket packet))
 				{
 					switch (packet.Type)
@@ -436,7 +428,7 @@ namespace jKnepel.UnitySync
 					if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
 					{
 						_connectedClients.TryRemove(sender, out SyncConnectedClient _);
-						client.TimeoutTimer.Dispose();
+						_mainThreadActions.Enqueue(() => client.Dispose());
 					}
 				};
 				timeoutTimer.Elapsed += new(TimeoutClient);

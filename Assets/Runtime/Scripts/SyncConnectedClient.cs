@@ -22,5 +22,15 @@ namespace jKnepel.UnitySync
 			LastHeartbeat = DateTime.Now;
 			TimeoutTimer = timeoutTimer;
 		}
+
+		public void Dispose()
+		{
+			TimeoutTimer.Dispose();
+#if UNITY_EDITOR
+			GameObject.DestroyImmediate(Visualizer.gameObject);
+#else
+			GameObject.Destroy(Visualizer.gameObject);
+#endif
+		}
 	}
 }
