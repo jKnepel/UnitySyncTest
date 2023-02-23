@@ -13,8 +13,10 @@ public class SyncSettings : ScriptableObject
                 instance = Resources.Load<SyncSettings>("UnitySyncSettings");
                 if (instance == null)
 				{
-                    instance = (SyncSettings)ScriptableObject.CreateInstance(typeof(SyncSettings));
-				}
+                    // TODO : this should be saved to allow for manually created settings asset, created after this instance,
+                    //      to become the new settings instance
+                    instance = (SyncSettings)CreateInstance(typeof(SyncSettings));
+                }
 			}
             return instance;
 		}

@@ -33,20 +33,18 @@ namespace jKnepel.UnitySync
 		private Thread _listenerThread;
 		private Thread _heartbeatThread;
 
+		private Scene _scene;
 		private Scene _exportScene;
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 		private readonly ConcurrentQueue<SyncPacket> _packetsToSend = new();
 		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
 
-		// TODO : replace transform with client struct for names, position etc.
 		private readonly ConcurrentDictionary<string, SyncConnectedClient> _connectedClients = new();
-
-		private Scene _scene;
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
-		private int _cameraUpdateDelay = 1000;
+		private int _cameraUpdateDelay = SyncSettings.Instance.ClientCameraUpdateDelay;
 
 		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
 		private int _disposeCount;
