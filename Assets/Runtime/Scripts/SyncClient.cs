@@ -138,6 +138,10 @@ namespace jKnepel.UnitySync
 					{
 						_listenerThread = null;
 					}
+					if (_heartbeatThread != null)
+					{
+						_heartbeatThread = null;
+					}
 
 #if UNITY_EDITOR
 					ObjectChangeEvents.changesPublished -= ChangesPublished;
