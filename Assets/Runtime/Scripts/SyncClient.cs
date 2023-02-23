@@ -437,7 +437,7 @@ namespace jKnepel.UnitySync
 					}
 				};
 				timeoutTimer.Elapsed += new(TimeoutClient);
-				//timeoutTimer.Start();
+				timeoutTimer.Start();
 
 				// add client to list
 				client = new(sender, username, obj.transform, color, timeoutTimer);

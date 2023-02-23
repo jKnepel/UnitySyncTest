@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace jKnepel.UnitySync
 {
-	public struct SyncConnectedClient
+	public class SyncConnectedClient
 	{
 		public string IP { get; private set; }
 		public string Username { get; set; }
