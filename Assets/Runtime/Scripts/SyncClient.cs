@@ -1,13 +1,12 @@
 using System;
-using System.IO;
+using System.Collections.Concurrent;
 using System.Linq;
+using System.IO;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Timers;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -24,41 +23,16 @@ namespace jKnepel.UnitySync
 {
 	public class SyncClient : IDisposable
 	{
-		private readonly UdpClient _sender;
-		private readonly UdpClient _listener;
-		private readonly IPEndPoint _broadCastEndpoint;
-		private IPEndPoint _receiveEndpoint;
-		private string _localIPAddress;
+		#region packet constants
 
-		private Thread _senderThread;
-		private Thread _listenerThread;
-		private Thread _heartbeatThread;
-
-		private Scene _scene;
-		private Scene _exportScene;
-
-		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
-		private readonly ConcurrentQueue<SyncPacket> _packetsToSend = new();
-		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
-
-		private readonly ConcurrentDictionary<string, SyncConnectedClient> _connectedClients = new();
-
-		private Vector3 _lastCameraPosition;
-		private Vector3 _lastCameraRotation;
-		private int _cameraUpdateDelay = SyncSettings.Instance.ClientCameraUpdateDelay;
-
-		private readonly Action<ExceptionDispatchInfo> _connectionAbolished;
-		private int _disposeCount;
-
-		#region packet length constants
+		private const uint PROTOCOL_ID = 876237842;
 
 		// headers
 		private const int PROTOCOL_ID_LENGTH = 4;
-		// TODO : public const int ROOM_NAME_LENGTH = ?
 		private const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
 		// TODO : public const int SEQUENCE_LENGTH = 4;
 		private const int DATA_TYPE_LENGTH = 1; // id of the packet type
-		private const int DATA_FLAG_LENGTH = 4; // flag containing data length
+		private const int DATA_FLAG_LENGTH = 2; // flag containing data length
 
 		// data
 		private const int ROOMNAME_FLAG_LENGTH = 1;
@@ -69,52 +43,90 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
+		#region private members
+
+		private readonly UdpClient _listener;
+		private readonly UdpClient _sender;
+		private readonly IPEndPoint _broadCastEndpoint;
+		private IPEndPoint _receiveEndpoint;
+
+		private readonly Thread _senderThread;
+		private readonly Thread _listenerThread;
+		private readonly Thread _heartbeatThread;
+
+		private readonly ManualResetEvent _pauseEvent = new(true);
+		private readonly ManualResetEvent _shutdownEvent = new(false);
+		private int _disposeCount;
+
+		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
+		private readonly ConcurrentQueue<SyncPacket> _packetsToSend = new();
+		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
+
+		private Vector3 _lastCameraPosition;
+		private Vector3 _lastCameraRotation;
+		private int _cameraUpdateDelay = SyncSettings.Instance.ClientCameraUpdateDelay;
+
+		private Scene _scene;
+		private Scene _exportScene;
+		private Transform _objectContainer;
+		private string _localIpAddress;
+
+		#endregion
+
+		#region public members
+
+		public bool IsSearchingForRooms { get; private set; }
+		public bool IsConnected { get { return CurrentRoom != null; } }
+		public bool IsRoomOwner { get; private set; }
+		public readonly ConcurrentDictionary<string, SyncOpenRoom> OpenRooms = new();
+		public SyncOpenRoom CurrentRoom { get; private set; }
+
+		#endregion
+
 		#region lifecycle
 
-		public SyncClient(Scene exportScene, Action<ExceptionDispatchInfo> connectionAbolished)
+		public SyncClient()
 		{
 			try
 			{
-				_connectionAbolished = connectionAbolished;
-
 				FindLocalIPAddress();
 
-				_sender = new();
-				_sender.EnableBroadcast = true;
 				_listener = new(SyncSettings.Instance.Port);
 				_listener.EnableBroadcast = true;
+				_sender = new();
+				_sender.EnableBroadcast = true;
 
 				_broadCastEndpoint = new(IPAddress.Broadcast, SyncSettings.Instance.Port);
 				_receiveEndpoint = new(IPAddress.Any, SyncSettings.Instance.Port);
 
-#if UNITY_EDITOR
-				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-				_scene.name = SyncSettings.Instance.ImportSceneName;
-#else
-                _scene = SceneManager.CreateScene(sceneName);
-#endif
-				SceneManager.SetActiveScene(_scene);
-				_exportScene = exportScene;
+				_pauseEvent.Reset();
 
-				_senderThread = new(() => SenderThread()) { IsBackground = true };
-				_senderThread.Start();
 				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
 				_listenerThread.Start();
+				_senderThread = new(() => SenderThread()) { IsBackground = true };
+				_senderThread.Start();
 				_heartbeatThread = new(() => HeartbeatThread()) { IsBackground = true };
 				_heartbeatThread.Start();
+
+				IsSearchingForRooms = true;
 			}
 			catch (Exception ex)
 			{
-				_connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
-				return;
+				IsSearchingForRooms = false;
+				switch (ex)
+				{
+					case SocketException:
+						SyncManager.AddDebugMessage("SocketException " + ex.ToString());
+						break;
+					case ArgumentOutOfRangeException:
+						SyncManager.AddDebugMessage("ArgumentOutOfRangeException " + ex.ToString());
+						break;
+					case OutOfMemoryException:
+						SyncManager.AddDebugMessage("OutOfMemoryException " + ex.ToString());
+						break;
+					default: throw;
+				}
 			}
-
-#if UNITY_EDITOR
-			ObjectChangeEvents.changesPublished += ChangesPublished;
-			EditorApplication.playModeStateChanged += PreventPlayMode;
-#endif
-			SyncManager.OnUpdate += Update;
-			SyncManager.AddDebugMessage("Client connected to Server");
 		}
 
 		~SyncClient()
@@ -133,31 +145,28 @@ namespace jKnepel.UnitySync
 			{
 				if (disposing)
 				{
-					if (_senderThread != null)
-					{
-						_senderThread = null;
-					}
-					if (_listenerThread != null)
-					{
-						_listenerThread = null;
-					}
-					if (_heartbeatThread != null)
-					{
-						_heartbeatThread = null;
-					}
+					_shutdownEvent.Set();
+					_pauseEvent.Set();
+					_listenerThread.Join();
+					_senderThread.Join();
+					_heartbeatThread.Join();
 
 #if UNITY_EDITOR
 					ObjectChangeEvents.changesPublished -= ChangesPublished;
 					EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 					SyncManager.OnUpdate -= Update;
-					SyncManager.AddDebugMessage("Connection was closed");
 				}
 
-				foreach (SyncConnectedClient client in _connectedClients.Values)
-				{
-					client.Dispose();
-				}
+				// TODO : doesnt work on recompile, fix
+#if UNITY_EDITOR
+				GameObject.DestroyImmediate(_objectContainer);
+#else
+				GameObject.Destroy(_objectContainer);
+#endif
+				OpenRooms.Clear();
+				CurrentRoom = null;
+				IsSearchingForRooms = false;
 
 				try
 				{
@@ -176,7 +185,7 @@ namespace jKnepel.UnitySync
 				catch (ObjectDisposedException) { }
 
 				// TODO : doesnt work on recompile, fix
-				if (_scene.IsValid())
+				if (!IsRoomOwner && _scene.IsValid())
 				{
 #if UNITY_EDITOR
 					EditorSceneManager.UnloadSceneAsync(_scene);
@@ -184,6 +193,7 @@ namespace jKnepel.UnitySync
                     SceneManager.UnloadSceneAsync(_scene);
 #endif
 				}
+				IsRoomOwner = false;
 			}
 		}
 
@@ -222,6 +232,139 @@ namespace jKnepel.UnitySync
 #endif
 		}
 
+		public void ConnectToRoom(string roomname, string scenename, bool createroom = false)
+		{
+			try
+			{
+				if (IsConnected)
+				{
+					Debug.LogWarning($"The client is already connected!");
+					return;
+				}
+
+#if UNITY_EDITOR
+				if (EditorApplication.isPlaying)
+				{
+					Debug.LogWarning($"Can't connect to room while Editor is in Playmode");
+					return;
+				}
+#endif
+
+				// create/save scene if room is joined/created
+				Scene scene = SceneManager.GetSceneByName(scenename);
+				if (createroom)
+				{
+					if (OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
+					{
+						Debug.LogWarning($"The Room {roomname} already exists!");
+						return;
+					}
+					if (!scene.IsValid() && !scene.isLoaded)
+					{
+						Debug.LogWarning($"The Scene {scenename} is not valid!");
+						return;
+					}
+					_scene = scene;
+					CurrentRoom = new(roomname);
+					OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
+					_ = TimeoutRoom(CurrentRoom);
+					IsRoomOwner = true;
+				}
+				else
+				{
+					if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
+					{
+						Debug.LogWarning($"The Room {roomname} doesn't exist yet!");
+						return;
+					}
+					if (scene.IsValid() || scene.isLoaded)
+					{
+						Debug.LogWarning($"The Scene {scenename} already exists!");
+						return;
+					}
+#if UNITY_EDITOR
+					_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+					_scene.name = scenename;
+#else
+					_scene = SceneManager.CreateScene(scenename);
+#endif
+					CurrentRoom = new(roomname);
+					IsRoomOwner = false;
+					// TODO : announce myself to room
+				}
+				SceneManager.SetActiveScene(_scene);
+
+				_objectContainer = new GameObject("UnitySync Object Container").transform;
+				if (!SyncSettings.Instance.ShowSyncObjectInHiearchy)
+					_objectContainer.hideFlags = HideFlags.HideInHierarchy;
+
+				_pauseEvent.Set();
+
+			}
+			catch (Exception ex)
+			{
+				// TODO : replace with correct exceptions
+				switch (ex)
+				{
+					case SocketException:
+						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
+						break;
+					case ObjectDisposedException:
+						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
+						break;
+					case ThreadStartException:
+					case OutOfMemoryException:
+						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
+						break;
+					default:
+						throw (ex);
+				}
+			}
+
+#if UNITY_EDITOR
+			ObjectChangeEvents.changesPublished += ChangesPublished;
+			EditorApplication.playModeStateChanged += PreventPlayMode;
+#endif
+			SyncManager.OnUpdate += Update;
+			SyncManager.AddDebugMessage("Client connected to Room!");
+		}
+
+		public void DisconnectFromRoom()
+		{
+			if (!IsConnected)
+				return;
+
+			_pauseEvent.Reset();
+
+
+#if UNITY_EDITOR
+			ObjectChangeEvents.changesPublished -= ChangesPublished;
+			EditorApplication.playModeStateChanged -= PreventPlayMode;
+#endif
+			SyncManager.OnUpdate -= Update;
+
+			foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
+				client.Dispose();
+#if UNITY_EDITOR
+			GameObject.DestroyImmediate(_objectContainer.gameObject);
+#else
+			GameObject.Destroy(_objectContainer.gameObject);
+#endif
+			OpenRooms.TryRemove(CurrentRoom.Roomname, out SyncOpenRoom _);
+			CurrentRoom = null;
+
+			if (!IsRoomOwner && _scene.IsValid())
+			{
+#if UNITY_EDITOR
+				EditorSceneManager.UnloadSceneAsync(_scene);
+#else
+                    SceneManager.UnloadSceneAsync(_scene);
+#endif
+			}
+			IsRoomOwner = false;
+			Debug.Log("Client Disconnected from Room!");
+		}
+
 		#endregion
 
 		#region network logic
@@ -234,26 +377,54 @@ namespace jKnepel.UnitySync
 			{
 				while (_disposeCount == 0)
 				{
+					_pauseEvent.WaitOne(Timeout.Infinite);
+
 					byte[] username = Encoding.ASCII.GetBytes(SyncSettings.Instance.Username);
 					byte[] color = { SyncSettings.Instance.Color.r, SyncSettings.Instance.Color.g, SyncSettings.Instance.Color.b };
+					int currentPosition = CRC32_LENGTH;
 
 					// prepare data with room name, username and -color
-					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + USERNAME_FLAG_LENGTH + username.Length + COLOR_LENGTH];
-					data[CRC32_LENGTH] = (byte)SyncPacketType.Heartbeat;
-					data[CRC32_LENGTH + DATA_TYPE_LENGTH] = (byte)username.Length;
-					Array.Copy(username, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH + USERNAME_FLAG_LENGTH, username.Length);
-					Array.Copy(color, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH + USERNAME_FLAG_LENGTH + username.Length, COLOR_LENGTH);
+					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH +
+						ROOMNAME_FLAG_LENGTH + CurrentRoom.RoomnameBytes.Length +
+						USERNAME_FLAG_LENGTH + username.Length +
+						COLOR_LENGTH];
+					data[currentPosition] = (byte)SyncPacketType.Heartbeat;
+					currentPosition += DATA_TYPE_LENGTH;
+					data[currentPosition] = (byte)CurrentRoom.RoomnameBytes.Length;
+					currentPosition += ROOMNAME_FLAG_LENGTH;
+					Array.Copy(CurrentRoom.RoomnameBytes, 0, data, currentPosition, CurrentRoom.RoomnameBytes.Length);
+					currentPosition += CurrentRoom.RoomnameBytes.Length;
+					data[currentPosition] = (byte)username.Length;
+					currentPosition += USERNAME_FLAG_LENGTH;
+					Array.Copy(username, 0, data, currentPosition, username.Length);
+					currentPosition += username.Length;
+					Array.Copy(color, 0, data, currentPosition, COLOR_LENGTH);
+
 					CalculateAndAddChecksum(data);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
 					DebugBytesLog(data, "Send Heartbeat Bytes: ");
 					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
 				}
-				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
 			catch (Exception ex)
 			{
-				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+				// TODO : replace with correct exceptions
+				switch (ex)
+				{
+					case SocketException:
+						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
+						break;
+					case ObjectDisposedException:
+						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
+						break;
+					case ThreadStartException:
+					case OutOfMemoryException:
+						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
+						break;
+					default:
+						throw;
+				}
 			}
 		}
 
@@ -263,6 +434,8 @@ namespace jKnepel.UnitySync
 			{
 				while (_disposeCount == 0)
 				{
+					_pauseEvent.WaitOne(Timeout.Infinite);
+
 					if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
 						continue;
 
@@ -274,11 +447,25 @@ namespace jKnepel.UnitySync
 						default: break;
 					}
 				}
-				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
 			catch (Exception ex)
 			{
-				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+				// TODO : replace with correct exceptions
+				switch (ex)
+				{
+					case SocketException:
+						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
+						break;
+					case ObjectDisposedException:
+						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
+						break;
+					case ThreadStartException:
+					case OutOfMemoryException:
+						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
+						break;
+					default:
+						throw (ex);
+				}
 			}
 		}
 
@@ -308,13 +495,24 @@ namespace jKnepel.UnitySync
 					// check if packet comes from other client
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(_localIPAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
+					if (sender.Equals(_localIpAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
 						continue;
 
-					// check crc32 checksum
+					// check crc32 checksum with roomname
 					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH, receivedBytes.Length - checksum.Length);
-					if (!checksum.SequenceEqual(GetCRCChecksumBytes(remainder)))
+					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
+						receivedBytes.Length - CRC32_LENGTH);
+					byte[] roomnameBytes = CurrentRoom.RoomnameBytes;
+					if (!IsConnected)
+					{
+						byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
+						roomnameBytes = GetBytesFromArray(receivedBytes,
+							CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
+					}
+					if (BitConverter.ToUInt32(checksum) != CalculatePacketChecksum(remainder, roomnameBytes))
+						continue;
+
+					if (!IsConnected && (SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
 						continue;
 
 					// handle data depending on packet type
@@ -331,11 +529,25 @@ namespace jKnepel.UnitySync
 						default: break;
 					}
 				}
-				if (_disposeCount == 0) _connectionAbolished?.Invoke(null);
 			}
 			catch (Exception ex)
 			{
-				if (_disposeCount == 0) _connectionAbolished?.Invoke(ExceptionDispatchInfo.Capture(ex));
+				// TODO : replace with correct exceptions
+				switch (ex)
+				{
+					case SocketException:
+						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
+						break;
+					case ObjectDisposedException:
+						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
+						break;
+					case ThreadStartException:
+					case OutOfMemoryException:
+						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
+						break;
+					default:
+						throw (ex);
+				}
 			}
 		}
 
@@ -414,48 +626,76 @@ namespace jKnepel.UnitySync
 
 		private void UpdateHeartbeat(string sender, byte[] data)
 		{
-			// read username and color from data
-			int usernameLength = data[0];
-			byte[] usernameBytes = new byte[usernameLength];
-			Array.Copy(data, 1, usernameBytes, 0, usernameLength);
+			// read roomname, username and -color from data
+			int currentPosition = 0;
+			int roomnameLength = data[currentPosition];
+			currentPosition += ROOMNAME_FLAG_LENGTH;
+			byte[] roomnameBytes = GetBytesFromArray(data, currentPosition, roomnameLength);
+			string roomname = Encoding.ASCII.GetString(roomnameBytes);
+			currentPosition += roomnameLength;
+			int usernameLength = data[currentPosition];
+			currentPosition += USERNAME_FLAG_LENGTH;
+			byte[] usernameBytes = GetBytesFromArray(data, currentPosition, usernameLength);
 			string username = Encoding.ASCII.GetString(usernameBytes);
-			Color32 color = new(data[usernameLength + 1], data[usernameLength + 2], data[usernameLength + 3], 255);
+			currentPosition += usernameLength;
+			Color32 color = new(data[currentPosition], data[currentPosition + 1], data[currentPosition + 2], 255);
 
-			// create client and add it to dictionary if it doesn't exist yet
-			if (!_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
+			// create room/client and add it to dictionary if it doesn't exist yet
+			if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
 			{
-				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab);
-
-				// create timer for removing client on timeout
-				System.Timers.Timer timeoutTimer = new(SyncSettings.Instance.ClientTimeoutDelay);
-				void TimeoutClient(object caller, ElapsedEventArgs e)
+				room = new(roomname);
+				OpenRooms.TryAdd(roomname, room);
+				_ = TimeoutRoom(room);
+			}
+			if (!room.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
+			{
+				SyncClientVisualizer vis = null;
+				if (CurrentRoom.Equals(room))
 				{
-					if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
-					{
-						_connectedClients.TryRemove(sender, out SyncConnectedClient _);
-						_mainThreadActions.Enqueue(() => client.Dispose());
-					}
-				};
-				timeoutTimer.Elapsed += new(TimeoutClient);
-				timeoutTimer.Start();
-
-				// add client to list
-				client = new(sender, username, obj.transform, color, timeoutTimer);
-				_connectedClients.TryAdd(sender, client);
+					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
+					vis = obj.GetComponent<SyncClientVisualizer>();
+				}
+				client = new(sender, username, vis, color);
+				room.ConnectedClients.TryAdd(sender, client);
+				_ = TimeoutClient(client, room);
 			}
 
 			// update client values
-			// TODO : move updates to creation if color/username are deciding on being static
-			if (!SyncSettings.Instance.ShowSyncObjectInHiearchy) 
-				client.Visualizer.hideFlags = HideFlags.HideInHierarchy;
 			client.Color = color;
-			client.Visualizer.name = $"{username}@{sender}";
-			// TODO : possible bug, shared material causes all clients to have same color?
-			client.Visualizer.GetChild(1).GetComponent<Renderer>().sharedMaterial.SetColor("_Color", color);
-			TMPro.TMP_Text tag = client.Visualizer.GetChild(0).GetChild(0).GetComponent<TMPro.TMP_Text>();
-			tag.text = username;
-			tag.color = color;
+			if (client.Visualizer) client.Visualizer.UpdateVisualizer(sender, username, color);
+			room.LastHeartbeat = DateTime.Now;
 			client.LastHeartbeat = DateTime.Now;
+		}
+
+		private async Task TimeoutClient(SyncConnectedClient client, SyncOpenRoom room)
+		{
+			while (_disposeCount == 0 && room.ConnectedClients.ContainsKey(client.IP))
+			{
+				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
+				{
+					client.Dispose();
+					if (room.ConnectedClients.Count == 1)
+						OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
+					else
+						room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
+					return;
+				}
+				await Task.Delay(SyncSettings.Instance.ClientTimeoutDelay);
+			}
+		}
+
+		private async Task TimeoutRoom(SyncOpenRoom room)
+		{
+			while (_disposeCount == 0 && OpenRooms.ContainsKey(room.Roomname))
+			{
+				if (!room.Equals(CurrentRoom)
+					&& (DateTime.Now - room.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.RoomTimeoutDelay)
+				{
+					OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
+					return;
+				}
+				await Task.Delay(SyncSettings.Instance.RoomTimeoutDelay);
+			}
 		}
 
 		// TODO : optimize this
@@ -469,13 +709,13 @@ namespace jKnepel.UnitySync
 			byte[] rotationY = GetBytesFromArray(data, 4 * size, size);
 			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
 
-			if (_connectedClients.TryGetValue(sender, out SyncConnectedClient client))
+			if (CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				client.LastHeartbeat = DateTime.Now;
-				client.Visualizer.position = new Vector3(BitConverter.ToSingle(positionX),
+				client.Visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),
 					BitConverter.ToSingle(positionY),
 					BitConverter.ToSingle(positionZ));
-				client.Visualizer.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
+				client.Visualizer.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
 					BitConverter.ToSingle(rotationY),
 					BitConverter.ToSingle(rotationZ));
 				if (!client.Visualizer.gameObject.activeSelf) 
@@ -525,25 +765,27 @@ namespace jKnepel.UnitySync
 			{
 				socket.Connect("8.8.8.8", 65530);
 				IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
-				_localIPAddress = endPoint.Address.ToString();
+				_localIpAddress = endPoint.Address.ToString();
 			}
 		}
 
-		private byte[] GetCRCChecksumBytes(byte[] data)
+		private uint CalculatePacketChecksum(byte[] packet, byte[] roomname = null)
 		{
-			// calculate crc32 checksum from protocol id, room id and data
-			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + data.Length];
-			Array.Copy(BitConverter.GetBytes(SyncManager.PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
-			// TODO : add room id
-			Array.Copy(data, 0, bytes, PROTOCOL_ID_LENGTH, data.Length);
-			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
+			if (roomname == null) roomname = CurrentRoom.RoomnameBytes;
+
+			// calculate crc32 checksum from protocol id, roomname and data
+			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + roomname.Length + packet.Length];
+			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
+			Array.Copy(roomname, 0, bytes, PROTOCOL_ID_LENGTH, roomname.Length);
+			Array.Copy(packet, 0, bytes, PROTOCOL_ID_LENGTH + roomname.Length, packet.Length);
+			return SyncCRC32.CRC32Bytes(bytes);
 		}
 
 		private void CalculateAndAddChecksum(byte[] packet)
 		{
 			// calculate crc32 checksum from packet and add it to the start
-			byte[] checksum = GetBytesFromArray(packet, CRC32_LENGTH, packet.Length - CRC32_LENGTH);
-			Array.Copy(GetCRCChecksumBytes(checksum), 0, packet, 0, CRC32_LENGTH);
+			uint checksum = CalculatePacketChecksum(GetBytesFromArray(packet, CRC32_LENGTH, packet.Length - CRC32_LENGTH));
+			Array.Copy(BitConverter.GetBytes(checksum), 0, packet, 0, CRC32_LENGTH);
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
@@ -565,12 +807,9 @@ namespace jKnepel.UnitySync
 
 		private static void DebugBytesLog(byte[] bytes, string msg, bool inBinary = false)
 		{
-			string debugOut = msg;
 			foreach (byte d in bytes)
-			{
-				debugOut += Convert.ToString(d, inBinary ? 2 : 16).PadLeft(inBinary ? 8 : 2, '0') + " ";
-			}
-			SyncManager.AddDebugMessage(debugOut);
+				msg += Convert.ToString(d, inBinary ? 2 : 16).PadLeft(inBinary ? 8 : 2, '0') + " ";
+			SyncManager.AddDebugMessage(msg);
 		}
 
 		#endregion

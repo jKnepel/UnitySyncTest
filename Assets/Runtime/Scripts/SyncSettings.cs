@@ -28,17 +28,17 @@ public class SyncSettings : ScriptableObject
     public bool ShowSyncObjectInHiearchy = false;
 
     // packet frequency settings
-    public int HeartbeatDelay = 2500;
-    public double ClientTimeoutDelay = 6000;
+    public int HeartbeatDelay = 1000;
+    public int ClientTimeoutDelay = 3000;
+    public int RoomTimeoutDelay = 3000;
     public int GameObjectAndComponentUpdateDelay = 500;
     public int ClientCameraUpdateDelay = 50;
 
     // user settings
     public int Port = 8080;
+    public string ImportSceneName = "SyncImportScene";
     public string Username = "Username";
     public Color32 Color = new(255, 255, 255, 255);
-    public string ExportSceneName = "ExportScene";
-    public string ImportSceneName = "ImportScene";
 
     // prefabs
     public GameObject ClientTransformPrefab;

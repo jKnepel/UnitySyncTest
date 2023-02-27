@@ -1,10 +1,8 @@
 using System;
+using System.Linq;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
-using System.Net.Sockets;
-using System.Threading;
-using System.Runtime.ExceptionServices;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -18,12 +16,32 @@ namespace jKnepel.UnitySync
 	{
 		#region public members
 
-		public const uint PROTOCOL_ID = 876237842;
-		public static bool IsConnected { get; private set; }
-
 		public static Action OnUpdate;
 		public static Action OnAwake;
 		public static Action OnStart;
+
+		public static bool IsSearchingRooms { get { return _client != null && _client.IsSearchingForRooms; } }
+		public static bool IsConnected { get { return _client != null && _client.IsConnected; } }
+
+		public static List<SyncOpenRoom> OpenRooms
+		{
+			get 
+			{
+				if (_client == null || _client.OpenRooms == null)
+					return null;
+				return _client.OpenRooms.Values.ToList(); 
+			}
+		}
+
+		public static SyncOpenRoom CurrentRoom
+		{
+			get 
+			{
+				if (_client == null)
+					return null;
+				return _client.CurrentRoom;
+			}
+		}
 
 		#endregion
 
@@ -35,13 +53,10 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region unity cycle
+		#region unity lifecycle
 
 		static SyncManager()
 		{
-			SyncEvents.onConnectClient += ConnectClient;
-			SyncEvents.onCloseClient += CloseClient;
-
 #if UNITY_EDITOR
 			Awake();
 			Start();
@@ -52,7 +67,9 @@ namespace jKnepel.UnitySync
 			SyncRuntimeManager.Instance.OnUpdate += Update;
 #endif
 
-			SyncSettings _ = SyncSettings.Instance;
+			_ = SyncSettings.Instance;
+
+			_client = new();
 		}
 
 		public static void Init() { }
@@ -79,82 +96,39 @@ namespace jKnepel.UnitySync
 
 		#region public methods
 
-		public static void AddDebugMessage(string text)
-		{
-			if (!SyncSettings.Instance.IsDebug) return;
-
-			Debug.Log(text);
-			_mainThreadActions.Enqueue(() => SyncEvents.onDebugTextAdded?.Invoke(text));
-		}
-
-		#endregion
-
-		#region client logic
-
-		private static void ConnectClient()
+		public static void RetryRoomDiscovery()
 		{
 			if (_client != null)
 			{
-				Debug.LogWarning($"The client is already connected!");
-				return;
+				_client.Dispose();
 			}
-
-#if UNITY_EDITOR
-			if (EditorApplication.isPlaying)
-			{
-				Debug.LogWarning($"This is not possible in the Editor Playmode");
-				return;
-			}
-#endif
-
-			Scene exportScene = SceneManager.GetSceneByName(SyncSettings.Instance.ExportSceneName);
-			if (!exportScene.IsValid() || !exportScene.isLoaded)
-			{
-				Debug.LogWarning($"The Scene {SyncSettings.Instance.ExportSceneName} is not valid!");
-				return;
-			}
-
-			Scene scene = SceneManager.GetSceneByName(SyncSettings.Instance.ImportSceneName);
-			if (scene.IsValid() || scene.isLoaded)
-			{
-				Debug.LogWarning($"The Scene {SyncSettings.Instance.ImportSceneName} already exists!");
-				return;
-			}
-
-			_client = new(exportScene, (ExceptionDispatchInfo ex) =>
-			{
-				if (ex != null)
-				{
-					switch (ex.SourceException)
-					{
-						case SocketException:
-							AddDebugMessage("Socket Exception " + ex.SourceException.ToString());
-							break;
-						case ObjectDisposedException:
-							AddDebugMessage("Object Disposed Exception " + ex.SourceException.ToString());
-							break;
-						case ThreadStartException:
-						case OutOfMemoryException:
-							AddDebugMessage("Thread Exception " + ex.SourceException.ToString());
-							break;
-						default:
-							ex.Throw();
-							break;
-					}
-				}
-
-				CloseClient();
-			});
-			IsConnected = true;
+			_client = new();
 		}
 
-		private static void CloseClient()
+		public static void ConnectToRoom(string roomname, string scenename, bool createroom = false)
 		{
-			if (!IsConnected) return;
+			if (_client == null)
+			{
+				_client = new();
+			}
+			_client.ConnectToRoom(roomname, scenename, createroom);
+		}
 
-			IsConnected = false;
-			_client.Dispose();
-			_client = null;
+		public static void DisconnectFromRoom()
+		{
+			if (_client == null)
+			{
+				_client = new();
+				return;
+			}
+			_client.DisconnectFromRoom();
+		}
+
+		public static void AddDebugMessage(string text)
+		{
+			_mainThreadActions.Enqueue(() => SyncEvents.OnDebugTextAdded?.Invoke(text));
+			if (SyncSettings.Instance.IsDebug) 
+				Debug.Log(text);
 		}
 
 		#endregion
