@@ -99,6 +99,8 @@ namespace jKnepel.UnitySync
 				_broadCastEndpoint = new(IPAddress.Broadcast, SyncSettings.Instance.Port);
 				_receiveEndpoint = new(IPAddress.Any, SyncSettings.Instance.Port);
 
+				SyncManager.OnUpdate += Update;
+
 				_pauseEvent.Reset();
 
 				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
@@ -341,7 +343,6 @@ namespace jKnepel.UnitySync
 			ObjectChangeEvents.changesPublished -= ChangesPublished;
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
-			SyncManager.OnUpdate -= Update;
 
 			foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
 				client.Dispose();
@@ -488,8 +489,7 @@ namespace jKnepel.UnitySync
 
 		private void ListenerThread()
 		{
-			try
-			{
+			
 				while (_disposeCount == 0)
 				{
 					// check if packet comes from other client
@@ -502,19 +502,24 @@ namespace jKnepel.UnitySync
 					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
 					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
 						receivedBytes.Length - CRC32_LENGTH);
-					byte[] roomnameBytes = CurrentRoom.RoomnameBytes;
+					byte[] roomnameBytes;
 					if (!IsConnected)
 					{
+						if ((SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
+							continue;
+
 						byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
 						roomnameBytes = GetBytesFromArray(receivedBytes,
 							CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
 					}
+					else
+					{
+						roomnameBytes = CurrentRoom.RoomnameBytes;
+					}
 					if (BitConverter.ToUInt32(checksum) != CalculatePacketChecksum(remainder, roomnameBytes))
 						continue;
 
-					if (!IsConnected && (SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
-						continue;
-
+					Debug.Log((SyncPacketType)remainder[0]);
 					// handle data depending on packet type
 					DebugBytesLog(receivedBytes, "Received Bytes: ");
 					byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
@@ -529,26 +534,6 @@ namespace jKnepel.UnitySync
 						default: break;
 					}
 				}
-			}
-			catch (Exception ex)
-			{
-				// TODO : replace with correct exceptions
-				switch (ex)
-				{
-					case SocketException:
-						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
-						break;
-					case ObjectDisposedException:
-						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
-						break;
-					case ThreadStartException:
-					case OutOfMemoryException:
-						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
-						break;
-					default:
-						throw (ex);
-				}
-			}
 		}
 
 		#endregion
@@ -650,7 +635,7 @@ namespace jKnepel.UnitySync
 			if (!room.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				SyncClientVisualizer vis = null;
-				if (CurrentRoom.Equals(room))
+				if (CurrentRoom != null && CurrentRoom.Equals(room))
 				{
 					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
 					vis = obj.GetComponent<SyncClientVisualizer>();
