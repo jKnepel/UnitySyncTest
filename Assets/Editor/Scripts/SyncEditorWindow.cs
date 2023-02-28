@@ -9,7 +9,6 @@ namespace jKnepel.UnitySync
     {
         #region
 
-        private bool _userSettingsIsVisible = true;
         private bool _newRoomOptionsIsVisible = false;
         private string _newRoomName = "New Room";
         private int _newRoomDropdownIndex = 0;
@@ -20,6 +19,8 @@ namespace jKnepel.UnitySync
         
         private static Texture2D _texture;
         private static GUIStyle _style = new();
+
+        private Editor _syncSettingsEditor;
 
         #endregion
 
@@ -32,6 +33,7 @@ namespace jKnepel.UnitySync
 		public void OnEnable()
 		{
             _texture = new(1, 1);
+            _syncSettingsEditor = Editor.CreateEditor(SyncSettings.Instance);
 		}
 
 		public void CreateGUI()
@@ -42,29 +44,17 @@ namespace jKnepel.UnitySync
 		{
         }
 
-		void OnGUI()
+        // TODO : add descriptions to labels, was too lazy
+        void OnGUI()
         {
             EditorGUILayout.BeginVertical(EditorStyles.inspectorDefaultMargins);
 			{
                 GUILayout.Label("UnitySync", EditorStyles.largeLabel);
 
                 // user settings
-                // TODO : replace with custom editor for SyncSettings
-                _userSettingsIsVisible = EditorGUILayout.BeginFoldoutHeaderGroup(_userSettingsIsVisible, "User Settings", 
-                    EditorStyles.foldoutHeader);
-                if (_userSettingsIsVisible)
-				{
-                    EditorGUI.indentLevel++;
-                    SyncSettings.Instance.Port = EditorGUILayout.IntField("Port:", SyncSettings.Instance.Port);
-                    SyncSettings.Instance.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", 
-                        SyncSettings.Instance.ImportSceneName);
-                    SyncSettings.Instance.Username = EditorGUILayout.TextField("Username:", SyncSettings.Instance.Username);
-                    SyncSettings.Instance.Color = EditorGUILayout.ColorField("Color:", SyncSettings.Instance.Color);
-                    SyncSettings.Instance.ShowSyncObjectInHierarchy = EditorGUILayout.Toggle("ShowSyncObjects: ",
-                        SyncSettings.Instance.ShowSyncObjectInHierarchy);
-                    EditorGUI.indentLevel--;
-				}
-                EditorGUILayout.EndFoldoutHeaderGroup();
+                _syncSettingsEditor.OnInspectorGUI();
+                EditorGUILayout.Space();
+                EditorGUILayout.Space();
 
                 if (!SyncManager.IsSearchingRooms)
 				{

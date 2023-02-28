@@ -2,10 +2,17 @@ using UnityEngine;
 
 namespace jKnepel.UnitySync
 {
+    [System.Serializable]
     [CreateAssetMenu(fileName = "UnitySyncSettings", menuName = "ScriptableObjects/UnitySyncSettings", order = 1)]
     public class SyncSettings : ScriptableObject
     {
-        private static SyncSettings instance;
+		public void OnEnable()
+		{
+            if (instance != null)
+                instance = this;
+		}
+
+		private static SyncSettings instance;
         public static SyncSettings Instance
 	    {
             get
@@ -15,8 +22,6 @@ namespace jKnepel.UnitySync
                     instance = Resources.Load<SyncSettings>("UnitySyncSettings");
                     if (instance == null)
 				    {
-                        // TODO : this should be saved to allow for manually created settings asset, created after this instance,
-                        //      to become the new settings instance
                         instance = (SyncSettings)CreateInstance(typeof(SyncSettings));
                     }
 			    }
@@ -25,7 +30,7 @@ namespace jKnepel.UnitySync
 	    }
     
         // debug settings
-        public bool IsDebug = true;
+        public bool IsDebug = false;
         public bool AllowReceivingOwnPackets = false;
         private bool _showSyncObjectinHierarchy = false;
         public bool ShowSyncObjectInHierarchy
@@ -42,8 +47,8 @@ namespace jKnepel.UnitySync
         public int HeartbeatDelay = 1000;
         public int ClientTimeoutDelay = 3000;
         public int RoomTimeoutDelay = 3000;
-        public int GameObjectAndComponentUpdateDelay = 500;
-        public int ClientCameraUpdateDelay = 50;
+        public int EditorUpdatesDelay = 500;
+        public int ClientVisualizerUpdateDelay = 50;
 
         // user settings
         public int Port = 8080;

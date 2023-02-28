@@ -63,7 +63,7 @@ namespace jKnepel.UnitySync
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
-		private int _cameraUpdateDelay = SyncSettings.Instance.ClientCameraUpdateDelay;
+		private int _cameraUpdateDelay = SyncSettings.Instance.ClientVisualizerUpdateDelay;
 
 		private Scene _scene;
 		private Scene _exportScene;
@@ -149,10 +149,13 @@ namespace jKnepel.UnitySync
 			{
 				if (disposing)
 				{
-					_pauseEvent.Set();
-					_listenerThread.Join();
-					_senderThread.Join();
-					_heartbeatThread.Join();
+					if (_listenerThread != null)
+					{
+						_pauseEvent.Set();
+						_listenerThread.Join();
+						_senderThread.Join();
+						_heartbeatThread.Join();
+					}
 
 #if UNITY_EDITOR
 					ObjectChangeEvents.changesPublished -= ChangesPublished;
@@ -175,6 +178,7 @@ namespace jKnepel.UnitySync
 				{
 					if (_sender != null)
 					{
+						_sender.Client.Shutdown(SocketShutdown.Both);
 						_sender.Close();
 						_sender.Dispose();
 					}
@@ -511,7 +515,7 @@ namespace jKnepel.UnitySync
 
 				// Limit hierarchy syncs
 				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(SyncSettings.Instance.GameObjectAndComponentUpdateDelay)
+				Task.Delay(SyncSettings.Instance.EditorUpdatesDelay)
 					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
 			}
 
@@ -522,7 +526,7 @@ namespace jKnepel.UnitySync
 		private void CurrentCameraMoved(Transform camera)
 		{
 			// limit camera syncs
-			if (_cameraUpdateDelay < SyncSettings.Instance.ClientCameraUpdateDelay)
+			if (_cameraUpdateDelay < SyncSettings.Instance.ClientVisualizerUpdateDelay)
 			{
 				camera.hasChanged = false;
 				return;
