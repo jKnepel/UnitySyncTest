@@ -55,7 +55,6 @@ namespace jKnepel.UnitySync
 		private readonly Thread _heartbeatThread;
 
 		private readonly ManualResetEvent _pauseEvent = new(true);
-		private readonly ManualResetEvent _shutdownEvent = new(false);
 		private int _disposeCount;
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
@@ -123,6 +122,9 @@ namespace jKnepel.UnitySync
 					case ArgumentOutOfRangeException:
 						SyncManager.AddDebugMessage("ArgumentOutOfRangeException " + ex.ToString());
 						break;
+					case ThreadStartException:
+						SyncManager.AddDebugMessage("ThreadStartException " + ex.ToString());
+						break;
 					case OutOfMemoryException:
 						SyncManager.AddDebugMessage("OutOfMemoryException " + ex.ToString());
 						break;
@@ -147,7 +149,6 @@ namespace jKnepel.UnitySync
 			{
 				if (disposing)
 				{
-					_shutdownEvent.Set();
 					_pauseEvent.Set();
 					_listenerThread.Join();
 					_senderThread.Join();
@@ -236,92 +237,71 @@ namespace jKnepel.UnitySync
 
 		public void ConnectToRoom(string roomname, string scenename, bool createroom = false)
 		{
-			try
+			if (IsConnected)
 			{
-				if (IsConnected)
-				{
-					Debug.LogWarning($"The client is already connected!");
-					return;
-				}
+				Debug.LogWarning($"The client is already connected!");
+				return;
+			}
 
 #if UNITY_EDITOR
-				if (EditorApplication.isPlaying)
-				{
-					Debug.LogWarning($"Can't connect to room while Editor is in Playmode");
-					return;
-				}
+			if (EditorApplication.isPlaying)
+			{
+				Debug.LogWarning($"Can't connect to room while Editor is in Playmode");
+				return;
+			}
 #endif
 
-				// create/save scene if room is joined/created
-				Scene scene = SceneManager.GetSceneByName(scenename);
-				if (createroom)
+			// create/save scene if room is joined/created
+			Scene scene = SceneManager.GetSceneByName(scenename);
+			if (createroom)
+			{
+				if (OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
 				{
-					if (OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
-					{
-						Debug.LogWarning($"The Room {roomname} already exists!");
-						return;
-					}
-					if (!scene.IsValid() && !scene.isLoaded)
-					{
-						Debug.LogWarning($"The Scene {scenename} is not valid!");
-						return;
-					}
-					_scene = scene;
-					CurrentRoom = new(roomname);
-					OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
-					_ = TimeoutRoom(CurrentRoom);
-					IsRoomOwner = true;
+					Debug.LogWarning($"The Room {roomname} already exists!");
+					return;
 				}
-				else
+				if (!scene.IsValid() && !scene.isLoaded)
 				{
-					if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
-					{
-						Debug.LogWarning($"The Room {roomname} doesn't exist yet!");
-						return;
-					}
-					if (scene.IsValid() || scene.isLoaded)
-					{
-						Debug.LogWarning($"The Scene {scenename} already exists!");
-						return;
-					}
+					Debug.LogWarning($"The Scene {scenename} is not valid!");
+					return;
+				}
+				_scene = scene;
+				CurrentRoom = new(roomname);
+				OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
+				_ = TimeoutRoom(CurrentRoom);
+				IsRoomOwner = true;
+			}
+			else
+			{
+				if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
+				{
+					Debug.LogWarning($"The Room {roomname} doesn't exist yet!");
+					return;
+				}
+				if (scene.IsValid() || scene.isLoaded)
+				{
+					Debug.LogWarning($"The Scene {scenename} already exists!");
+					return;
+				}
 #if UNITY_EDITOR
-					_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-					_scene.name = scenename;
+				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+				_scene.name = scenename;
 #else
-					_scene = SceneManager.CreateScene(scenename);
+				_scene = SceneManager.CreateScene(scenename);
 #endif
-					CurrentRoom = new(roomname);
-					IsRoomOwner = false;
-					// TODO : announce myself to room
-				}
-				SceneManager.SetActiveScene(_scene);
-
-				_objectContainer = new GameObject("UnitySync Object Container").transform;
-				if (!SyncSettings.Instance.ShowSyncObjectInHiearchy)
-					_objectContainer.hideFlags = HideFlags.HideInHierarchy;
-
-				_pauseEvent.Set();
-
+				CurrentRoom = new(roomname);
+				IsRoomOwner = false;
+				// TODO : announce myself to room
 			}
-			catch (Exception ex)
-			{
-				// TODO : replace with correct exceptions
-				switch (ex)
-				{
-					case SocketException:
-						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
-						break;
-					case ObjectDisposedException:
-						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
-						break;
-					case ThreadStartException:
-					case OutOfMemoryException:
-						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
-						break;
-					default:
-						throw (ex);
-				}
-			}
+			SceneManager.SetActiveScene(_scene);
+
+			// show/hide parent gameobject for sync objects
+			_objectContainer = new GameObject("UnitySync Object Container").transform;
+			if (!SyncSettings.Instance.ShowSyncObjectInHierarchy)
+				_objectContainer.hideFlags = HideFlags.HideInHierarchy;
+			SyncEvents.OnShowSyncObjectInHierarchyChanged += ShowOrHideSyncObject;
+
+			_pauseEvent.Set();
 
 #if UNITY_EDITOR
 			ObjectChangeEvents.changesPublished += ChangesPublished;
@@ -343,6 +323,7 @@ namespace jKnepel.UnitySync
 			ObjectChangeEvents.changesPublished -= ChangesPublished;
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
+			SyncEvents.OnShowSyncObjectInHierarchyChanged -= ShowOrHideSyncObject;
 
 			foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
 				client.Dispose();
@@ -359,7 +340,7 @@ namespace jKnepel.UnitySync
 #if UNITY_EDITOR
 				EditorSceneManager.UnloadSceneAsync(_scene);
 #else
-                    SceneManager.UnloadSceneAsync(_scene);
+                SceneManager.UnloadSceneAsync(_scene);
 #endif
 			}
 			IsRoomOwner = false;
@@ -410,7 +391,8 @@ namespace jKnepel.UnitySync
 			}
 			catch (Exception ex)
 			{
-				// TODO : replace with correct exceptions
+				CurrentRoom = null;
+				IsSearchingForRooms = false;
 				switch (ex)
 				{
 					case SocketException:
@@ -418,10 +400,6 @@ namespace jKnepel.UnitySync
 						break;
 					case ObjectDisposedException:
 						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
-						break;
-					case ThreadStartException:
-					case OutOfMemoryException:
-						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
 						break;
 					default:
 						throw;
@@ -431,41 +409,19 @@ namespace jKnepel.UnitySync
 
 		private void SenderThread()
 		{
-			try
+			while (_disposeCount == 0)
 			{
-				while (_disposeCount == 0)
-				{
-					_pauseEvent.WaitOne(Timeout.Infinite);
+				_pauseEvent.WaitOne(Timeout.Infinite);
 
-					if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
-						continue;
+				if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
+					continue;
 
-					switch (packet.Type)
-					{
-						case SyncPacketType.ClientCamera:
-							SendClientCameraBytes(packet.Data);
-							break;
-						default: break;
-					}
-				}
-			}
-			catch (Exception ex)
-			{
-				// TODO : replace with correct exceptions
-				switch (ex)
+				switch (packet.Type)
 				{
-					case SocketException:
-						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
+					case SyncPacketType.ClientCamera:
+						SendClientCameraBytes(packet.Data);
 						break;
-					case ObjectDisposedException:
-						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
-						break;
-					case ThreadStartException:
-					case OutOfMemoryException:
-						SyncManager.AddDebugMessage("Thread Exception " + ex.ToString());
-						break;
-					default:
-						throw (ex);
+					default: break;
 				}
 			}
 		}
@@ -489,51 +445,49 @@ namespace jKnepel.UnitySync
 
 		private void ListenerThread()
 		{
-			
-				while (_disposeCount == 0)
+			while (_disposeCount == 0)
+			{
+				// check if packet comes from other client
+				byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
+				string sender = _receiveEndpoint.Address.ToString();
+				if (sender.Equals(_localIpAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
+					continue;
+
+				// check crc32 checksum with roomname
+				byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
+				byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
+					receivedBytes.Length - CRC32_LENGTH);
+				byte[] roomnameBytes;
+				if (!IsConnected)
 				{
-					// check if packet comes from other client
-					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
-					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(_localIpAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
+					if ((SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
 						continue;
 
-					// check crc32 checksum with roomname
-					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
-						receivedBytes.Length - CRC32_LENGTH);
-					byte[] roomnameBytes;
-					if (!IsConnected)
-					{
-						if ((SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
-							continue;
-
-						byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
-						roomnameBytes = GetBytesFromArray(receivedBytes,
-							CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
-					}
-					else
-					{
-						roomnameBytes = CurrentRoom.RoomnameBytes;
-					}
-					if (BitConverter.ToUInt32(checksum) != CalculatePacketChecksum(remainder, roomnameBytes))
-						continue;
-
-					Debug.Log((SyncPacketType)remainder[0]);
-					// handle data depending on packet type
-					DebugBytesLog(receivedBytes, "Received Bytes: ");
-					byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
-					switch ((SyncPacketType)remainder[0])
-					{
-						case SyncPacketType.Heartbeat:
-							_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
-							break;
-						case SyncPacketType.ClientCamera:
-							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
-							break;
-						default: break;
-					}
+					byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
+					roomnameBytes = GetBytesFromArray(receivedBytes,
+						CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
 				}
+				else
+				{
+					roomnameBytes = CurrentRoom.RoomnameBytes;
+				}
+				if (BitConverter.ToUInt32(checksum) != CalculatePacketChecksum(remainder, roomnameBytes))
+					continue;
+
+				// handle data depending on packet type
+				DebugBytesLog(receivedBytes, "Received Bytes: ");
+				byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
+				switch ((SyncPacketType)remainder[0])
+				{
+					case SyncPacketType.Heartbeat:
+						_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
+						break;
+					case SyncPacketType.ClientCamera:
+						_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
+						break;
+					default: break;
+				}
+			}
 		}
 
 		#endregion
@@ -635,7 +589,7 @@ namespace jKnepel.UnitySync
 			if (!room.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				SyncClientVisualizer vis = null;
-				if (CurrentRoom != null && CurrentRoom.Equals(room))
+				if (IsConnected && CurrentRoom.Equals(room))
 				{
 					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
 					vis = obj.GetComponent<SyncClientVisualizer>();
@@ -752,6 +706,11 @@ namespace jKnepel.UnitySync
 				IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
 				_localIpAddress = endPoint.Address.ToString();
 			}
+		}
+
+		private void ShowOrHideSyncObject(bool val)
+		{
+			_objectContainer.hideFlags = val ? HideFlags.None : HideFlags.HideInHierarchy;
 		}
 
 		private uint CalculatePacketChecksum(byte[] packet, byte[] roomname = null)

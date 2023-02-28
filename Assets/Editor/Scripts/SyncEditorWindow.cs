@@ -60,6 +60,8 @@ namespace jKnepel.UnitySync
                         SyncSettings.Instance.ImportSceneName);
                     SyncSettings.Instance.Username = EditorGUILayout.TextField("Username:", SyncSettings.Instance.Username);
                     SyncSettings.Instance.Color = EditorGUILayout.ColorField("Color:", SyncSettings.Instance.Color);
+                    SyncSettings.Instance.ShowSyncObjectInHierarchy = EditorGUILayout.Toggle("ShowSyncObjects: ",
+                        SyncSettings.Instance.ShowSyncObjectInHierarchy);
                     EditorGUI.indentLevel--;
 				}
                 EditorGUILayout.EndFoldoutHeaderGroup();
