@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -117,16 +116,16 @@ namespace jKnepel.UnitySync
 				switch (ex)
 				{
 					case SocketException:
-						SyncManager.AddDebugMessage("SocketException " + ex.ToString());
+						SyncManager.AddSyncMessage("SocketException " + ex.ToString(), SyncMessageSeverity.LogError);
 						break;
 					case ArgumentOutOfRangeException:
-						SyncManager.AddDebugMessage("ArgumentOutOfRangeException " + ex.ToString());
+						SyncManager.AddSyncMessage("ArgumentOutOfRangeException " + ex.ToString(), SyncMessageSeverity.LogError);
 						break;
 					case ThreadStartException:
-						SyncManager.AddDebugMessage("ThreadStartException " + ex.ToString());
+						SyncManager.AddSyncMessage("ThreadStartException " + ex.ToString(), SyncMessageSeverity.LogError);
 						break;
 					case OutOfMemoryException:
-						SyncManager.AddDebugMessage("OutOfMemoryException " + ex.ToString());
+						SyncManager.AddSyncMessage("OutOfMemoryException " + ex.ToString(), SyncMessageSeverity.LogError);
 						break;
 					default: throw;
 				}
@@ -312,7 +311,7 @@ namespace jKnepel.UnitySync
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			SyncManager.OnUpdate += Update;
-			SyncManager.AddDebugMessage("Client connected to Room!");
+			SyncManager.AddSyncMessage("Client connected to Room!");
 		}
 
 		public void DisconnectFromRoom()
@@ -348,7 +347,7 @@ namespace jKnepel.UnitySync
 #endif
 			}
 			IsRoomOwner = false;
-			Debug.Log("Client Disconnected from Room!");
+			SyncManager.AddSyncMessage("Client Disconnected from Room!");
 		}
 
 		#endregion
@@ -389,7 +388,7 @@ namespace jKnepel.UnitySync
 					CalculateAndAddChecksum(data);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
-					DebugBytesLog(data, "Send Heartbeat Bytes: ");
+					AddDebugByteMessage(data, "Send Heartbeat Bytes: ");
 					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
 				}
 			}
@@ -400,10 +399,10 @@ namespace jKnepel.UnitySync
 				switch (ex)
 				{
 					case SocketException:
-						SyncManager.AddDebugMessage("Socket Exception " + ex.ToString());
+						SyncManager.AddSyncMessage("Socket Exception " + ex.ToString(), SyncMessageSeverity.LogError);
 						break;
 					case ObjectDisposedException:
-						SyncManager.AddDebugMessage("Object Disposed Exception " + ex.ToString());
+						SyncManager.AddSyncMessage("Object Disposed Exception " + ex.ToString(), SyncMessageSeverity.LogError);
 						break;
 					default:
 						throw;
@@ -440,7 +439,7 @@ namespace jKnepel.UnitySync
 			CalculateAndAddChecksum(data);
 
 			_sender.Send(data, data.Length, _broadCastEndpoint);
-			DebugBytesLog(data, "Send Camera Bytes: ");
+			AddDebugByteMessage(data, "Send Camera Bytes: ");
 		}
 
 		#endregion
@@ -479,7 +478,7 @@ namespace jKnepel.UnitySync
 					continue;
 
 				// handle data depending on packet type
-				DebugBytesLog(receivedBytes, "Received Bytes: ");
+				AddDebugByteMessage(receivedBytes, "Received Bytes: ");
 				byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
 				switch ((SyncPacketType)remainder[0])
 				{
@@ -677,14 +676,14 @@ namespace jKnepel.UnitySync
 				}
 				SceneManager.MoveGameObjectToScene(createdObject, _scene);
 
-				SyncManager.AddDebugMessage($"GameObject '{createdObject.name}' imported.");
+				SyncManager.AddSyncMessage($"GameObject '{createdObject.name}' imported.");
 			};
 
 			using MemoryStream memoryStream = new();
 			await memoryStream.WriteAsync(hierarchy);
 			await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
 
-			SyncManager.AddDebugMessage($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
+			SyncManager.AddSyncMessage($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
 
 			return;
 		}
@@ -753,11 +752,11 @@ namespace jKnepel.UnitySync
 		}
 #endif
 
-		private static void DebugBytesLog(byte[] bytes, string msg, bool inBinary = false)
+		private static void AddDebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
 		{
 			foreach (byte d in bytes)
 				msg += Convert.ToString(d, inBinary ? 2 : 16).PadLeft(inBinary ? 8 : 2, '0') + " ";
-			SyncManager.AddDebugMessage(msg);
+			SyncManager.AddSyncMessage(msg, true);
 		}
 
 		#endregion

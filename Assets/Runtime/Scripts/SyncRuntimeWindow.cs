@@ -15,12 +15,10 @@ namespace jKnepel.UnitySync
 
 		private void Awake()
 		{
-			SyncEvents.OnDebugTextAdded += AddDebug;
 		}
 
 		private void OnDestroy()
 		{
-			SyncEvents.OnDebugTextAdded -= AddDebug;
 		}
 
 		public void ConnectClient()

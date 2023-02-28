@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
@@ -9,18 +10,21 @@ namespace jKnepel.UnitySync
     {
         #region
 
+        private Editor _syncSettingsEditor;
+
         private bool _newRoomOptionsIsVisible = false;
         private string _newRoomName = "New Room";
         private int _newRoomDropdownIndex = 0;
         
         private Vector2 _roomsViewPos;
         private Vector2 _clientsViewPos;
+        private Vector2 _messagesViewPos;
         private Color[] _scrollViewColors = new Color[] { new(0.15f, 0.15f, 0.15f), new(0.2f, 0.2f, 0.2f) };
-        
-        private static Texture2D _texture;
-        private static GUIStyle _style = new();
 
-        private Editor _syncSettingsEditor;
+        private readonly List<(string, SyncMessageSeverity)> _syncMessages = new();
+
+        private Texture2D _texture;
+        private GUIStyle _style = new();
 
         #endregion
 
@@ -34,6 +38,7 @@ namespace jKnepel.UnitySync
 		{
             _texture = new(1, 1);
             _syncSettingsEditor = Editor.CreateEditor(SyncSettings.Instance);
+            SyncEvents.OnSyncMessageAdded += AddSyncMessage;
 		}
 
 		public void CreateGUI()
@@ -42,6 +47,7 @@ namespace jKnepel.UnitySync
 
         private void OnDestroy()
 		{
+            SyncEvents.OnSyncMessageAdded -= AddSyncMessage;
         }
 
         // TODO : add descriptions to labels, was too lazy
@@ -138,12 +144,46 @@ namespace jKnepel.UnitySync
                     if (GUILayout.Button(new GUIContent("Leave Room")))
                         SyncManager.DisconnectFromRoom();
                 }
-			}
+                EditorGUILayout.Space();
+                EditorGUILayout.Space();
+
+                // sync messages
+                GUILayout.Label($"Sync Messages:");
+                _messagesViewPos = EditorGUILayout.BeginScrollView(_messagesViewPos,
+                    EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(200));
+				{
+                    Color defaultColor = _style.normal.textColor;
+                    for (int i = 0; i < _syncMessages.Count; i++)
+                    {
+                        (string, SyncMessageSeverity) message = _syncMessages.ElementAt(i);
+                        EditorGUILayout.BeginHorizontal(GetBackgroundColorStyle(_scrollViewColors[i % 2]));
+                        {
+                            switch (message.Item2)
+							{
+                                case SyncMessageSeverity.Log:
+                                    _style.normal.textColor = Color.white;
+                                    break;
+                                case SyncMessageSeverity.LogWarning:
+                                    _style.normal.textColor = Color.yellow;
+                                    break;
+                                case SyncMessageSeverity.LogError:
+                                    _style.normal.textColor = Color.red;
+                                    break;
+							}
+                            GUILayout.Label(message.Item1, _style);
+                        }
+                        EditorGUILayout.EndHorizontal();
+                    }
+                    _style.normal.textColor = defaultColor;
+                }
+                EditorGUILayout.EndScrollView();
+
+            }
             EditorGUILayout.EndVertical();
         }
 
 
-        private static GUIStyle GetBackgroundColorStyle(Color color)
+        private GUIStyle GetBackgroundColorStyle(Color color)
         {
             _texture.SetPixel(0, 0, color);
             _texture.Apply();
@@ -151,5 +191,10 @@ namespace jKnepel.UnitySync
             style.normal.background = _texture;
             return style;
         }
+
+        private void AddSyncMessage(string msg, SyncMessageSeverity sev)
+		{
+            _syncMessages.Add((msg, sev));
+		}
     }
 }
