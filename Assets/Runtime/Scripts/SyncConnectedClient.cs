@@ -7,15 +7,15 @@ namespace jKnepel.UnitySync
 	{
 		public string IP { get; private set; }
 		public string Username { get; set; }
-		public SyncClientVisualizer Visualizer { get; private set; }
+		public SyncClientVisualizer Visualizer { get; set; }
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
-		public SyncConnectedClient(string ip, string username, SyncClientVisualizer visualizer, Color32 color)
+		public SyncConnectedClient(string ip, string username, Color32 color)
 		{
 			IP = ip;
 			Username = username;
-			Visualizer = visualizer;
+			Visualizer = null;
 			Color = color;
 			LastHeartbeat = DateTime.Now;
 		}

@@ -9,14 +9,12 @@ namespace jKnepel.UnitySync
         public string Roomname { get; private set; }
         public byte[] RoomnameBytes { get; private set; }
         public ConcurrentDictionary<string, SyncConnectedClient> ConnectedClients { get; private set; }
-        public DateTime LastHeartbeat { get; set; }
 
         public SyncOpenRoom(string roomname)
 		{
             Roomname = roomname;
             RoomnameBytes = Encoding.ASCII.GetBytes(roomname);
             ConnectedClients = new();
-            LastHeartbeat = DateTime.Now;
 		}
 
 		public override bool Equals(object obj)

@@ -271,7 +271,6 @@ namespace jKnepel.UnitySync
 				_scene = scene;
 				CurrentRoom = new(roomname);
 				OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
-				_ = TimeoutRoom(CurrentRoom);
 				IsRoomOwner = true;
 			}
 			else
@@ -292,7 +291,7 @@ namespace jKnepel.UnitySync
 #else
 				_scene = SceneManager.CreateScene(scenename);
 #endif
-				CurrentRoom = new(roomname);
+				CurrentRoom = room;
 				IsRoomOwner = false;
 				// TODO : announce myself to room
 			}
@@ -335,7 +334,9 @@ namespace jKnepel.UnitySync
 #else
 			GameObject.Destroy(_objectContainer.gameObject);
 #endif
-			OpenRooms.TryRemove(CurrentRoom.Roomname, out SyncOpenRoom _);
+
+			if (CurrentRoom.ConnectedClients.Count == 0)
+				OpenRooms.TryRemove(CurrentRoom.Roomname, out SyncOpenRoom _);
 			CurrentRoom = null;
 
 			if (!IsRoomOwner && _scene.IsValid())
@@ -589,25 +590,23 @@ namespace jKnepel.UnitySync
 			{
 				room = new(roomname);
 				OpenRooms.TryAdd(roomname, room);
-				_ = TimeoutRoom(room);
 			}
 			if (!room.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
-				SyncClientVisualizer vis = null;
-				if (IsConnected && CurrentRoom.Equals(room))
-				{
-					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
-					vis = obj.GetComponent<SyncClientVisualizer>();
-				}
-				client = new(sender, username, vis, color);
+				client = new(sender, username, color);
 				room.ConnectedClients.TryAdd(sender, client);
 				_ = TimeoutClient(client, room);
 			}
 
 			// update client values
 			client.Color = color;
-			if (client.Visualizer) client.Visualizer.UpdateVisualizer(sender, username, color);
-			room.LastHeartbeat = DateTime.Now;
+			if (client.Visualizer == null && room.Equals(CurrentRoom))
+			{
+				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
+				client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
+			}
+			if (client.Visualizer) 
+				client.Visualizer.UpdateVisualizer(sender, username, color);
 			client.LastHeartbeat = DateTime.Now;
 		}
 
@@ -628,23 +627,11 @@ namespace jKnepel.UnitySync
 			}
 		}
 
-		private async Task TimeoutRoom(SyncOpenRoom room)
-		{
-			while (_disposeCount == 0 && OpenRooms.ContainsKey(room.Roomname))
-			{
-				if (!room.Equals(CurrentRoom)
-					&& (DateTime.Now - room.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.RoomTimeoutDelay)
-				{
-					OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
-					return;
-				}
-				await Task.Delay(SyncSettings.Instance.RoomTimeoutDelay);
-			}
-		}
-
 		// TODO : optimize this
 		private void UpdateClientCamera(string sender, byte[] data)
 		{
+			SyncManager.AddSyncMessage(new("Received Camera Update from " + sender));
+
 			int size = sizeof(float);
 			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
 			byte[] positionY = GetBytesFromArray(data, 1 * size, size);
