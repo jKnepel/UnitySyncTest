@@ -124,17 +124,14 @@ namespace jKnepel.UnitySync
 			_client.DisconnectFromRoom();
 		}
 
-		public static void AddSyncMessage(string text, bool isDebug, SyncMessageSeverity severity = SyncMessageSeverity.Log)
+		public static void AddSyncMessage(SyncMessage message)
 		{
-			if (isDebug && !SyncSettings.Instance.IsDebug)
+			if (message.IsDebug && !SyncSettings.Instance.IsDebug)
 				return;
+			if (message.IsDebug)
+				Debug.Log(message);
 
-			_mainThreadActions.Enqueue(() => SyncEvents.OnSyncMessageAdded?.Invoke(text, severity));
-		}
-
-		public static void AddSyncMessage(string text, SyncMessageSeverity severity = SyncMessageSeverity.Log)
-		{
-			AddSyncMessage(text, false, severity);
+			_mainThreadActions.Enqueue(() => SyncEvents.OnSyncMessageAdded?.Invoke(message));
 		}
 
 		#endregion

@@ -26,7 +26,6 @@ namespace jKnepel.UnitySync
 				EditorGUI.indentLevel++;
 				SyncSettings.Instance.HeartbeatDelay = EditorGUILayout.IntField("Heartbeat Delay:", SyncSettings.Instance.HeartbeatDelay);
 				SyncSettings.Instance.ClientTimeoutDelay = EditorGUILayout.IntField("Client Timeout Delay:", SyncSettings.Instance.ClientTimeoutDelay);
-				SyncSettings.Instance.RoomTimeoutDelay = EditorGUILayout.IntField("Room Timeout Delay:", SyncSettings.Instance.RoomTimeoutDelay);
 				SyncSettings.Instance.EditorUpdatesDelay = EditorGUILayout.IntField("Editor Update Delay:", SyncSettings.Instance.EditorUpdatesDelay);
 				SyncSettings.Instance.ClientVisualizerUpdateDelay = EditorGUILayout.IntField("Client Visualizer Update Delay:", SyncSettings.Instance.ClientVisualizerUpdateDelay);
 				EditorGUI.indentLevel--;

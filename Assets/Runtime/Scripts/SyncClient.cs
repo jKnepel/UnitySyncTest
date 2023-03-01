@@ -116,16 +116,16 @@ namespace jKnepel.UnitySync
 				switch (ex)
 				{
 					case SocketException:
-						SyncManager.AddSyncMessage("SocketException " + ex.ToString(), SyncMessageSeverity.LogError);
+						SyncManager.AddSyncMessage(new("SocketException " + ex.ToString(), SyncMessageSeverity.LogError));
 						break;
 					case ArgumentOutOfRangeException:
-						SyncManager.AddSyncMessage("ArgumentOutOfRangeException " + ex.ToString(), SyncMessageSeverity.LogError);
+						SyncManager.AddSyncMessage(new("ArgumentOutOfRangeException " + ex.ToString(), SyncMessageSeverity.LogError));
 						break;
 					case ThreadStartException:
-						SyncManager.AddSyncMessage("ThreadStartException " + ex.ToString(), SyncMessageSeverity.LogError);
+						SyncManager.AddSyncMessage(new("ThreadStartException " + ex.ToString(), SyncMessageSeverity.LogError));
 						break;
 					case OutOfMemoryException:
-						SyncManager.AddSyncMessage("OutOfMemoryException " + ex.ToString(), SyncMessageSeverity.LogError);
+						SyncManager.AddSyncMessage(new("OutOfMemoryException " + ex.ToString(), SyncMessageSeverity.LogError));
 						break;
 					default: throw;
 				}
@@ -311,7 +311,7 @@ namespace jKnepel.UnitySync
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			SyncManager.OnUpdate += Update;
-			SyncManager.AddSyncMessage("Client connected to Room!");
+			SyncManager.AddSyncMessage(new("Client connected to Room!"));
 		}
 
 		public void DisconnectFromRoom()
@@ -347,7 +347,7 @@ namespace jKnepel.UnitySync
 #endif
 			}
 			IsRoomOwner = false;
-			SyncManager.AddSyncMessage("Client Disconnected from Room!");
+			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
 		}
 
 		#endregion
@@ -388,7 +388,7 @@ namespace jKnepel.UnitySync
 					CalculateAndAddChecksum(data);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
-					AddDebugByteMessage(data, "Send Heartbeat Bytes: ");
+					SyncManager.AddSyncMessage(new("Send Heartbeat"));
 					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
 				}
 			}
@@ -399,10 +399,10 @@ namespace jKnepel.UnitySync
 				switch (ex)
 				{
 					case SocketException:
-						SyncManager.AddSyncMessage("Socket Exception " + ex.ToString(), SyncMessageSeverity.LogError);
+						SyncManager.AddSyncMessage(new("Socket Exception " + ex.ToString(), SyncMessageSeverity.LogError));
 						break;
 					case ObjectDisposedException:
-						SyncManager.AddSyncMessage("Object Disposed Exception " + ex.ToString(), SyncMessageSeverity.LogError);
+						SyncManager.AddSyncMessage(new("Object Disposed Exception " + ex.ToString(), SyncMessageSeverity.LogError));
 						break;
 					default:
 						throw;
@@ -568,6 +568,8 @@ namespace jKnepel.UnitySync
 
 		private void UpdateHeartbeat(string sender, byte[] data)
 		{
+			SyncManager.AddSyncMessage(new("Received Heartbeat from " + sender));
+
 			// read roomname, username and -color from data
 			int currentPosition = 0;
 			int roomnameLength = data[currentPosition];
@@ -676,14 +678,14 @@ namespace jKnepel.UnitySync
 				}
 				SceneManager.MoveGameObjectToScene(createdObject, _scene);
 
-				SyncManager.AddSyncMessage($"GameObject '{createdObject.name}' imported.");
+				SyncManager.AddSyncMessage(new($"GameObject '{createdObject.name}' imported."));
 			};
 
 			using MemoryStream memoryStream = new();
 			await memoryStream.WriteAsync(hierarchy);
 			await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
 
-			SyncManager.AddSyncMessage($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
+			SyncManager.AddSyncMessage(new($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}"));
 
 			return;
 		}
@@ -756,7 +758,7 @@ namespace jKnepel.UnitySync
 		{
 			foreach (byte d in bytes)
 				msg += Convert.ToString(d, inBinary ? 2 : 16).PadLeft(inBinary ? 8 : 2, '0') + " ";
-			SyncManager.AddSyncMessage(msg, true);
+			SyncManager.AddSyncMessage(new(msg, true));
 		}
 
 		#endregion

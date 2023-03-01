@@ -12,19 +12,22 @@ namespace jKnepel.UnitySync
 
         private Editor _syncSettingsEditor;
 
-        private bool _newRoomOptionsIsVisible = false;
-        private string _newRoomName = "New Room";
-        private int _newRoomDropdownIndex = 0;
-        
         private Vector2 _roomsViewPos;
         private Vector2 _clientsViewPos;
         private Vector2 _messagesViewPos;
-        private Color[] _scrollViewColors = new Color[] { new(0.15f, 0.15f, 0.15f), new(0.2f, 0.2f, 0.2f) };
+        private Color[] _scrollViewColors = new Color[] { new(0.25f, 0.25f, 0.25f), new(0.23f, 0.23f, 0.23f) };
 
-        private readonly List<(string, SyncMessageSeverity)> _syncMessages = new();
+        private readonly List<SyncMessage> _syncMessages = new();
+        
+        private bool _newRoomOptionsIsVisible = false;
+        private string _newRoomName = "New Room";
+        private int _newRoomDropdownIndex = 0;
+        private bool _isAutoscroll = false;
 
         private Texture2D _texture;
         private GUIStyle _style = new();
+
+        private const float ROW_HEIGHT = 20;
 
         #endregion
 
@@ -74,7 +77,12 @@ namespace jKnepel.UnitySync
                 if (!SyncManager.IsConnected)
 				{
                     // open rooms list
+                    EditorGUILayout.BeginHorizontal();
                     GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms.Count}");
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button(new GUIContent("+", "Create a New Room"), GUILayout.ExpandWidth(false)))
+                        _newRoomOptionsIsVisible = !_newRoomOptionsIsVisible;
+                    EditorGUILayout.EndHorizontal();
                     _roomsViewPos = EditorGUILayout.BeginScrollView(_roomsViewPos, 
                         EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
 				    {
@@ -84,7 +92,7 @@ namespace jKnepel.UnitySync
                         for (int i = 0; i < SyncManager.OpenRooms.Count; i++)
 					    {
                             SyncOpenRoom room = SyncManager.OpenRooms[i];
-                            EditorGUILayout.BeginHorizontal(GetBackgroundColorStyle(_scrollViewColors[i % 2]));
+                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                             {
                                 GUILayout.Label(room.Roomname);
                                 GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
@@ -97,8 +105,6 @@ namespace jKnepel.UnitySync
                     EditorGUILayout.EndScrollView();
 
                     // new room options
-                    if (GUILayout.Button(new GUIContent("+", "Create a New Room"), GUILayout.ExpandWidth(false)))
-                        _newRoomOptionsIsVisible = !_newRoomOptionsIsVisible;
                     if (_newRoomOptionsIsVisible)
 					{
                         int sceneCount = EditorSceneManager.sceneCount;
@@ -126,11 +132,12 @@ namespace jKnepel.UnitySync
                         if (SyncManager.CurrentRoom.ConnectedClients.Count == 0)
                             GUILayout.Label($"There are no Clients in this room!");
 
-                        Color defaultColor = _style.normal.textColor;
-                        for (int i = 0; i < SyncManager.CurrentRoom.ConnectedClients.Count; i++)
+						Color defaultColor = _style.normal.textColor;
+                        _style.alignment = TextAnchor.MiddleLeft;
+						for (int i = 0; i < SyncManager.CurrentRoom.ConnectedClients.Count; i++)
                         {
                             SyncConnectedClient client = SyncManager.CurrentRoom.ConnectedClients.ElementAt(i).Value;
-                            EditorGUILayout.BeginHorizontal(GetBackgroundColorStyle(_scrollViewColors[i % 2]));
+                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                             {
                                 _style.normal.textColor = client.Color;
                                 GUILayout.Label(client.Username, _style);
@@ -148,17 +155,21 @@ namespace jKnepel.UnitySync
                 EditorGUILayout.Space();
 
                 // sync messages
+                EditorGUILayout.BeginHorizontal();
                 GUILayout.Label($"Sync Messages:");
+                GUILayout.FlexibleSpace();
+                _isAutoscroll = EditorGUILayout.Toggle(new GUIContent(" ", "Is Autoscrolling Messages"), _isAutoscroll);
+                EditorGUILayout.EndHorizontal();
                 _messagesViewPos = EditorGUILayout.BeginScrollView(_messagesViewPos,
                     EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(200));
 				{
                     Color defaultColor = _style.normal.textColor;
                     for (int i = 0; i < _syncMessages.Count; i++)
                     {
-                        (string, SyncMessageSeverity) message = _syncMessages.ElementAt(i);
-                        EditorGUILayout.BeginHorizontal(GetBackgroundColorStyle(_scrollViewColors[i % 2]));
+                        SyncMessage message = _syncMessages.ElementAt(i);
+                        EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                         {
-                            switch (message.Item2)
+                            switch (message.Severity)
 							{
                                 case SyncMessageSeverity.Log:
                                     _style.normal.textColor = Color.white;
@@ -170,7 +181,7 @@ namespace jKnepel.UnitySync
                                     _style.normal.textColor = Color.red;
                                     break;
 							}
-                            GUILayout.Label(message.Item1, _style);
+                            GUILayout.Label($"[{message.Timestamp.ToString("H:mm:ss")}]  {message.Message}", _style);
                         }
                         EditorGUILayout.EndHorizontal();
                     }
@@ -183,18 +194,22 @@ namespace jKnepel.UnitySync
         }
 
 
-        private GUIStyle GetBackgroundColorStyle(Color color)
+        private GUIStyle GetScrollviewRowStyle(Color color)
         {
             _texture.SetPixel(0, 0, color);
             _texture.Apply();
             GUIStyle style = new();
             style.normal.background = _texture;
+            style.fixedHeight = ROW_HEIGHT;
             return style;
         }
 
-        private void AddSyncMessage(string msg, SyncMessageSeverity sev)
+        private void AddSyncMessage(SyncMessage message)
 		{
-            _syncMessages.Add((msg, sev));
-		}
+            _syncMessages.Add(message);
+            if (_isAutoscroll) 
+                _messagesViewPos = new(_messagesViewPos.x, _syncMessages.Count * ROW_HEIGHT);
+            Repaint();
+        }
     }
 }
