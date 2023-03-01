@@ -19,7 +19,7 @@ namespace jKnepel.UnitySync
 
         private readonly List<SyncMessage> _syncMessages = new();
         
-        private bool _newRoomOptionsIsVisible = false;
+        private bool _newRoomOptionsIsVisible = true;
         private string _newRoomName = "New Room";
         private int _newRoomDropdownIndex = 0;
         private bool _isAutoscroll = false;
@@ -80,7 +80,8 @@ namespace jKnepel.UnitySync
                     EditorGUILayout.BeginHorizontal();
                     GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms.Count}");
                     GUILayout.FlexibleSpace();
-                    if (GUILayout.Button(new GUIContent("+", "Create a New Room"), GUILayout.ExpandWidth(false)))
+                    if (GUILayout.Button(new GUIContent(_newRoomOptionsIsVisible ? "-" : "+", "Create a New Room"),
+                        GUILayout.Width(20), GUILayout.Height(20)))
                         _newRoomOptionsIsVisible = !_newRoomOptionsIsVisible;
                     EditorGUILayout.EndHorizontal();
                     _roomsViewPos = EditorGUILayout.BeginScrollView(_roomsViewPos, 
@@ -181,7 +182,7 @@ namespace jKnepel.UnitySync
                                     _style.normal.textColor = Color.red;
                                     break;
 							}
-                            GUILayout.Label($"[{message.Timestamp.ToString("H:mm:ss")}]  {message.Message}", _style);
+                            GUILayout.Label($"[{message.Timestamp:H:mm:ss}]  {message.Message}", _style);
                         }
                         EditorGUILayout.EndHorizontal();
                     }
