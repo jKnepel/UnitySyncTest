@@ -31,7 +31,6 @@ namespace jKnepel.UnitySync
     
         // debug settings
         public bool IsDebug = false;
-        public bool AllowReceivingOwnPackets = false;
         private bool _showSyncObjectinHierarchy = false;
         public bool ShowSyncObjectInHierarchy
 	    {

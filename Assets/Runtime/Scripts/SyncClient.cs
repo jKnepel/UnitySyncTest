@@ -454,7 +454,7 @@ namespace jKnepel.UnitySync
 				// check if packet comes from other client
 				byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 				string sender = _receiveEndpoint.Address.ToString();
-				if (sender.Equals(_localIpAddress) && !SyncSettings.Instance.AllowReceivingOwnPackets)
+				if (sender.Equals(_localIpAddress))
 					continue;
 
 				// check crc32 checksum with roomname
@@ -612,15 +612,14 @@ namespace jKnepel.UnitySync
 
 		private async Task TimeoutClient(SyncConnectedClient client, SyncOpenRoom room)
 		{
-			while (_disposeCount == 0 && room.ConnectedClients.ContainsKey(client.IP))
+			while (_disposeCount == 0)
 			{
 				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
 				{
 					client.Dispose();
-					if (room.ConnectedClients.Count == 1)
+					room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
+					if (room.ConnectedClients.Count == 0 && !room.Equals(CurrentRoom))
 						OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
-					else
-						room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
 					return;
 				}
 				await Task.Delay(SyncSettings.Instance.ClientTimeoutDelay);
@@ -643,15 +642,17 @@ namespace jKnepel.UnitySync
 			if (CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				client.LastHeartbeat = DateTime.Now;
+				if (client.Visualizer == null)
+					return;
+
 				client.Visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),
 					BitConverter.ToSingle(positionY),
 					BitConverter.ToSingle(positionZ));
 				client.Visualizer.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
 					BitConverter.ToSingle(rotationY),
 					BitConverter.ToSingle(rotationZ));
-				if (!client.Visualizer.gameObject.activeSelf) 
+				if (!client.Visualizer.gameObject.activeSelf)
 					client.Visualizer.gameObject.SetActive(true);
-				return;
 			}
 		}
 

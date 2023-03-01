@@ -38,8 +38,6 @@ namespace jKnepel.UnitySync
 				EditorGUI.indentLevel++;
 				SyncSettings.Instance.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."),
 					SyncSettings.Instance.IsDebug);
-				SyncSettings.Instance.AllowReceivingOwnPackets = EditorGUILayout.Toggle("Allow Receiving Own Packets: ",
-					SyncSettings.Instance.AllowReceivingOwnPackets);
 				SyncSettings.Instance.ShowSyncObjectInHierarchy = EditorGUILayout.Toggle("ShowSyncObjects: ",
 					SyncSettings.Instance.ShowSyncObjectInHierarchy);
 				EditorGUI.indentLevel--;
