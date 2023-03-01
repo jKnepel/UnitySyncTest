@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -65,7 +67,6 @@ namespace jKnepel.UnitySync
 		private int _cameraUpdateDelay = SyncSettings.Instance.ClientVisualizerUpdateDelay;
 
 		private Scene _scene;
-		private Scene _exportScene;
 		private Transform _objectContainer;
 		private string _localIpAddress;
 
@@ -87,7 +88,9 @@ namespace jKnepel.UnitySync
 		{
 			try
 			{
-				FindLocalIPAddress();
+				_localIpAddress = GetLocalIPAddress();
+				if (_localIpAddress.Length == 0)
+					throw(new SocketException());
 
 				_listener = new(SyncSettings.Instance.Port);
 				_listener.EnableBroadcast = true;
@@ -505,7 +508,7 @@ namespace jKnepel.UnitySync
 		{
 			ChangeGameObjectOrComponentPropertiesEventArgs obj;
 			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-			if (obj.scene == _exportScene)
+			if (obj.scene == _scene)
 			{
 				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
 				GameObject go;
@@ -690,15 +693,31 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
-		// TODO : doesnt work without running uplink, fix
-		private void FindLocalIPAddress()
+		private string GetLocalIPAddress()
 		{
-			using (Socket socket = new(AddressFamily.InterNetwork, SocketType.Dgram, 0))
+			// taken from https://stackoverflow.com/a/24814027
+			string ipAddress = "";
+			foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
 			{
-				socket.Connect("8.8.8.8", 65530);
-				IPEndPoint endPoint = socket.LocalEndPoint as IPEndPoint;
-				_localIpAddress = endPoint.Address.ToString();
+				if (item.OperationalStatus == OperationalStatus.Up)
+				{   // Fetch the properties of this adapter
+					IPInterfaceProperties adapterProperties = item.GetIPProperties();
+					// Check if the gateway adress exist, if not its most likley a virtual network or smth
+					if (adapterProperties.GatewayAddresses.FirstOrDefault() != null)
+					{   // Iterate over each available unicast adresses
+						foreach (UnicastIPAddressInformation ip in adapterProperties.UnicastAddresses)
+						{   // If the IP is a local IPv4 adress
+							if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+							{
+								ipAddress = ip.Address.ToString();
+								break;
+							}
+						}
+					}
+				}
+				if (ipAddress != "") { break; }
 			}
+			return ipAddress;
 		}
 
 		private void ShowOrHideSyncObject(bool val)
@@ -708,7 +727,8 @@ namespace jKnepel.UnitySync
 
 		private uint CalculatePacketChecksum(byte[] packet, byte[] roomname = null)
 		{
-			if (roomname == null) roomname = CurrentRoom.RoomnameBytes;
+			if (roomname == null)
+				roomname = CurrentRoom.RoomnameBytes;
 
 			// calculate crc32 checksum from protocol id, roomname and data
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + roomname.Length + packet.Length];
@@ -736,9 +756,7 @@ namespace jKnepel.UnitySync
 		private static void PreventPlayMode(PlayModeStateChange state)
 		{
 			if (state == PlayModeStateChange.ExitingEditMode)
-			{
 				EditorApplication.isPlaying = false;
-			}
 		}
 #endif
 
