@@ -1,20 +1,12 @@
 using System;
 using System.Collections.Concurrent;
-using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
-using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
-using GLTF;
-using GLTF.Schema;
-using UnityGLTF;
-using Toph.GLTFSerializer.Components;
 #if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -22,7 +14,7 @@ using UnityEditor.SceneManagement;
 
 namespace jKnepel.UnitySync
 {
-	public class SyncClient : IDisposable
+	public partial class SyncClient : IDisposable
 	{
 		#region packet constants
 
@@ -356,341 +348,6 @@ namespace jKnepel.UnitySync
 
 		#endregion
 
-		#region network logic
-
-		#region send logic
-
-		private void HeartbeatThread()
-		{
-			try
-			{
-				while (_disposeCount == 0)
-				{
-					_pauseEvent.WaitOne(Timeout.Infinite);
-
-					byte[] username = Encoding.ASCII.GetBytes(SyncSettings.Instance.Username);
-					byte[] color = { SyncSettings.Instance.Color.r, SyncSettings.Instance.Color.g, SyncSettings.Instance.Color.b };
-					int currentPosition = CRC32_LENGTH;
-
-					// prepare data with room name, username and -color
-					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH +
-						ROOMNAME_FLAG_LENGTH + CurrentRoom.RoomnameBytes.Length +
-						USERNAME_FLAG_LENGTH + username.Length +
-						COLOR_LENGTH];
-					data[currentPosition] = (byte)SyncPacketType.Heartbeat;
-					currentPosition += DATA_TYPE_LENGTH;
-					data[currentPosition] = (byte)CurrentRoom.RoomnameBytes.Length;
-					currentPosition += ROOMNAME_FLAG_LENGTH;
-					Array.Copy(CurrentRoom.RoomnameBytes, 0, data, currentPosition, CurrentRoom.RoomnameBytes.Length);
-					currentPosition += CurrentRoom.RoomnameBytes.Length;
-					data[currentPosition] = (byte)username.Length;
-					currentPosition += USERNAME_FLAG_LENGTH;
-					Array.Copy(username, 0, data, currentPosition, username.Length);
-					currentPosition += username.Length;
-					Array.Copy(color, 0, data, currentPosition, COLOR_LENGTH);
-
-					CalculateAndAddChecksum(data);
-
-					_sender.Send(data, data.Length, _broadCastEndpoint);
-					SyncManager.AddSyncMessage(new("Send Heartbeat"));
-					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
-				}
-			}
-			catch (Exception ex)
-			{
-				CurrentRoom = null;
-				IsSearchingForRooms = false;
-				switch (ex)
-				{
-					case SocketException:
-						SyncManager.AddSyncMessage(new("Socket Exception " + ex.ToString(), SyncMessageSeverity.LogError));
-						break;
-					case ObjectDisposedException:
-						SyncManager.AddSyncMessage(new("Object Disposed Exception " + ex.ToString(), SyncMessageSeverity.LogError));
-						break;
-					default:
-						throw;
-				}
-			}
-		}
-
-		private void SenderThread()
-		{
-			while (_disposeCount == 0)
-			{
-				_pauseEvent.WaitOne(Timeout.Infinite);
-
-				if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
-					continue;
-
-				switch (packet.Type)
-				{
-					case SyncPacketType.ClientCamera:
-						SendClientCameraBytes(packet.Data);
-						break;
-					default: break;
-				}
-			}
-		}
-
-		private void SendClientCameraBytes(byte[] bytes)
-		{
-			byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + bytes.Length];
-			// TODO : add sequence ids
-			data[CRC32_LENGTH] = (byte)SyncPacketType.ClientCamera;
-			Array.Copy(bytes, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, bytes.Length);
-
-			CalculateAndAddChecksum(data);
-
-			_sender.Send(data, data.Length, _broadCastEndpoint);
-			AddDebugByteMessage(data, "Send Camera Bytes: ");
-		}
-
-		#endregion
-
-		#region receive logic
-
-		private void ListenerThread()
-		{
-			while (_disposeCount == 0)
-			{
-				// check if packet comes from other client
-				byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
-				string sender = _receiveEndpoint.Address.ToString();
-				if (sender.Equals(_localIpAddress))
-					continue;
-
-				// check crc32 checksum with roomname
-				byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-				byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
-					receivedBytes.Length - CRC32_LENGTH);
-				byte[] roomnameBytes;
-				if (!IsConnected)
-				{
-					if ((SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
-						continue;
-
-					byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
-					roomnameBytes = GetBytesFromArray(receivedBytes,
-						CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
-				}
-				else
-				{
-					roomnameBytes = CurrentRoom.RoomnameBytes;
-				}
-				if (BitConverter.ToUInt32(checksum) != CalculatePacketChecksum(remainder, roomnameBytes))
-					continue;
-
-				// handle data depending on packet type
-				AddDebugByteMessage(receivedBytes, "Received Bytes: ");
-				byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
-				switch ((SyncPacketType)remainder[0])
-				{
-					case SyncPacketType.Heartbeat:
-						_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
-						break;
-					case SyncPacketType.ClientCamera:
-						_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
-						break;
-					default: break;
-				}
-			}
-		}
-
-		#endregion
-
-		#endregion
-
-		#region notify updates
-
-#if UNITY_EDITOR
-		private void ChangesPublished(ref ObjectChangeEventStream stream)
-		{
-			ChangeGameObjectOrComponentPropertiesEventArgs obj;
-			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-			if (obj.scene == _scene)
-			{
-				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
-				GameObject go;
-				try { go = ((Component)o).gameObject; }
-				catch (InvalidCastException) { go = (GameObject)o; }
-				//SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
-
-				// Limit hierarchy syncs
-				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(SyncSettings.Instance.EditorUpdatesDelay)
-					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
-			}
-
-			// TODO : add functionality for sending hierarchy only on hierarchy changes
-		}
-#endif
-
-		private void CurrentCameraMoved(Transform camera)
-		{
-			// limit camera syncs
-			if (_cameraUpdateDelay < SyncSettings.Instance.ClientVisualizerUpdateDelay)
-			{
-				camera.hasChanged = false;
-				return;
-			}
-
-			if (_lastCameraPosition != null
-				&& camera.position.Equals(_lastCameraPosition)
-				&& camera.eulerAngles.Equals(_lastCameraRotation))
-			{
-				camera.hasChanged = false;
-				return;
-			}
-
-			// TODO : optimize this
-			byte[] bytes = new byte[sizeof(float) * 6];
-			Array.Copy(BitConverter.GetBytes(camera.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
-			_packetsToSend.Enqueue(new(SyncPacketType.ClientCamera, bytes));
-
-			_lastCameraPosition = camera.position;
-			_lastCameraRotation = camera.eulerAngles;
-			camera.hasChanged = false;
-			_cameraUpdateDelay = 0;
-		}
-
-		private async void SendHierarchy(GameObject go)
-		{
-			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
-			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
-			_packetsToSend.Enqueue(new(SyncPacketType.Hierarchy, bytes));
-		}
-
-		#endregion
-
-		#region consume updates
-
-		private void UpdateHeartbeat(string sender, byte[] data)
-		{
-			SyncManager.AddSyncMessage(new("Received Heartbeat from " + sender));
-
-			// read roomname, username and -color from data
-			int currentPosition = 0;
-			int roomnameLength = data[currentPosition];
-			currentPosition += ROOMNAME_FLAG_LENGTH;
-			byte[] roomnameBytes = GetBytesFromArray(data, currentPosition, roomnameLength);
-			string roomname = Encoding.ASCII.GetString(roomnameBytes);
-			currentPosition += roomnameLength;
-			int usernameLength = data[currentPosition];
-			currentPosition += USERNAME_FLAG_LENGTH;
-			byte[] usernameBytes = GetBytesFromArray(data, currentPosition, usernameLength);
-			string username = Encoding.ASCII.GetString(usernameBytes);
-			currentPosition += usernameLength;
-			Color32 color = new(data[currentPosition], data[currentPosition + 1], data[currentPosition + 2], 255);
-
-			// create room/client and add it to dictionary if it doesn't exist yet
-			if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
-			{
-				room = new(roomname);
-				OpenRooms.TryAdd(roomname, room);
-			}
-			if (!room.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
-			{
-				client = new(sender, username, color);
-				room.ConnectedClients.TryAdd(sender, client);
-				_ = TimeoutClient(client, room);
-			}
-
-			// update client values
-			client.Color = color;
-			if (client.Visualizer == null && room.Equals(CurrentRoom))
-			{
-				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
-				client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
-			}
-			if (client.Visualizer) 
-				client.Visualizer.UpdateVisualizer(sender, username, color);
-			client.LastHeartbeat = DateTime.Now;
-		}
-
-		private async Task TimeoutClient(SyncConnectedClient client, SyncOpenRoom room)
-		{
-			while (_disposeCount == 0)
-			{
-				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
-				{
-					client.Dispose();
-					room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
-					if (room.ConnectedClients.Count == 0 && !room.Equals(CurrentRoom))
-						OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
-					return;
-				}
-				await Task.Delay(SyncSettings.Instance.ClientTimeoutDelay);
-			}
-		}
-
-		// TODO : optimize this
-		private void UpdateClientCamera(string sender, byte[] data)
-		{
-			SyncManager.AddSyncMessage(new("Received Camera Update from " + sender));
-
-			int size = sizeof(float);
-			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
-			byte[] positionY = GetBytesFromArray(data, 1 * size, size);
-			byte[] positionZ = GetBytesFromArray(data, 2 * size, size);
-			byte[] rotationX = GetBytesFromArray(data, 3 * size, size);
-			byte[] rotationY = GetBytesFromArray(data, 4 * size, size);
-			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
-
-			if (CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
-			{
-				client.LastHeartbeat = DateTime.Now;
-				if (client.Visualizer == null)
-					return;
-
-				client.Visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),
-					BitConverter.ToSingle(positionY),
-					BitConverter.ToSingle(positionZ));
-				client.Visualizer.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
-					BitConverter.ToSingle(rotationY),
-					BitConverter.ToSingle(rotationZ));
-				if (!client.Visualizer.gameObject.activeSelf)
-					client.Visualizer.gameObject.SetActive(true);
-			}
-		}
-
-		private async void ImportHierarchy(byte[] hierarchy)
-		{
-			Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
-			{
-				if (createdObject is null)
-				{
-					return;
-				}
-				SceneManager.MoveGameObjectToScene(createdObject, _scene);
-
-				SyncManager.AddSyncMessage(new($"GameObject '{createdObject.name}' imported."));
-			};
-
-			using MemoryStream memoryStream = new();
-			await memoryStream.WriteAsync(hierarchy);
-			await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
-
-			SyncManager.AddSyncMessage(new($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}"));
-
-			return;
-		}
-
-		private async Task DeserializeGameObject(Scene importScene, ImportOptions importOptions, Stream stream, Action<GameObject, ExceptionDispatchInfo> onLoadComplete)
-		{
-			GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
-
-			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncSettings.Instance.IsDebug, -1, true, onLoadComplete);
-		}
-
-		#endregion
-
 		#region helper methods
 
 		private string GetLocalIPAddress()
@@ -725,26 +382,6 @@ namespace jKnepel.UnitySync
 			_objectContainer.hideFlags = val ? HideFlags.None : HideFlags.HideInHierarchy;
 		}
 
-		private uint CalculatePacketChecksum(byte[] packet, byte[] roomname = null)
-		{
-			if (roomname == null)
-				roomname = CurrentRoom.RoomnameBytes;
-
-			// calculate crc32 checksum from protocol id, roomname and data
-			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + roomname.Length + packet.Length];
-			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
-			Array.Copy(roomname, 0, bytes, PROTOCOL_ID_LENGTH, roomname.Length);
-			Array.Copy(packet, 0, bytes, PROTOCOL_ID_LENGTH + roomname.Length, packet.Length);
-			return SyncCRC32.CRC32Bytes(bytes);
-		}
-
-		private void CalculateAndAddChecksum(byte[] packet)
-		{
-			// calculate crc32 checksum from packet and add it to the start
-			uint checksum = CalculatePacketChecksum(GetBytesFromArray(packet, CRC32_LENGTH, packet.Length - CRC32_LENGTH));
-			Array.Copy(BitConverter.GetBytes(checksum), 0, packet, 0, CRC32_LENGTH);
-		}
-
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
 		{
 			byte[] bytes = new byte[size];
@@ -768,6 +405,5 @@ namespace jKnepel.UnitySync
 		}
 
 		#endregion
-
 	}
 }
