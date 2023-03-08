@@ -59,7 +59,8 @@ namespace jKnepel.UnitySync
         public Color32 Color = new(255, 255, 255, 255);
 
         // prefabs
-        public GameObject ClientTransformPrefab;
+        public SyncClientVisualizer ClientVisualizer;
+		public Material HighlightMaterial;
 
 		private static string GetLocalIPAddress()
 		{

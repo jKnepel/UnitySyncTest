@@ -7,6 +7,7 @@ namespace jKnepel.UnitySync
 	public class SyncSettingsEditor : Editor
 	{
 		private bool _packetSettingsIsVisible = false;
+		private bool _additionalSettingsIsVisible = false;
 		private bool _debugSettingsIsVisible = false;
 
 		// TODO : add descriptions to labels, was too lazy
@@ -32,8 +33,15 @@ namespace jKnepel.UnitySync
 				EditorGUI.indentLevel--;
 			}
 
-			// debug settings
-			_debugSettingsIsVisible = EditorGUILayout.Foldout(_debugSettingsIsVisible, "Debug Settings", EditorStyles.foldoutHeader);
+			_additionalSettingsIsVisible = EditorGUILayout.Foldout(_additionalSettingsIsVisible, "Additional Settings", EditorStyles.foldoutHeader);
+			if (_additionalSettingsIsVisible)
+			{
+				SyncSettings.Instance.ClientVisualizer = (SyncClientVisualizer)EditorGUILayout.ObjectField("Client Visualizer Prefab:", SyncSettings.Instance.ClientVisualizer, typeof(SyncClientVisualizer), false);
+				SyncSettings.Instance.HighlightMaterial = (Material)EditorGUILayout.ObjectField("Highlight Material:", SyncSettings.Instance.HighlightMaterial, typeof(Material), false);
+			}
+
+				// debug settings
+				_debugSettingsIsVisible = EditorGUILayout.Foldout(_debugSettingsIsVisible, "Debug Settings", EditorStyles.foldoutHeader);
 			if (_debugSettingsIsVisible)
 			{
 				EditorGUI.indentLevel++;

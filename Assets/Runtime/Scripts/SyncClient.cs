@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
@@ -60,6 +61,7 @@ namespace jKnepel.UnitySync
 
 		private Scene _scene;
 		private Transform _objectContainer;
+		private GameObject _selectedGameObject;
 
 		#endregion
 
@@ -144,6 +146,7 @@ namespace jKnepel.UnitySync
 				if (disposing)
 				{
 #if UNITY_EDITOR
+					Selection.selectionChanged -= SelectionChanged;
 					ObjectChangeEvents.changesPublished -= ChangesPublished;
 					EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
@@ -153,16 +156,6 @@ namespace jKnepel.UnitySync
 					OpenRooms.Clear();
 					CurrentRoom = null;
 					IsSearchingForRooms = false;
-				}
-
-				// TODO : doesnt work on recompile while in room, fix
-				if (_objectContainer != null)
-				{
-#if UNITY_EDITOR
-					GameObject.DestroyImmediate(_objectContainer.gameObject);
-#else
-					GameObject.Destroy(_objectContainer.gameObject);
-#endif
 				}
 
 				_listenerThread.Abort();
@@ -183,6 +176,16 @@ namespace jKnepel.UnitySync
 				{
 					_listener.Close();
 					_listener.Dispose();
+				}
+
+				// TODO : doesnt work on recompile while in room, fix
+				if (_objectContainer != null)
+				{
+#if UNITY_EDITOR
+					GameObject.DestroyImmediate(_objectContainer.gameObject);
+#else
+					GameObject.Destroy(_objectContainer.gameObject);
+#endif
 				}
 
 				// TODO : doesnt work on recompile, fix
@@ -301,6 +304,7 @@ namespace jKnepel.UnitySync
 			_pauseEvent.Set();
 
 #if UNITY_EDITOR
+			Selection.selectionChanged += SelectionChanged;
 			ObjectChangeEvents.changesPublished += ChangesPublished;
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
@@ -317,6 +321,7 @@ namespace jKnepel.UnitySync
 
 
 #if UNITY_EDITOR
+			Selection.selectionChanged -= SelectionChanged;
 			ObjectChangeEvents.changesPublished -= ChangesPublished;
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
@@ -363,6 +368,40 @@ namespace jKnepel.UnitySync
 		}
 
 #if UNITY_EDITOR
+		private void SelectionChanged()
+		{
+			if (_selectedGameObject != null)
+			{
+				Material[] materials = _selectedGameObject.GetComponent<MeshRenderer>().sharedMaterials;
+				for (int i = materials.Length - 1; i >= 0; i--)
+				{
+					if (materials[i].name.Equals(SyncSettings.Instance.HighlightMaterial.name))
+					{
+						List<Material> list = materials.ToList();
+						list.RemoveAt(i);
+						_selectedGameObject.GetComponent<MeshRenderer>().sharedMaterials = list.ToArray();
+					}
+				}
+			}
+
+			GameObject selection = Selection.activeGameObject;
+			if (selection != null && selection.scene == _scene && !selection.GetRootParent().Equals(_objectContainer))
+			{
+				_selectedGameObject = selection;
+				MeshRenderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
+				Material[] materials = new Material[renderer.sharedMaterials.Length + 1];
+				renderer.sharedMaterials.CopyTo(materials, 0);
+				Material newMaterial = new(SyncSettings.Instance.HighlightMaterial);
+				newMaterial.SetColor("_Color", SyncSettings.Instance.Color);
+				materials[^1] = newMaterial;
+				renderer.sharedMaterials = materials;
+			}
+			else
+			{
+				_selectedGameObject = null;
+			}
+		}
+
 		private static void PreventPlayMode(PlayModeStateChange state)
 		{
 			if (state == PlayModeStateChange.ExitingEditMode)

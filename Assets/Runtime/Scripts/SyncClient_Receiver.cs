@@ -107,7 +107,7 @@ namespace jKnepel.UnitySync
 			client.Color = color;
 			if (client.Visualizer == null && room.Equals(CurrentRoom))
 			{
-				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientTransformPrefab, _objectContainer);
+				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject, _objectContainer);
 				client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
 			}
 			if (client.Visualizer)
