@@ -32,23 +32,23 @@ namespace jKnepel.UnitySync
 		    }
 	    }
     
-        // debug settings
-        public bool IsDebug = false;
-		private string _syncLocalScenename = "UnitySync Local Objects";
-		public string SyncLocalScenename { get { return _syncLocalScenename; } }
-
+		// user settings
+        public string ImportSceneName = "SyncImportScene";
+        public string Username = "Username";
+        public Color32 Color = new(255, 255, 255, 255);
+        
         // packet frequency settings
         public int HeartbeatDelay = 1000;
         public int ClientTimeoutDelay = 3000;
         public int EditorUpdatesDelay = 500;
         public int ClientVisualizerUpdateDelay = 50;
 
-		// user settings
+		// debug settings
+        public bool IsDebug = false;
 		public string IP = GetLocalIPAddress();
-		public int Port = 8080;
-        public string ImportSceneName = "SyncImportScene";
-        public string Username = "Username";
-        public Color32 Color = new(255, 255, 255, 255);
+		public int Port = 26822;
+		private readonly string _syncLocalScenename = "UnitySync Local Objects";
+		public string SyncLocalScenename { get { return _syncLocalScenename; } }
 
         // prefabs
         public SyncClientVisualizer ClientVisualizer;

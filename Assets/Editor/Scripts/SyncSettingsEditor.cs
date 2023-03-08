@@ -14,8 +14,6 @@ namespace jKnepel.UnitySync
 		public override void OnInspectorGUI()
 		{
 			// user settings
-			SyncSettings.Instance.IP = EditorGUILayout.TextField("IP:", SyncSettings.Instance.IP);
-			SyncSettings.Instance.Port = EditorGUILayout.IntField("Port:", SyncSettings.Instance.Port);
 			SyncSettings.Instance.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:",
 				SyncSettings.Instance.ImportSceneName);
 			SyncSettings.Instance.Username = EditorGUILayout.TextField("Username:", SyncSettings.Instance.Username);
@@ -36,8 +34,10 @@ namespace jKnepel.UnitySync
 			_additionalSettingsIsVisible = EditorGUILayout.Foldout(_additionalSettingsIsVisible, "Additional Settings", EditorStyles.foldoutHeader);
 			if (_additionalSettingsIsVisible)
 			{
+				EditorGUI.indentLevel++;
 				SyncSettings.Instance.ClientVisualizer = (SyncClientVisualizer)EditorGUILayout.ObjectField("Client Visualizer Prefab:", SyncSettings.Instance.ClientVisualizer, typeof(SyncClientVisualizer), false);
 				SyncSettings.Instance.HighlightMaterial = (Material)EditorGUILayout.ObjectField("Highlight Material:", SyncSettings.Instance.HighlightMaterial, typeof(Material), false);
+				EditorGUI.indentLevel--;
 			}
 
 				// debug settings
@@ -47,6 +47,8 @@ namespace jKnepel.UnitySync
 				EditorGUI.indentLevel++;
 				SyncSettings.Instance.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."),
 					SyncSettings.Instance.IsDebug);
+				SyncSettings.Instance.IP = EditorGUILayout.TextField("Local IP:", SyncSettings.Instance.IP);
+				SyncSettings.Instance.Port = EditorGUILayout.IntField("Port:", SyncSettings.Instance.Port);
 				EditorGUI.indentLevel--;
 			}
 

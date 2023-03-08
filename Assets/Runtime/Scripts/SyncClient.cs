@@ -375,6 +375,8 @@ namespace jKnepel.UnitySync
 #if UNITY_EDITOR
 		private void SelectionChanged()
 		{
+			// remove highlighting from old selection
+			// TODO : doesnt work when leaving room
 			if (_selectedGameObject != null)
 			{
 				Renderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
@@ -393,8 +395,9 @@ namespace jKnepel.UnitySync
 				}
 			}
 
+			// highlight selected object
 			GameObject selection = Selection.activeGameObject;
-			if (selection != null && selection.scene == _syncScene && !selection.GetRootParent().Equals(_clientVisualizerParent))
+			if (selection != null && selection.scene == _syncScene)
 			{
 				_selectedGameObject = selection;
 				MeshRenderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
@@ -402,6 +405,11 @@ namespace jKnepel.UnitySync
 				renderer.sharedMaterials.CopyTo(materials, 0);
 				Material newMaterial = new(SyncSettings.Instance.HighlightMaterial);
 				newMaterial.SetColor("_Color", SyncSettings.Instance.Color);
+#if UNITY_EDITOR
+				newMaterial.SetFloat("_Width", 1f);
+#else
+				newMaterial.SetFloat("_Width", 0.1f);
+#endif
 				materials[^1] = newMaterial;
 				renderer.sharedMaterials = materials;
 			}
