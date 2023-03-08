@@ -59,8 +59,9 @@ namespace jKnepel.UnitySync
 		private Vector3 _lastCameraRotation;
 		private int _cameraUpdateDelay = SyncSettings.Instance.ClientVisualizerUpdateDelay;
 
-		private Scene _scene;
-		private Transform _objectContainer;
+		private Scene _syncScene;
+		private Scene _localScene;
+		private Transform _clientVisualizerParent;
 		private GameObject _selectedGameObject;
 
 		#endregion
@@ -83,6 +84,16 @@ namespace jKnepel.UnitySync
 			{
 				if (SyncSettings.Instance.IP.Length == 0)
 					throw(new SocketException());
+
+				Scene oldLocalScene = SceneManager.GetSceneByName(SyncSettings.Instance.SyncLocalScenename);
+				if (oldLocalScene != null && oldLocalScene.IsValid())
+				{
+#if UNITY_EDITOR
+					EditorSceneManager.UnloadSceneAsync(oldLocalScene);
+#else
+					SceneManager.UnloadSceneAsync(oldLocalScene);
+#endif
+				}
 
 				_listener = new(SyncSettings.Instance.Port);
 				_listener.EnableBroadcast = true;
@@ -143,21 +154,6 @@ namespace jKnepel.UnitySync
 		{
 			if (Interlocked.Increment(ref _disposeCount) == 1)
 			{
-				if (disposing)
-				{
-#if UNITY_EDITOR
-					Selection.selectionChanged -= SelectionChanged;
-					ObjectChangeEvents.changesPublished -= ChangesPublished;
-					EditorApplication.playModeStateChanged -= PreventPlayMode;
-#endif
-					SyncManager.OnUpdate -= Update;
-					SyncEvents.OnShowSyncObjectInHierarchyChanged -= ShowOrHideSyncObject;
-
-					OpenRooms.Clear();
-					CurrentRoom = null;
-					IsSearchingForRooms = false;
-				}
-
 				_listenerThread.Abort();
 				_listenerThread.Join();
 				_senderThread.Abort();
@@ -178,26 +174,38 @@ namespace jKnepel.UnitySync
 					_listener.Dispose();
 				}
 
-				// TODO : doesnt work on recompile while in room, fix
-				if (_objectContainer != null)
+				if (disposing)
 				{
 #if UNITY_EDITOR
-					GameObject.DestroyImmediate(_objectContainer.gameObject);
-#else
-					GameObject.Destroy(_objectContainer.gameObject);
+					Selection.selectionChanged -= SelectionChanged;
+					ObjectChangeEvents.changesPublished -= ChangesPublished;
+					EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
-				}
+					SyncManager.OnUpdate -= Update;
 
-				// TODO : doesnt work on recompile, fix
-				if (!IsRoomOwner && _scene.IsValid())
-				{
+					if (_localScene.IsValid())
+					{
 #if UNITY_EDITOR
-					EditorSceneManager.UnloadSceneAsync(_scene);
+						EditorSceneManager.UnloadSceneAsync(_localScene);
 #else
-                    SceneManager.UnloadSceneAsync(_scene);
+						SceneManager.UnloadSceneAsync(_localScene);
 #endif
+					}
+
+					if (!IsRoomOwner && _syncScene.IsValid())
+					{
+#if UNITY_EDITOR
+						EditorSceneManager.UnloadSceneAsync(_syncScene);
+#else
+						SceneManager.UnloadSceneAsync(_syncScene);
+#endif
+					}
+
+					OpenRooms.Clear();
+					CurrentRoom = null;
+					IsSearchingForRooms = false;
+					IsRoomOwner = false;
 				}
-				IsRoomOwner = false;
 			}
 		}
 
@@ -266,7 +274,7 @@ namespace jKnepel.UnitySync
 					Debug.LogWarning($"The Scene {scenename} is not valid!");
 					return;
 				}
-				_scene = scene;
+				_syncScene = scene;
 				CurrentRoom = new(roomname);
 				OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
 				IsRoomOwner = true;
@@ -284,22 +292,25 @@ namespace jKnepel.UnitySync
 					return;
 				}
 #if UNITY_EDITOR
-				_scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-				_scene.name = scenename;
+				_syncScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+				_syncScene.name = scenename;
 #else
-				_scene = SceneManager.CreateScene(scenename);
+				_syncScene = SceneManager.CreateScene(scenename);
 #endif
 				CurrentRoom = room;
 				IsRoomOwner = false;
 				// TODO : announce myself to room
 			}
-			SceneManager.SetActiveScene(_scene);
+			SceneManager.SetActiveScene(_syncScene);
 
-			// show/hide parent gameobject for sync objects
-			_objectContainer = new GameObject("UnitySync Object Container").transform;
-			if (!SyncSettings.Instance.ShowSyncObjectInHierarchy)
-				_objectContainer.hideFlags = HideFlags.HideInHierarchy;
-			SyncEvents.OnShowSyncObjectInHierarchyChanged += ShowOrHideSyncObject;
+#if UNITY_EDITOR
+			_localScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+			_localScene.name = SyncSettings.Instance.SyncLocalScenename;
+#else
+			_localScene = SceneManager.CreateScene(SyncSettings.Instance.SyncLocalScenename);
+#endif
+			_clientVisualizerParent = new GameObject("Cient Visualizer Parent").transform;
+			SceneManager.MoveGameObjectToScene(_clientVisualizerParent.gameObject, _localScene);
 
 			_pauseEvent.Set();
 
@@ -325,40 +336,35 @@ namespace jKnepel.UnitySync
 			ObjectChangeEvents.changesPublished -= ChangesPublished;
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
-			SyncEvents.OnShowSyncObjectInHierarchyChanged -= ShowOrHideSyncObject;
 
+			if (_localScene.IsValid())
+			{
 #if UNITY_EDITOR
-			GameObject.DestroyImmediate(_objectContainer.gameObject);
+				EditorSceneManager.UnloadSceneAsync(_localScene);
 #else
-			GameObject.Destroy(_objectContainer.gameObject);
+				SceneManager.UnloadSceneAsync(_localScene);
 #endif
+			}
+
+			if (!IsRoomOwner && _syncScene.IsValid())
+			{
+#if UNITY_EDITOR
+				EditorSceneManager.UnloadSceneAsync(_syncScene);
+#else
+                SceneManager.UnloadSceneAsync(_syncScene);
+#endif
+			}
 
 			if (CurrentRoom.ConnectedClients.Count == 0)
 				OpenRooms.TryRemove(CurrentRoom.Roomname, out SyncOpenRoom _);
 			CurrentRoom = null;
-
-			if (!IsRoomOwner && _scene.IsValid())
-			{
-#if UNITY_EDITOR
-				EditorSceneManager.UnloadSceneAsync(_scene);
-#else
-                SceneManager.UnloadSceneAsync(_scene);
-#endif
-			}
 			IsRoomOwner = false;
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
 		}
 
-		#endregion
+#endregion
 
-		#region helper methods
-
-		private void ShowOrHideSyncObject()
-		{
-			_objectContainer.hideFlags = SyncSettings.Instance.ShowSyncObjectInHierarchy 
-				? HideFlags.None 
-				: HideFlags.HideInHierarchy;
-		}
+#region helper methods
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
 		{
@@ -385,7 +391,7 @@ namespace jKnepel.UnitySync
 			}
 
 			GameObject selection = Selection.activeGameObject;
-			if (selection != null && selection.scene == _scene && !selection.GetRootParent().Equals(_objectContainer))
+			if (selection != null && selection.scene == _syncScene && !selection.GetRootParent().Equals(_clientVisualizerParent))
 			{
 				_selectedGameObject = selection;
 				MeshRenderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
@@ -419,6 +425,6 @@ namespace jKnepel.UnitySync
 			Debug.Log(msg);
 		}
 
-		#endregion
+#endregion
 	}
 }

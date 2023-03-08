@@ -107,7 +107,7 @@ namespace jKnepel.UnitySync
 			client.Color = color;
 			if (client.Visualizer == null && room.Equals(CurrentRoom))
 			{
-				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject, _objectContainer);
+				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject, _clientVisualizerParent);
 				client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
 			}
 			if (client.Visualizer)
@@ -170,14 +170,14 @@ namespace jKnepel.UnitySync
 				{
 					return;
 				}
-				SceneManager.MoveGameObjectToScene(createdObject, _scene);
+				SceneManager.MoveGameObjectToScene(createdObject, _syncScene);
 
 				SyncManager.AddSyncMessage(new($"GameObject '{createdObject.name}' imported."));
 			};
 
 			using MemoryStream memoryStream = new();
 			await memoryStream.WriteAsync(hierarchy);
-			await DeserializeGameObject(_scene, new ImportOptions(), memoryStream, onLoadComplete);
+			await DeserializeGameObject(_syncScene, new ImportOptions(), memoryStream, onLoadComplete);
 
 			SyncManager.AddSyncMessage(new($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}"));
 

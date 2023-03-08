@@ -102,7 +102,7 @@ namespace jKnepel.UnitySync
 		{
 			ChangeGameObjectOrComponentPropertiesEventArgs obj;
 			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-			if (obj.scene == _scene)
+			if (obj.scene == _syncScene)
 			{
 				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
 				GameObject go;

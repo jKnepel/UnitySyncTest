@@ -34,16 +34,8 @@ namespace jKnepel.UnitySync
     
         // debug settings
         public bool IsDebug = false;
-        private bool _showSyncObjectinHierarchy = false;
-        public bool ShowSyncObjectInHierarchy
-	    {
-            get { return _showSyncObjectinHierarchy; }
-            set
-		    {
-                _showSyncObjectinHierarchy = value;
-                SyncEvents.OnShowSyncObjectInHierarchyChanged?.Invoke();
-            }
-	    }
+		private string _syncLocalScenename = "UnitySync Local Objects";
+		public string SyncLocalScenename { get { return _syncLocalScenename; } }
 
         // packet frequency settings
         public int HeartbeatDelay = 1000;
