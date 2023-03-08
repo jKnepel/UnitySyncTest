@@ -330,7 +330,6 @@ namespace jKnepel.UnitySync
 
 			_pauseEvent.Reset();
 
-
 #if UNITY_EDITOR
 			Selection.selectionChanged -= SelectionChanged;
 			ObjectChangeEvents.changesPublished -= ChangesPublished;
@@ -362,9 +361,9 @@ namespace jKnepel.UnitySync
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
 		}
 
-#endregion
+		#endregion
 
-#region helper methods
+		#region helper methods
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
 		{
@@ -378,14 +377,18 @@ namespace jKnepel.UnitySync
 		{
 			if (_selectedGameObject != null)
 			{
-				Material[] materials = _selectedGameObject.GetComponent<MeshRenderer>().sharedMaterials;
-				for (int i = materials.Length - 1; i >= 0; i--)
+				Renderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
+				for (int i = renderer.sharedMaterials.Length - 1; i >= 0; i--)
 				{
-					if (materials[i].name.Equals(SyncSettings.Instance.HighlightMaterial.name))
+					if (renderer.sharedMaterials[i].name.Equals(SyncSettings.Instance.HighlightMaterial.name))
 					{
-						List<Material> list = materials.ToList();
-						list.RemoveAt(i);
-						_selectedGameObject.GetComponent<MeshRenderer>().sharedMaterials = list.ToArray();
+						Material[] materials = new Material[renderer.sharedMaterials.Length - 1];
+						if (i > 0)
+							Array.Copy(renderer.sharedMaterials, 0, materials, 0, i);
+						if (i < renderer.sharedMaterials.Length - 1)
+							Array.Copy(renderer.sharedMaterials, i + 1, materials, i, renderer.sharedMaterials.Length - i - 1);
+						renderer.sharedMaterials = materials;
+						break;
 					}
 				}
 			}
@@ -425,6 +428,6 @@ namespace jKnepel.UnitySync
 			Debug.Log(msg);
 		}
 
-#endregion
+		#endregion
 	}
 }
