@@ -20,46 +20,50 @@ namespace jKnepel.UnitySync
 		{
 			while (_disposeCount == 0)
 			{
-				// check if packet comes from other client
-				byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
-				string sender = _receiveEndpoint.Address.ToString();
-				if (sender.Equals(_localIpAddress))
-					continue;
-
-				// check crc32 checksum with roomname
-				byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-				byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
-					receivedBytes.Length - CRC32_LENGTH);
-				byte[] roomnameBytes;
-				if (!IsConnected)
+				try
 				{
-					if ((SyncPacketType)remainder[0] != SyncPacketType.Heartbeat)
+					// check if packet comes from other client
+					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
+					string sender = _receiveEndpoint.Address.ToString();
+					if (sender.Equals(SyncSettings.Instance.IP))
 						continue;
 
-					byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
-					roomnameBytes = GetBytesFromArray(receivedBytes,
-						CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
-				}
-				else
-				{
-					roomnameBytes = CurrentRoom.RoomnameBytes;
-				}
-				if (CheckPacketCRC32(checksum, remainder, roomnameBytes))
-					continue;
+					// check crc32 checksum with roomname
+					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
+					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
+						receivedBytes.Length - CRC32_LENGTH);
+					byte[] roomnameBytes;
+					if (!IsConnected)
+					{
+						if (remainder[0] != (byte)SyncPacketType.Heartbeat)
+							continue;
 
-				// handle data depending on packet type
-				AddDebugByteMessage(receivedBytes, "Received Bytes: ");
-				byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
-				switch ((SyncPacketType)remainder[0])
-				{
-					case SyncPacketType.Heartbeat:
-						_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
-						break;
-					case SyncPacketType.ClientCamera:
-						_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
-						break;
-					default: break;
+						byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
+						roomnameBytes = GetBytesFromArray(receivedBytes,
+							CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
+					}
+					else
+					{
+						roomnameBytes = CurrentRoom.RoomnameBytes;
+					}
+					if (CheckPacketCRC32(checksum, remainder, roomnameBytes))
+						continue;
+
+					// handle data depending on packet type
+					AddDebugByteMessage(receivedBytes, "Received Bytes: ");
+					byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
+					switch ((SyncPacketType)remainder[0])
+					{
+						case SyncPacketType.Heartbeat:
+							_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
+							break;
+						case SyncPacketType.ClientCamera:
+							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
+							break;
+						default: break;
+					}
 				}
+				catch (IndexOutOfRangeException) { continue; }
 			}
 		}
 
@@ -69,7 +73,8 @@ namespace jKnepel.UnitySync
 
 		private void UpdateHeartbeat(string sender, byte[] data)
 		{
-			SyncManager.AddSyncMessage(new("Received Heartbeat from " + sender));
+			if (SyncSettings.Instance.IsDebug)
+				Debug.Log($"Received Heartbeat from {sender}");
 
 			// read roomname, username and -color from data
 			int currentPosition = 0;
@@ -116,7 +121,7 @@ namespace jKnepel.UnitySync
 			{
 				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
 				{
-					client.Dispose();
+					_mainThreadActions.Enqueue(client.Dispose);
 					room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
 					if (room.ConnectedClients.Count == 0 && !room.Equals(CurrentRoom))
 						OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
@@ -127,9 +132,10 @@ namespace jKnepel.UnitySync
 		}
 
 		// TODO : optimize this
-		private void UpdateClientCamera(string sender, byte[] data)
+		private void UpdateClientVisualizer(string sender, byte[] data)
 		{
-			SyncManager.AddSyncMessage(new("Received Camera Update from " + sender));
+			if (SyncSettings.Instance.IsDebug)
+				Debug.Log($"Received Camera Update from {sender}");
 
 			int size = sizeof(float);
 			byte[] positionX = GetBytesFromArray(data, 0 * size, size);

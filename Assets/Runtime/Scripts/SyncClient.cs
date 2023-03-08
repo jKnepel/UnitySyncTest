@@ -3,8 +3,8 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Net.NetworkInformation;
 using System.Threading;
+using System.Runtime.ExceptionServices;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
@@ -23,11 +23,11 @@ namespace jKnepel.UnitySync
 		// headers
 		private const int PROTOCOL_ID_LENGTH = 4;
 		private const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
-		// TODO : public const int SEQUENCE_LENGTH = 4;
 		private const int DATA_TYPE_LENGTH = 1; // id of the packet type
-		private const int DATA_FLAG_LENGTH = 2; // flag containing data length
+		private const int SEQUENCE_ID_LENGTH = 2; // sequence id for preventing old updates to be consumed
 
 		// data
+		// private const int DATA_FLAG_LENGTH = 2; // flag containing data length
 		private const int ROOMNAME_FLAG_LENGTH = 1;
 		private const int USERNAME_FLAG_LENGTH = 1;
 		private const int COLOR_LENGTH = 3;
@@ -60,7 +60,6 @@ namespace jKnepel.UnitySync
 
 		private Scene _scene;
 		private Transform _objectContainer;
-		private string _localIpAddress;
 
 		#endregion
 
@@ -80,8 +79,7 @@ namespace jKnepel.UnitySync
 		{
 			try
 			{
-				_localIpAddress = GetLocalIPAddress();
-				if (_localIpAddress.Length == 0)
+				if (SyncSettings.Instance.IP.Length == 0)
 					throw(new SocketException());
 
 				_listener = new(SyncSettings.Instance.Port);
@@ -111,18 +109,20 @@ namespace jKnepel.UnitySync
 				switch (ex)
 				{
 					case SocketException:
-						SyncManager.AddSyncMessage(new("SocketException " + ex.ToString(), SyncMessageSeverity.LogError));
+						Debug.LogError(ex.ToString());
 						break;
 					case ArgumentOutOfRangeException:
-						SyncManager.AddSyncMessage(new("ArgumentOutOfRangeException " + ex.ToString(), SyncMessageSeverity.LogError));
+						Debug.LogError(ex.ToString());
 						break;
 					case ThreadStartException:
-						SyncManager.AddSyncMessage(new("ThreadStartException " + ex.ToString(), SyncMessageSeverity.LogError));
+						Debug.LogError(ex.ToString());
 						break;
 					case OutOfMemoryException:
-						SyncManager.AddSyncMessage(new("OutOfMemoryException " + ex.ToString(), SyncMessageSeverity.LogError));
+						Debug.LogError(ex.ToString());
 						break;
-					default: throw;
+					default: 
+						ExceptionDispatchInfo.Capture(ex).Throw();
+						throw;
 				}
 			}
 		}
@@ -143,47 +143,47 @@ namespace jKnepel.UnitySync
 			{
 				if (disposing)
 				{
-					if (_listenerThread != null)
-					{
-						_pauseEvent.Set();
-						_listenerThread.Join();
-						_senderThread.Join();
-						_heartbeatThread.Join();
-					}
-
 #if UNITY_EDITOR
 					ObjectChangeEvents.changesPublished -= ChangesPublished;
 					EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 					SyncManager.OnUpdate -= Update;
+					SyncEvents.OnShowSyncObjectInHierarchyChanged -= ShowOrHideSyncObject;
+
+					OpenRooms.Clear();
+					CurrentRoom = null;
+					IsSearchingForRooms = false;
 				}
 
-				// TODO : doesnt work on recompile, fix
-#if UNITY_EDITOR
-				GameObject.DestroyImmediate(_objectContainer);
-#else
-				GameObject.Destroy(_objectContainer);
-#endif
-				OpenRooms.Clear();
-				CurrentRoom = null;
-				IsSearchingForRooms = false;
-
-				try
+				// TODO : doesnt work on recompile while in room, fix
+				if (_objectContainer != null)
 				{
-					if (_sender != null)
-					{
-						_sender.Client.Shutdown(SocketShutdown.Both);
-						_sender.Close();
-						_sender.Dispose();
-					}
-					if (_listener != null)
-					{
-						_listener.Client.Shutdown(SocketShutdown.Both);
-						_listener.Close();
-						_listener.Dispose();
-					}
+#if UNITY_EDITOR
+					GameObject.DestroyImmediate(_objectContainer.gameObject);
+#else
+					GameObject.Destroy(_objectContainer.gameObject);
+#endif
 				}
-				catch (ObjectDisposedException) { }
+
+				_listenerThread.Abort();
+				_listenerThread.Join();
+				_senderThread.Abort();
+				_senderThread.Join();
+				_heartbeatThread.Abort();
+				_heartbeatThread.Join();
+
+				_pauseEvent.Dispose();
+
+				if (_sender != null)
+				{
+					_sender.Close();
+					_sender.Dispose();
+				}
+				if (_listener != null)
+				{
+					_listener.Close();
+					_listener.Dispose();
+				}
 
 				// TODO : doesnt work on recompile, fix
 				if (!IsRoomOwner && _scene.IsValid())
@@ -216,7 +216,7 @@ namespace jKnepel.UnitySync
 							UpdateHeartbeat(packet.Sender, packet.Data);
 							break;
 						case SyncPacketType.ClientCamera:
-							UpdateClientCamera(packet.Sender, packet.Data);
+							UpdateClientVisualizer(packet.Sender, packet.Data);
 							break;
 						default: break;
 					}
@@ -228,7 +228,7 @@ namespace jKnepel.UnitySync
 			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
 				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
 #else
-			if (Camera.main.transform && Camera.main.transform.hasChanged)
+			if (Camera.current.transform && Camera.current.transform.hasChanged)
 				CurrentCameraMoved(Camera.current.transform);
 #endif
 		}
@@ -322,8 +322,6 @@ namespace jKnepel.UnitySync
 #endif
 			SyncEvents.OnShowSyncObjectInHierarchyChanged -= ShowOrHideSyncObject;
 
-			foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
-				client.Dispose();
 #if UNITY_EDITOR
 			GameObject.DestroyImmediate(_objectContainer.gameObject);
 #else
@@ -350,36 +348,11 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
-		private string GetLocalIPAddress()
+		private void ShowOrHideSyncObject()
 		{
-			// taken from https://stackoverflow.com/a/24814027
-			string ipAddress = "";
-			foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
-			{
-				if (item.OperationalStatus == OperationalStatus.Up)
-				{   // Fetch the properties of this adapter
-					IPInterfaceProperties adapterProperties = item.GetIPProperties();
-					// Check if the gateway adress exist, if not its most likley a virtual network or smth
-					if (adapterProperties.GatewayAddresses.FirstOrDefault() != null)
-					{   // Iterate over each available unicast adresses
-						foreach (UnicastIPAddressInformation ip in adapterProperties.UnicastAddresses)
-						{   // If the IP is a local IPv4 adress
-							if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
-							{
-								ipAddress = ip.Address.ToString();
-								break;
-							}
-						}
-					}
-				}
-				if (ipAddress != "") { break; }
-			}
-			return ipAddress;
-		}
-
-		private void ShowOrHideSyncObject(bool val)
-		{
-			_objectContainer.hideFlags = val ? HideFlags.None : HideFlags.HideInHierarchy;
+			_objectContainer.hideFlags = SyncSettings.Instance.ShowSyncObjectInHierarchy 
+				? HideFlags.None 
+				: HideFlags.HideInHierarchy;
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
@@ -399,9 +372,12 @@ namespace jKnepel.UnitySync
 
 		private static void AddDebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
 		{
+			if (!SyncSettings.Instance.IsDebug)
+				return;
+
 			foreach (byte d in bytes)
 				msg += Convert.ToString(d, inBinary ? 2 : 16).PadLeft(inBinary ? 8 : 2, '0') + " ";
-			SyncManager.AddSyncMessage(new(msg, true));
+			Debug.Log(msg);
 		}
 
 		#endregion

@@ -43,6 +43,8 @@ namespace jKnepel.UnitySync
 			}
 		}
 
+		public static readonly List<SyncMessage> SyncMessages = new();
+
 		#endregion
 
 		#region private members
@@ -126,12 +128,10 @@ namespace jKnepel.UnitySync
 
 		public static void AddSyncMessage(SyncMessage message)
 		{
-			if (message.IsDebug && !SyncSettings.Instance.IsDebug)
-				return;
-			if (message.IsDebug)
-				Debug.Log(message);
-
-			_mainThreadActions.Enqueue(() => SyncEvents.OnSyncMessageAdded?.Invoke(message));
+			_mainThreadActions.Enqueue(() => {
+				SyncMessages.Add(message);
+				SyncEvents.OnSyncMessageAdded?.Invoke();
+			});
 		}
 
 		#endregion

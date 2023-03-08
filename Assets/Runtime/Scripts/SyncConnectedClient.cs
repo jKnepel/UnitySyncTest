@@ -26,9 +26,9 @@ namespace jKnepel.UnitySync
 				return;
 
 #if UNITY_EDITOR
-			GameObject.DestroyImmediate(Visualizer);
+			GameObject.DestroyImmediate(Visualizer.gameObject);
 #else
-			GameObject.Destroy(Visualizer);
+			GameObject.Destroy(Visualizer.gameObject);
 #endif
 			Visualizer = null;
 		}

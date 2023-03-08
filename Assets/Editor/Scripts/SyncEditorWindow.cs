@@ -16,8 +16,6 @@ namespace jKnepel.UnitySync
         private Vector2 _clientsViewPos;
         private Vector2 _messagesViewPos;
         private Color[] _scrollViewColors = new Color[] { new(0.25f, 0.25f, 0.25f), new(0.23f, 0.23f, 0.23f) };
-
-        private readonly List<SyncMessage> _syncMessages = new();
         
         private bool _newRoomOptionsIsVisible = true;
         private string _newRoomName = "New Room";
@@ -70,87 +68,90 @@ namespace jKnepel.UnitySync
                     GUILayout.Label($"Searching for Rooms is stopped!");
                     if (GUILayout.Button(new GUIContent("Retry Search"), GUILayout.ExpandWidth(false)))
                         SyncManager.RetryRoomDiscovery();
-                    EditorGUILayout.EndVertical();
-                    return;
 				}
-
-                if (!SyncManager.IsConnected)
-				{
-                    // open rooms list
-                    EditorGUILayout.BeginHorizontal();
-                    GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms.Count}");
-                    GUILayout.FlexibleSpace();
-                    if (GUILayout.Button(new GUIContent(_newRoomOptionsIsVisible ? "-" : "+", "Create a New Room"),
-                        GUILayout.Width(20), GUILayout.Height(20)))
-                        _newRoomOptionsIsVisible = !_newRoomOptionsIsVisible;
-                    EditorGUILayout.EndHorizontal();
-                    _roomsViewPos = EditorGUILayout.BeginScrollView(_roomsViewPos, 
-                        EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
-				    {
-                        if (SyncManager.OpenRooms.Count == 0)
-                            GUILayout.Label($"No Rooms found!");
-
-                        for (int i = 0; i < SyncManager.OpenRooms.Count; i++)
-					    {
-                            SyncOpenRoom room = SyncManager.OpenRooms[i];
-                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
-                            {
-                                GUILayout.Label(room.Roomname);
-                                GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
-                                if (GUILayout.Button(new GUIContent("Connect To Room"), GUILayout.ExpandWidth(false)))
-                                    SyncManager.ConnectToRoom(room.Roomname, SyncSettings.Instance.ImportSceneName);
-                            }
-                            EditorGUILayout.EndHorizontal();
-					    }
-				    }
-                    EditorGUILayout.EndScrollView();
-
-                    // new room options
-                    if (_newRoomOptionsIsVisible)
-					{
-                        int sceneCount = EditorSceneManager.sceneCount;
-                        string[] sceneNames = new string[sceneCount];
-                        for (int i = 0; i < sceneCount; i++)
-                            sceneNames[i] = EditorSceneManager.GetSceneAt(i).name;
-                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-						{
-                            GUILayout.Label("Create a New Room", EditorStyles.boldLabel);
-                            _newRoomName = EditorGUILayout.TextField("Roomname:", _newRoomName);
-                            _newRoomDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", _newRoomDropdownIndex, sceneNames);
-                            if (GUILayout.Button(new GUIContent("Create")))
-                                SyncManager.ConnectToRoom(_newRoomName, sceneNames[_newRoomDropdownIndex], true);
-                        }
-                        EditorGUILayout.EndVertical();
-                    }
-                }
                 else
 				{
-                    // room client list
-                    GUILayout.Label($"Current Room: {SyncManager.CurrentRoom.Roomname}");
-                    _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos,
-                        EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
+                    if (GUILayout.Button("Reset Client"))
+                        SyncManager.RetryRoomDiscovery();
+
+                    if (!SyncManager.IsConnected)
                     {
-                        if (SyncManager.CurrentRoom.ConnectedClients.Count == 0)
-                            GUILayout.Label($"There are no Clients in this room!");
-
-						Color defaultColor = _style.normal.textColor;
-                        _style.alignment = TextAnchor.MiddleLeft;
-						for (int i = 0; i < SyncManager.CurrentRoom.ConnectedClients.Count; i++)
+                        // open rooms list
+                        EditorGUILayout.BeginHorizontal();
+                        GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms.Count}");
+                        GUILayout.FlexibleSpace();
+                        if (GUILayout.Button(new GUIContent(_newRoomOptionsIsVisible ? "-" : "+", "Create a New Room"),
+                            GUILayout.Width(20), GUILayout.Height(20)))
+                            _newRoomOptionsIsVisible = !_newRoomOptionsIsVisible;
+                        EditorGUILayout.EndHorizontal();
+                        _roomsViewPos = EditorGUILayout.BeginScrollView(_roomsViewPos,
+                            EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
                         {
-                            SyncConnectedClient client = SyncManager.CurrentRoom.ConnectedClients.ElementAt(i).Value;
-                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
-                            {
-                                _style.normal.textColor = client.Color;
-                                GUILayout.Label(client.Username, _style);
-                            }
-                            EditorGUILayout.EndHorizontal();
-                        }
-                        _style.normal.textColor = defaultColor;
-                    }
-                    EditorGUILayout.EndScrollView();
+                            if (SyncManager.OpenRooms.Count == 0)
+                                GUILayout.Label($"No Rooms found!");
 
-                    if (GUILayout.Button(new GUIContent("Leave Room")))
-                        SyncManager.DisconnectFromRoom();
+                            for (int i = 0; i < SyncManager.OpenRooms.Count; i++)
+                            {
+                                SyncOpenRoom room = SyncManager.OpenRooms[i];
+                                EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
+                                {
+                                    GUILayout.Label(room.Roomname);
+                                    GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
+                                    if (GUILayout.Button(new GUIContent("Connect To Room"), GUILayout.ExpandWidth(false)))
+                                        SyncManager.ConnectToRoom(room.Roomname, SyncSettings.Instance.ImportSceneName);
+                                }
+                                EditorGUILayout.EndHorizontal();
+                            }
+                        }
+                        EditorGUILayout.EndScrollView();
+
+                        // new room options
+                        if (_newRoomOptionsIsVisible)
+                        {
+                            int sceneCount = EditorSceneManager.sceneCount;
+                            string[] sceneNames = new string[sceneCount];
+                            for (int i = 0; i < sceneCount; i++)
+                                sceneNames[i] = EditorSceneManager.GetSceneAt(i).name;
+                            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                            {
+                                GUILayout.Label("Create a New Room", EditorStyles.boldLabel);
+                                _newRoomName = EditorGUILayout.TextField("Roomname:", _newRoomName);
+                                _newRoomDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", _newRoomDropdownIndex, sceneNames);
+                                if (GUILayout.Button(new GUIContent("Create")))
+                                    SyncManager.ConnectToRoom(_newRoomName, sceneNames[_newRoomDropdownIndex], true);
+                            }
+                            EditorGUILayout.EndVertical();
+                        }
+                    }
+                    else
+                    {
+                        // room client list
+                        GUILayout.Label($"Current Room: {SyncManager.CurrentRoom.Roomname}");
+                        _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos,
+                            EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
+                        {
+                            if (SyncManager.CurrentRoom.ConnectedClients.Count == 0)
+                                GUILayout.Label($"There are no Clients in this room!");
+
+                            Color defaultColor = _style.normal.textColor;
+                            _style.alignment = TextAnchor.MiddleLeft;
+                            for (int i = 0; i < SyncManager.CurrentRoom.ConnectedClients.Count; i++)
+                            {
+                                SyncConnectedClient client = SyncManager.CurrentRoom.ConnectedClients.ElementAt(i).Value;
+                                EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
+                                {
+                                    _style.normal.textColor = client.Color;
+                                    GUILayout.Label(client.Username, _style);
+                                }
+                                EditorGUILayout.EndHorizontal();
+                            }
+                            _style.normal.textColor = defaultColor;
+                        }
+                        EditorGUILayout.EndScrollView();
+
+                        if (GUILayout.Button(new GUIContent("Leave Room")))
+                            SyncManager.DisconnectFromRoom();
+                    }
                 }
                 EditorGUILayout.Space();
                 EditorGUILayout.Space();
@@ -165,9 +166,9 @@ namespace jKnepel.UnitySync
                     EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(200));
 				{
                     Color defaultColor = _style.normal.textColor;
-                    for (int i = 0; i < _syncMessages.Count; i++)
+                    for (int i = 0; i < SyncManager.SyncMessages.Count; i++)
                     {
-                        SyncMessage message = _syncMessages.ElementAt(i);
+                        SyncMessage message = SyncManager.SyncMessages.ElementAt(i);
                         EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                         {
                             switch (message.Severity)
@@ -205,11 +206,10 @@ namespace jKnepel.UnitySync
             return style;
         }
 
-        private void AddSyncMessage(SyncMessage message)
+        private void AddSyncMessage()
 		{
-            _syncMessages.Add(message);
             if (_isAutoscroll) 
-                _messagesViewPos = new(_messagesViewPos.x, _syncMessages.Count * ROW_HEIGHT);
+                _messagesViewPos = new(_messagesViewPos.x, SyncManager.SyncMessages.Count * ROW_HEIGHT);
             Repaint();
         }
     }

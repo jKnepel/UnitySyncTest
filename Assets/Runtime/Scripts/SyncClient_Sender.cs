@@ -3,6 +3,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.ExceptionServices;
 using UnityGLTF;
 using Toph.GLTFSerializer.Components;
 using UnityEngine;
@@ -59,12 +60,13 @@ namespace jKnepel.UnitySync
 				switch (ex)
 				{
 					case SocketException:
-						SyncManager.AddSyncMessage(new("Socket Exception " + ex.ToString(), SyncMessageSeverity.LogError));
+						Debug.LogError(ex.ToString());
 						break;
 					case ObjectDisposedException:
-						SyncManager.AddSyncMessage(new("Object Disposed Exception " + ex.ToString(), SyncMessageSeverity.LogError));
+						Debug.LogError(ex.ToString());
 						break;
 					default:
+						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
 			}
@@ -79,38 +81,16 @@ namespace jKnepel.UnitySync
 				if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
 					continue;
 
-				switch (packet.Type)
-				{
-					case SyncPacketType.ClientCamera:
-						SendClientCameraBytes(packet.Data);
-						break;
-					default: break;
-				}
+				byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + SEQUENCE_ID_LENGTH + packet.Data.Length];
+				data[CRC32_LENGTH] = (byte)packet.Type;
+				// TODO : add sequence ids
+				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
+
+				CalculateAndAddChecksum(data);
+
+				_sender.Send(data, data.Length, _broadCastEndpoint);
+				AddDebugByteMessage(data, $"Send {packet.Type} Bytes: ");
 			}
-		}
-
-		#endregion
-
-		#region packet sending
-
-		private void SendClientCameraBytes(byte[] bytes)
-		{
-			byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + bytes.Length];
-			// TODO : add sequence ids
-			data[CRC32_LENGTH] = (byte)SyncPacketType.ClientCamera;
-			Array.Copy(bytes, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, bytes.Length);
-
-			CalculateAndAddChecksum(data);
-
-			_sender.Send(data, data.Length, _broadCastEndpoint);
-			AddDebugByteMessage(data, "Send Camera Bytes: ");
-		}
-
-		private async void SendHierarchy(GameObject go)
-		{
-			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
-			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
-			_packetsToSend.Enqueue(new(SyncPacketType.Hierarchy, bytes));
 		}
 
 		#endregion
@@ -137,6 +117,13 @@ namespace jKnepel.UnitySync
 			}
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
+		}
+
+		private async void SendHierarchy(GameObject go)
+		{
+			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
+			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
+			_packetsToSend.Enqueue(new(SyncPacketType.Hierarchy, bytes));
 		}
 #endif
 

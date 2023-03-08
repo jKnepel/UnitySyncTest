@@ -1,6 +1,6 @@
 namespace jKnepel.UnitySync
 {
-    public enum SyncPacketType
+    public enum SyncPacketType : byte
     {
         ACK,
         Heartbeat,

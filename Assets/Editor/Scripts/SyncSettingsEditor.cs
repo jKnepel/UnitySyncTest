@@ -13,6 +13,7 @@ namespace jKnepel.UnitySync
 		public override void OnInspectorGUI()
 		{
 			// user settings
+			SyncSettings.Instance.IP = EditorGUILayout.TextField("IP:", SyncSettings.Instance.IP);
 			SyncSettings.Instance.Port = EditorGUILayout.IntField("Port:", SyncSettings.Instance.Port);
 			SyncSettings.Instance.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:",
 				SyncSettings.Instance.ImportSceneName);
@@ -38,7 +39,7 @@ namespace jKnepel.UnitySync
 				EditorGUI.indentLevel++;
 				SyncSettings.Instance.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."),
 					SyncSettings.Instance.IsDebug);
-				SyncSettings.Instance.ShowSyncObjectInHierarchy = EditorGUILayout.Toggle("ShowSyncObjects: ",
+				SyncSettings.Instance.ShowSyncObjectInHierarchy = EditorGUILayout.Toggle("Show Sync Objects: ",
 					SyncSettings.Instance.ShowSyncObjectInHierarchy);
 				EditorGUI.indentLevel--;
 			}
