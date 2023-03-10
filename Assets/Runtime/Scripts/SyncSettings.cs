@@ -2,6 +2,7 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace jKnepel.UnitySync
 {
@@ -53,6 +54,9 @@ namespace jKnepel.UnitySync
         // prefabs
         public SyncClientVisualizer ClientVisualizer;
 		public Material HighlightMaterial;
+
+		public Scene SyncScene;
+		public Transform SyncParentContainer;
 
 		private static string GetLocalIPAddress()
 		{

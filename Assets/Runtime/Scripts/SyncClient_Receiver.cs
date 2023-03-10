@@ -118,8 +118,8 @@ namespace jKnepel.UnitySync
 				}
 				else if (client.Visualizer == null && room.Equals(CurrentRoom))
 				{
-					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject, 
-						_clientVisualizerParent);
+					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject,
+						SyncSettings.Instance.SyncParentContainer);
 					client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
 					client.Visualizer.UpdateVisualizer(sender, username, color);
 				}
@@ -181,14 +181,14 @@ namespace jKnepel.UnitySync
 				{
 					return;
 				}
-				SceneManager.MoveGameObjectToScene(createdObject, _syncScene);
+				SceneManager.MoveGameObjectToScene(createdObject, SyncSettings.Instance.SyncScene);
 
 				SyncManager.AddSyncMessage(new($"GameObject '{createdObject.name}' imported."));
 			};
 
 			using MemoryStream memoryStream = new();
 			await memoryStream.WriteAsync(hierarchy);
-			await DeserializeGameObject(_syncScene, new ImportOptions(), memoryStream, onLoadComplete);
+			await DeserializeGameObject(SyncSettings.Instance.SyncScene, new ImportOptions(), memoryStream, onLoadComplete);
 
 			SyncManager.AddSyncMessage(new($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}"));
 
