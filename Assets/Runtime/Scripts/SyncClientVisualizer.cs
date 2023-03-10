@@ -14,5 +14,6 @@ public class SyncClientVisualizer : MonoBehaviour
         if (material == null)
             material = new(renderer.sharedMaterial);
         material.SetColor("_Color", color);
+        renderer.sharedMaterial = material;
     }
 }
