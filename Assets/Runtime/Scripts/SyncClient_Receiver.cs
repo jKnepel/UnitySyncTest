@@ -25,7 +25,7 @@ namespace jKnepel.UnitySync
 					// check if packet comes from other client
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(SyncSettings.Instance.IP) && false)
+					if (sender.Equals(SyncSettings.Instance.IP))
 						continue;
 
 					// get bytes used for crc32 check
