@@ -223,9 +223,6 @@ namespace jKnepel.UnitySync
 				{
 					switch (packet.Type)
 					{
-						case SyncPacketType.Heartbeat:
-							UpdateHeartbeat(packet.Sender, packet.Data);
-							break;
 						case SyncPacketType.ClientCamera:
 							UpdateClientVisualizer(packet.Sender, packet.Data);
 							break;
@@ -336,6 +333,7 @@ namespace jKnepel.UnitySync
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 
+			// TODO : throws scene is not loaded
 			if (_localScene.IsValid())
 			{
 #if UNITY_EDITOR
@@ -365,8 +363,11 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
-		private static byte[] GetBytesFromArray(byte[] array, int offset, int size)
+		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
 		{
+			if (size == 0)
+				size = array.Length - offset;
+
 			byte[] bytes = new byte[size];
 			Array.Copy(array, offset, bytes, 0, size);
 			return bytes;

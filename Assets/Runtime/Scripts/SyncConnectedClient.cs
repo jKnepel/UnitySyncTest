@@ -11,6 +11,9 @@ namespace jKnepel.UnitySync
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
+		public ushort UnreliableLocalSequence { get; set; }
+		public ushort UnreliableRemoteSequence { get; set; }
+
 		public SyncConnectedClient(string ip, string username, Color32 color)
 		{
 			IP = ip;
@@ -18,6 +21,9 @@ namespace jKnepel.UnitySync
 			Visualizer = null;
 			Color = color;
 			LastHeartbeat = DateTime.Now;
+
+			UnreliableLocalSequence = 0;
+			UnreliableRemoteSequence = 0;
 		}
 
 		public void Dispose()

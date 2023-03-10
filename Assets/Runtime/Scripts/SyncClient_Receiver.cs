@@ -25,38 +25,39 @@ namespace jKnepel.UnitySync
 					// check if packet comes from other client
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(SyncSettings.Instance.IP))
+					if (sender.Equals(SyncSettings.Instance.IP) && false)
 						continue;
 
-					// check crc32 checksum with roomname
-					byte[] checksum = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH,
-						receivedBytes.Length - CRC32_LENGTH);
-					byte[] roomnameBytes;
-					if (!IsConnected)
-					{
-						if (remainder[0] != (byte)SyncPacketType.Heartbeat)
-							continue;
+					// get bytes used for crc32 check
+					byte[] checksumBytes = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
+					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH);
 
-						byte roomnameLength = receivedBytes[CRC32_LENGTH + DATA_TYPE_LENGTH];
-						roomnameBytes = GetBytesFromArray(receivedBytes,
-							CRC32_LENGTH + DATA_TYPE_LENGTH + ROOMNAME_FLAG_LENGTH, roomnameLength);
-					}
-					else
+					// get relevant data bytes
+					byte[] sequenceBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					SyncPacketType packetType = (SyncPacketType)receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH];
+					byte[] data = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
+
+					if (packetType == SyncPacketType.Heartbeat)
 					{
-						roomnameBytes = CurrentRoom.RoomnameBytes;
-					}
-					if (CheckPacketCRC32(checksum, remainder, roomnameBytes))
+						UpdateHeartbeat(sender, checksumBytes, remainder);
 						continue;
+					}
+
+					if (CheckPacketCRC32(checksumBytes, remainder))
+						continue;
+
+					// check sequencing
+					if (!CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
+						continue;
+					ushort sequence = BitConverter.ToUInt16(sequenceBytes);
+					if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
+						continue;
+					client.UnreliableRemoteSequence = sequence++;
 
 					// handle data depending on packet type
-					AddDebugByteMessage(receivedBytes, "Received Bytes: ");
-					byte[] data = GetBytesFromArray(remainder, 1, remainder.Length - 1);
-					switch ((SyncPacketType)remainder[0])
+					AddDebugByteMessage(data, "Received Bytes: ");
+					switch (packetType)
 					{
-						case SyncPacketType.Heartbeat:
-							_receivedPackets.Enqueue(new(SyncPacketType.Heartbeat, sender, data));
-							break;
 						case SyncPacketType.ClientCamera:
 							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
 							break;
@@ -71,16 +72,19 @@ namespace jKnepel.UnitySync
 
 		#region packet receiving
 
-		private void UpdateHeartbeat(string sender, byte[] data)
+		private void UpdateHeartbeat(string sender, byte[] checksum, byte[] data)
 		{
-			if (SyncSettings.Instance.IsDebug)
-				Debug.Log($"Received Heartbeat from {sender}");
-
-			// read roomname, username and -color from data
-			int currentPosition = 0;
+			// read roomname and check for bitswitches
+			int currentPosition = SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH;
 			int roomnameLength = data[currentPosition];
 			currentPosition += ROOMNAME_FLAG_LENGTH;
 			byte[] roomnameBytes = GetBytesFromArray(data, currentPosition, roomnameLength);
+			if (CheckPacketCRC32(checksum, data, roomnameBytes))
+				return;
+
+			AddDebugByteMessage(data, "Received Heartbeat Bytes: ");
+
+			// get username and -color from data
 			string roomname = Encoding.ASCII.GetString(roomnameBytes);
 			currentPosition += roomnameLength;
 			int usernameLength = data[currentPosition];
@@ -105,14 +109,21 @@ namespace jKnepel.UnitySync
 
 			// update client values
 			client.Color = color;
-			if (client.Visualizer == null && room.Equals(CurrentRoom))
-			{
-				GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject, _clientVisualizerParent);
-				client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
-			}
-			if (client.Visualizer)
-				client.Visualizer.UpdateVisualizer(sender, username, color);
 			client.LastHeartbeat = DateTime.Now;
+			_mainThreadActions.Enqueue(() =>
+			{
+				if (client.Visualizer)
+				{
+					client.Visualizer.UpdateVisualizer(sender, username, color);
+				}
+				else if (client.Visualizer == null && room.Equals(CurrentRoom))
+				{
+					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject, 
+						_clientVisualizerParent);
+					client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
+					client.Visualizer.UpdateVisualizer(sender, username, color);
+				}
+			});
 		}
 
 		private async Task TimeoutClient(SyncConnectedClient client, SyncOpenRoom room)
@@ -207,6 +218,19 @@ namespace jKnepel.UnitySync
 			Array.Copy(roomname, 0, bytes, PROTOCOL_ID_LENGTH, roomname.Length);
 			Array.Copy(packet, 0, bytes, PROTOCOL_ID_LENGTH + roomname.Length, packet.Length);
 			return BitConverter.ToUInt32(checksum) == SyncCRC32.CRC32Bytes(bytes);
+		}
+
+		/// <summary>
+		/// Checks if a packet is new by comparing the packets sequence number and the corresponding remote sequence number.
+		/// Also handles ushort wrap-arounds by allowing packets that are smaller by half of the maximum value.
+		/// </summary>
+		/// <param name="packetSequence"></param>
+		/// <param name="remoteSequence"></param>
+		/// <returns>if the packet is new</returns>
+		private static bool IsNewPacket(ushort packetSequence, ushort remoteSequence)
+		{
+			return ((packetSequence > remoteSequence) && (packetSequence - remoteSequence <= 32768))
+				|| ((packetSequence < remoteSequence) && (remoteSequence - packetSequence > 32768));
 		}
 
 		#endregion

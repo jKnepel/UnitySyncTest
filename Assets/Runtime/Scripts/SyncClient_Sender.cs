@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -27,13 +28,15 @@ namespace jKnepel.UnitySync
 
 					byte[] username = Encoding.ASCII.GetBytes(SyncSettings.Instance.Username);
 					byte[] color = { SyncSettings.Instance.Color.r, SyncSettings.Instance.Color.g, SyncSettings.Instance.Color.b };
-					int currentPosition = CRC32_LENGTH;
 
 					// prepare data with room name, username and -color
-					byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH +
+					byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH +
 						ROOMNAME_FLAG_LENGTH + CurrentRoom.RoomnameBytes.Length +
 						USERNAME_FLAG_LENGTH + username.Length +
 						COLOR_LENGTH];
+					int currentPosition = CRC32_LENGTH;
+					Array.Copy(BitConverter.GetBytes((ushort)0), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					currentPosition += SEQUENCE_ID_LENGTH;
 					data[currentPosition] = (byte)SyncPacketType.Heartbeat;
 					currentPosition += DATA_TYPE_LENGTH;
 					data[currentPosition] = (byte)CurrentRoom.RoomnameBytes.Length;
@@ -49,7 +52,7 @@ namespace jKnepel.UnitySync
 					CalculateAndAddChecksum(data);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
-					SyncManager.AddSyncMessage(new("Send Heartbeat"));
+					AddDebugByteMessage(data, "Send Heartbeat Bytes: ");
 					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
 				}
 			}
@@ -81,14 +84,21 @@ namespace jKnepel.UnitySync
 				if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
 					continue;
 
+				// add packet type and data to packet
 				byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + SEQUENCE_ID_LENGTH + packet.Data.Length];
-				data[CRC32_LENGTH] = (byte)packet.Type;
-				// TODO : add sequence ids
-				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
+				data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
+				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
 
+				// add crc32 to packet
 				CalculateAndAddChecksum(data);
 
-				_sender.Send(data, data.Length, _broadCastEndpoint);
+				// add local sequence number for each client and send packet to them
+				foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
+				{
+					client.UnreliableLocalSequence++;
+					Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					_sender.Send(data, data.Length, new(IPAddress.Broadcast, SyncSettings.Instance.Port));
+				}
 				AddDebugByteMessage(data, $"Send {packet.Type} Bytes: ");
 			}
 		}
