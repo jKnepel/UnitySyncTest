@@ -43,7 +43,7 @@ namespace jKnepel.UnitySync
 						continue;
 					}
 
-					if (CheckPacketCRC32(checksumBytes, remainder))
+					if (!CheckPacketCRC32(checksumBytes, remainder))
 						continue;
 
 					// check sequencing
@@ -79,7 +79,7 @@ namespace jKnepel.UnitySync
 			int roomnameLength = data[currentPosition];
 			currentPosition += ROOMNAME_FLAG_LENGTH;
 			byte[] roomnameBytes = GetBytesFromArray(data, currentPosition, roomnameLength);
-			if (CheckPacketCRC32(checksum, data, roomnameBytes))
+			if (!CheckPacketCRC32(checksum, data, roomnameBytes))
 				return;
 
 			AddDebugByteMessage(data, "Received Heartbeat Bytes: ");
@@ -212,7 +212,7 @@ namespace jKnepel.UnitySync
 			if (roomname == null)
 				roomname = CurrentRoom.RoomnameBytes;
 
-			// calculate crc32 checksum from protocol id, roomname and data
+			// calculate crc32 checksum from protocol id, roomname and packet
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + roomname.Length + packet.Length];
 			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
 			Array.Copy(roomname, 0, bytes, PROTOCOL_ID_LENGTH, roomname.Length);

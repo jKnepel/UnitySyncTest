@@ -20,6 +20,8 @@ namespace jKnepel.UnitySync
 
 		private void HeartbeatThread()
 		{
+			byte[] nullBytes16 = BitConverter.GetBytes((ushort)0);
+
 			try
 			{
 				while (_disposeCount == 0)
@@ -35,7 +37,7 @@ namespace jKnepel.UnitySync
 						USERNAME_FLAG_LENGTH + username.Length +
 						COLOR_LENGTH];
 					int currentPosition = CRC32_LENGTH;
-					Array.Copy(BitConverter.GetBytes((ushort)0), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					Array.Copy(nullBytes16, 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					currentPosition += SEQUENCE_ID_LENGTH;
 					data[currentPosition] = (byte)SyncPacketType.Heartbeat;
 					currentPosition += DATA_TYPE_LENGTH;
@@ -49,7 +51,9 @@ namespace jKnepel.UnitySync
 					currentPosition += username.Length;
 					Array.Copy(color, 0, data, currentPosition, COLOR_LENGTH);
 
-					CalculateAndAddChecksum(data);
+					// add crc32 to the packet
+					byte[] checksumBytes = CalculateChecksum(GetBytesFromArray(data, CRC32_LENGTH));
+					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
 					AddDebugByteMessage(data, "Send Heartbeat Bytes: ");
@@ -89,14 +93,13 @@ namespace jKnepel.UnitySync
 				data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
 				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
 
-				// add crc32 to packet
-				CalculateAndAddChecksum(data);
-
 				// add local sequence number for each client and send packet to them
 				foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
 				{
 					client.UnreliableLocalSequence++;
 					Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					byte[] checksumBytes = CalculateChecksum(GetBytesFromArray(data, CRC32_LENGTH));
+					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
 					_sender.Send(data, data.Length, new(IPAddress.Broadcast, SyncSettings.Instance.Port));
 				}
 				AddDebugByteMessage(data, $"Send {packet.Type} Bytes: ");
@@ -174,16 +177,14 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
-		private void CalculateAndAddChecksum(byte[] packet)
+		private byte[] CalculateChecksum(byte[] packet)
 		{
 			// calculate crc32 checksum from protocol id, roomname and packet
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + CurrentRoom.RoomnameBytes.Length + packet.Length];
 			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
 			Array.Copy(CurrentRoom.RoomnameBytes, 0, bytes, PROTOCOL_ID_LENGTH, CurrentRoom.RoomnameBytes.Length);
 			Array.Copy(packet, 0, bytes, PROTOCOL_ID_LENGTH + CurrentRoom.RoomnameBytes.Length, packet.Length);
-
-			// and add it to the packet
-			Array.Copy(BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes)), 0, packet, 0, CRC32_LENGTH);
+			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
 		}
 
 		#endregion
