@@ -55,7 +55,7 @@ namespace jKnepel.UnitySync
 					client.UnreliableRemoteSequence = sequence++;
 
 					// handle data depending on packet type
-					AddDebugByteMessage(data, "Received Bytes: ");
+					DebugByteMessage(data, "Received Bytes: ");
 					switch (packetType)
 					{
 						case SyncPacketType.ClientCamera:
@@ -82,7 +82,7 @@ namespace jKnepel.UnitySync
 			if (!CheckPacketCRC32(checksum, data, roomnameBytes))
 				return;
 
-			AddDebugByteMessage(data, "Received Heartbeat Bytes: ");
+			DebugByteMessage(data, "Received Heartbeat Bytes: ");
 
 			// get username and -color from data
 			string roomname = Encoding.ASCII.GetString(roomnameBytes);

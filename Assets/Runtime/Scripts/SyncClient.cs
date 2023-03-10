@@ -427,7 +427,7 @@ namespace jKnepel.UnitySync
 		}
 #endif
 
-		private static void AddDebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
+		private static void DebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
 		{
 			if (!SyncSettings.Instance.IsDebug)
 				return;

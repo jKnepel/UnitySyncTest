@@ -56,7 +56,7 @@ namespace jKnepel.UnitySync
 					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
-					AddDebugByteMessage(data, "Send Heartbeat Bytes: ");
+					DebugByteMessage(data, "Send Heartbeat Bytes: ");
 					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
 				}
 			}
@@ -93,16 +93,16 @@ namespace jKnepel.UnitySync
 				data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
 				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
 
-				// add local sequence number for each client and send packet to them
+				// add local sequence number and checksum for each client and send packet to them
 				foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
 				{
 					client.UnreliableLocalSequence++;
 					Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					byte[] checksumBytes = CalculateChecksum(GetBytesFromArray(data, CRC32_LENGTH));
 					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
-					_sender.Send(data, data.Length, new(IPAddress.Broadcast, SyncSettings.Instance.Port));
+					_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), SyncSettings.Instance.Port));
 				}
-				AddDebugByteMessage(data, $"Send {packet.Type} Bytes: ");
+				DebugByteMessage(data, $"Send {packet.Type} Bytes: ");
 			}
 		}
 
