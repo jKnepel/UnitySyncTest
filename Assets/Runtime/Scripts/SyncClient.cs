@@ -39,6 +39,8 @@ namespace jKnepel.UnitySync
 
 		#region private members
 
+		private static readonly SyncSettings _settings = SyncSettings.GetOrCreateSettings();
+
 		private readonly UdpClient _listener;
 		private readonly UdpClient _sender;
 		private readonly IPEndPoint _broadCastEndpoint;
@@ -57,7 +59,7 @@ namespace jKnepel.UnitySync
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
-		private int _cameraUpdateDelay = SyncSettings.Instance.ClientVisualizerUpdateDelay;
+		private int _cameraUpdateDelay = _settings.ClientVisualizerUpdateDelay;
 
 		private GameObject _selectedGameObject;
 
@@ -66,7 +68,7 @@ namespace jKnepel.UnitySync
 		#region public members
 
 		public bool IsSearchingForRooms { get; private set; }
-		public bool IsConnected { get { return CurrentRoom != null; } }
+		public bool IsConnected { get => CurrentRoom != null; }
 		public bool IsRoomOwner { get; private set; }
 		public readonly ConcurrentDictionary<string, SyncOpenRoom> OpenRooms = new();
 		public SyncOpenRoom CurrentRoom { get; private set; }
@@ -79,26 +81,26 @@ namespace jKnepel.UnitySync
 		{
 			try
 			{
-				if (SyncSettings.Instance.IP.Length == 0)
+				if (_settings.IP.Length == 0)
 					throw(new SocketException());
 
-				if (SyncSettings.Instance.SyncParentContainer != null)
+				if (_settings.SyncParentContainer != null)
 				{
 #if UNITY_EDITOR
-					GameObject.DestroyImmediate(SyncSettings.Instance.SyncParentContainer.gameObject);
+					GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
 #else
-					GameObject.Destroy(SyncSettings.Instance.SyncParentContainer.gameObject);
+					GameObject.Destroy(_settings.SyncParentContainer.gameObject);
 #endif
-					SyncSettings.Instance.SyncParentContainer = null;
+					_settings.SyncParentContainer = null;
 				}
 
-				_listener = new(SyncSettings.Instance.Port);
+				_listener = new(_settings.Port);
 				_listener.EnableBroadcast = true;
 				_sender = new();
 				_sender.EnableBroadcast = true;
 
-				_broadCastEndpoint = new(IPAddress.Broadcast, SyncSettings.Instance.Port);
-				_receiveEndpoint = new(IPAddress.Any, SyncSettings.Instance.Port);
+				_broadCastEndpoint = new(IPAddress.Broadcast, _settings.Port);
+				_receiveEndpoint = new(IPAddress.Any, _settings.Port);
 
 				SyncManager.OnUpdate += Update;
 
@@ -180,22 +182,22 @@ namespace jKnepel.UnitySync
 #endif
 					SyncManager.OnUpdate -= Update;
 
-					if (SyncSettings.Instance.SyncParentContainer != null)
+					if (_settings.SyncParentContainer != null)
 					{
 #if UNITY_EDITOR
-						GameObject.DestroyImmediate(SyncSettings.Instance.SyncParentContainer.gameObject);
+						GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
 #else
-						GameObject.Destroy(SyncSettings.Instance.SyncParentContainer.gameObject);
+						GameObject.Destroy(_settings.SyncParentContainer.gameObject);
 #endif
-						SyncSettings.Instance.SyncParentContainer = null;
+						_settings.SyncParentContainer = null;
 					}
 
-					if (!IsRoomOwner && SyncSettings.Instance.SyncScene.IsValid())
+					if (!IsRoomOwner && _settings.SyncScene.IsValid())
 					{
 #if UNITY_EDITOR
-						EditorSceneManager.UnloadSceneAsync(SyncSettings.Instance.SyncScene);
+						EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
 #else
-						SceneManager.UnloadSceneAsync(SyncSettings.Instance.SyncScene);
+						SceneManager.UnloadSceneAsync(_settings.SyncScene);
 #endif
 					}
 
@@ -269,7 +271,7 @@ namespace jKnepel.UnitySync
 					Debug.LogWarning($"The Scene {scenename} is not valid!");
 					return;
 				}
-				SyncSettings.Instance.SyncScene = scene;
+				_settings.SyncScene = scene;
 				CurrentRoom = new(roomname);
 				OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
 				IsRoomOwner = true;
@@ -288,17 +290,17 @@ namespace jKnepel.UnitySync
 				}
 
 #if UNITY_EDITOR
-				SyncSettings.Instance.SyncScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-				SyncSettings.Instance.SyncScene.name = scenename;
+				_settings.SyncScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
+				_settings.SyncScene.name = scenename;
 #else
-				SyncSettings.Instance.SyncScene = SceneManager.CreateScene(scenename);
+				_settings.SyncScene = SceneManager.CreateScene(scenename);
 #endif
 				CurrentRoom = room;
 				IsRoomOwner = false;
 				// TODO : announce myself to room
 			}
-			SceneManager.SetActiveScene(SyncSettings.Instance.SyncScene);
-			SyncSettings.Instance.SyncParentContainer = new GameObject("Cient Visualizer Parent").transform;
+			SceneManager.SetActiveScene(_settings.SyncScene);
+			_settings.SyncParentContainer = new GameObject("Cient Visualizer Parent").transform;
 
 			_pauseEvent.Set();
 
@@ -324,22 +326,22 @@ namespace jKnepel.UnitySync
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 
-			if (SyncSettings.Instance.SyncParentContainer != null)
+			if (_settings.SyncParentContainer != null)
 			{
 #if UNITY_EDITOR
-				GameObject.DestroyImmediate(SyncSettings.Instance.SyncParentContainer.gameObject);
+				GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
 #else
-				GameObject.Destroy(SyncSettings.Instance.SyncParentContainer.gameObject);
+				GameObject.Destroy(_settings.SyncParentContainer.gameObject);
 #endif
-				SyncSettings.Instance.SyncParentContainer = null;
+				_settings.SyncParentContainer = null;
 			}
 
-			if (!IsRoomOwner && SyncSettings.Instance.SyncScene.IsValid())
+			if (!IsRoomOwner && _settings.SyncScene.IsValid())
 			{
 #if UNITY_EDITOR
-				EditorSceneManager.UnloadSceneAsync(SyncSettings.Instance.SyncScene);
+				EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
 #else
-                SceneManager.UnloadSceneAsync(SyncSettings.Instance.SyncScene);
+                SceneManager.UnloadSceneAsync(_settings.SyncScene);
 #endif
 			}
 
@@ -374,7 +376,7 @@ namespace jKnepel.UnitySync
 				Renderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
 				for (int i = renderer.sharedMaterials.Length - 1; i >= 0; i--)
 				{
-					if (renderer.sharedMaterials[i].name.Equals(SyncSettings.Instance.HighlightMaterial.name))
+					if (renderer.sharedMaterials[i].name.Equals(_settings.HighlightMaterial.name))
 					{
 						Material[] materials = new Material[renderer.sharedMaterials.Length - 1];
 						if (i > 0)
@@ -389,14 +391,14 @@ namespace jKnepel.UnitySync
 
 			// highlight selected object
 			GameObject selection = Selection.activeGameObject;
-			if (selection != null && selection.scene == SyncSettings.Instance.SyncScene)
+			if (selection != null && selection.scene == _settings.SyncScene)
 			{
 				_selectedGameObject = selection;
 				MeshRenderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
 				Material[] materials = new Material[renderer.sharedMaterials.Length + 1];
 				renderer.sharedMaterials.CopyTo(materials, 0);
-				Material newMaterial = new(SyncSettings.Instance.HighlightMaterial);
-				newMaterial.SetColor("_Color", SyncSettings.Instance.Color);
+				Material newMaterial = new(_settings.HighlightMaterial);
+				newMaterial.SetColor("_Color", _settings.Color);
 #if UNITY_EDITOR
 				newMaterial.SetFloat("_Width", 1f);
 #else
@@ -420,7 +422,7 @@ namespace jKnepel.UnitySync
 
 		private static void DebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
 		{
-			if (!SyncSettings.Instance.IsDebug)
+			if (!_settings.IsDebug)
 				return;
 
 			foreach (byte d in bytes)

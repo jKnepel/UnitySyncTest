@@ -10,6 +10,7 @@ namespace jKnepel.UnitySync
     {
         #region
 
+        private static SyncSettings _settings;
         private Editor _syncSettingsEditor;
 
         private Vector2 _roomsViewPos;
@@ -38,7 +39,8 @@ namespace jKnepel.UnitySync
 		public void OnEnable()
 		{
             _texture = new(1, 1);
-            _syncSettingsEditor = Editor.CreateEditor(SyncSettings.Instance);
+            _settings = SyncSettings.GetOrCreateSettings();
+            _syncSettingsEditor = Editor.CreateEditor(_settings);
             SyncEvents.OnSyncMessageAdded += AddSyncMessage;
 		}
 
@@ -98,7 +100,7 @@ namespace jKnepel.UnitySync
                                     GUILayout.Label(room.Roomname);
                                     GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
                                     if (GUILayout.Button(new GUIContent("Connect To Room"), GUILayout.ExpandWidth(false)))
-                                        SyncManager.ConnectToRoom(room.Roomname, SyncSettings.Instance.ImportSceneName);
+                                        SyncManager.ConnectToRoom(room.Roomname, _settings.ImportSceneName);
                                 }
                                 EditorGUILayout.EndHorizontal();
                             }

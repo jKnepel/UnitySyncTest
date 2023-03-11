@@ -4,30 +4,37 @@ using UnityEditor;
 namespace jKnepel.UnitySync
 {
 	[CustomEditor(typeof(SyncSettings))]
+	[CanEditMultipleObjects]
 	public class SyncSettingsEditor : Editor
 	{
+		private SyncSettings _settings;
+
 		private bool _packetSettingsIsVisible = false;
 		private bool _additionalSettingsIsVisible = false;
 		private bool _debugSettingsIsVisible = false;
+
+		private void OnEnable()
+		{
+			_settings = SyncSettings.GetOrCreateSettings();
+		}
 
 		// TODO : add descriptions to labels, was too lazy
 		public override void OnInspectorGUI()
 		{
 			// user settings
-			SyncSettings.Instance.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:",
-				SyncSettings.Instance.ImportSceneName);
-			SyncSettings.Instance.Username = EditorGUILayout.TextField("Username:", SyncSettings.Instance.Username);
-			SyncSettings.Instance.Color = EditorGUILayout.ColorField("Color:", SyncSettings.Instance.Color);
+			_settings.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", _settings.ImportSceneName);
+			_settings.Username = EditorGUILayout.TextField("Username:", _settings.Username);
+			_settings.Color = EditorGUILayout.ColorField("Color:", _settings.Color);
 
 			// packet frequency settings
 			_packetSettingsIsVisible = EditorGUILayout.Foldout(_packetSettingsIsVisible, "Packet Settings", EditorStyles.foldoutHeader);
 			if (_packetSettingsIsVisible)
 			{
 				EditorGUI.indentLevel++;
-				SyncSettings.Instance.HeartbeatDelay = EditorGUILayout.IntField("Heartbeat Delay:", SyncSettings.Instance.HeartbeatDelay);
-				SyncSettings.Instance.ClientTimeoutDelay = EditorGUILayout.IntField("Client Timeout Delay:", SyncSettings.Instance.ClientTimeoutDelay);
-				SyncSettings.Instance.EditorUpdatesDelay = EditorGUILayout.IntField("Editor Update Delay:", SyncSettings.Instance.EditorUpdatesDelay);
-				SyncSettings.Instance.ClientVisualizerUpdateDelay = EditorGUILayout.IntField("Client Visualizer Update Delay:", SyncSettings.Instance.ClientVisualizerUpdateDelay);
+				_settings.HeartbeatDelay = EditorGUILayout.IntField("Heartbeat Delay:", _settings.HeartbeatDelay);
+				_settings.ClientTimeoutDelay = EditorGUILayout.IntField("Client Timeout Delay:", _settings.ClientTimeoutDelay);
+				_settings.EditorUpdatesDelay = EditorGUILayout.IntField("Editor Update Delay:", _settings.EditorUpdatesDelay);
+				_settings.ClientVisualizerUpdateDelay = EditorGUILayout.IntField("Client Visualizer Update Delay:", _settings.ClientVisualizerUpdateDelay);
 				EditorGUI.indentLevel--;
 			}
 
@@ -35,23 +42,23 @@ namespace jKnepel.UnitySync
 			if (_additionalSettingsIsVisible)
 			{
 				EditorGUI.indentLevel++;
-				SyncSettings.Instance.ClientVisualizer = (SyncClientVisualizer)EditorGUILayout.ObjectField("Client Visualizer Prefab:", SyncSettings.Instance.ClientVisualizer, typeof(SyncClientVisualizer), false);
-				SyncSettings.Instance.HighlightMaterial = (Material)EditorGUILayout.ObjectField("Highlight Material:", SyncSettings.Instance.HighlightMaterial, typeof(Material), false);
+				_settings.ClientVisualizer = (SyncClientVisualizer)EditorGUILayout.ObjectField("Client Visualizer Prefab:", _settings.ClientVisualizer, typeof(SyncClientVisualizer), false);
+				_settings.HighlightMaterial = (Material)EditorGUILayout.ObjectField("Highlight Material:", _settings.HighlightMaterial, typeof(Material), false);
 				EditorGUI.indentLevel--;
 			}
 
 				// debug settings
-				_debugSettingsIsVisible = EditorGUILayout.Foldout(_debugSettingsIsVisible, "Debug Settings", EditorStyles.foldoutHeader);
+			_debugSettingsIsVisible = EditorGUILayout.Foldout(_debugSettingsIsVisible, "Debug Settings", EditorStyles.foldoutHeader);
 			if (_debugSettingsIsVisible)
 			{
 				EditorGUI.indentLevel++;
-				SyncSettings.Instance.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."),
-					SyncSettings.Instance.IsDebug);
-				SyncSettings.Instance.IP = EditorGUILayout.TextField("Local IP:", SyncSettings.Instance.IP);
-				SyncSettings.Instance.Port = EditorGUILayout.IntField("Port:", SyncSettings.Instance.Port);
+				_settings.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."), _settings.IsDebug);
+				_settings.IP = EditorGUILayout.TextField("Local IP:", _settings.IP);
+				_settings.Port = EditorGUILayout.IntField("Port:", _settings.Port);
 				EditorGUI.indentLevel--;
 			}
 
+			EditorUtility.SetDirty(_settings);
 		}
 	}
 }

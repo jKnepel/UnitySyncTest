@@ -28,8 +28,8 @@ namespace jKnepel.UnitySync
 				{
 					_pauseEvent.WaitOne(Timeout.Infinite);
 
-					byte[] username = Encoding.ASCII.GetBytes(SyncSettings.Instance.Username);
-					byte[] color = { SyncSettings.Instance.Color.r, SyncSettings.Instance.Color.g, SyncSettings.Instance.Color.b };
+					byte[] username = Encoding.ASCII.GetBytes(_settings.Username);
+					byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
 
 					// prepare data with room name, username and -color
 					byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH +
@@ -57,7 +57,7 @@ namespace jKnepel.UnitySync
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
 					DebugByteMessage(data, "Send Heartbeat Bytes: ");
-					Thread.Sleep(SyncSettings.Instance.HeartbeatDelay);
+					Thread.Sleep(_settings.HeartbeatDelay);
 				}
 			}
 			catch (Exception ex)
@@ -100,7 +100,7 @@ namespace jKnepel.UnitySync
 					Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					byte[] checksumBytes = CalculateChecksum(GetBytesFromArray(data, CRC32_LENGTH));
 					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
-					_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), SyncSettings.Instance.Port));
+					_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), _settings.Port));
 				}
 				DebugByteMessage(data, $"Send {packet.Type} Bytes: ");
 			}
@@ -115,7 +115,7 @@ namespace jKnepel.UnitySync
 		{
 			ChangeGameObjectOrComponentPropertiesEventArgs obj;
 			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-			if (obj.scene == SyncSettings.Instance.SyncScene)
+			if (obj.scene == _settings.SyncScene)
 			{
 				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
 				GameObject go;
@@ -125,7 +125,7 @@ namespace jKnepel.UnitySync
 
 				// Limit hierarchy syncs
 				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(SyncSettings.Instance.EditorUpdatesDelay)
+				Task.Delay(_settings.EditorUpdatesDelay)
 					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
 			}
 
@@ -143,7 +143,7 @@ namespace jKnepel.UnitySync
 		private void CurrentCameraMoved(Transform camera)
 		{
 			// limit camera syncs
-			if (_cameraUpdateDelay < SyncSettings.Instance.ClientVisualizerUpdateDelay)
+			if (_cameraUpdateDelay < _settings.ClientVisualizerUpdateDelay)
 			{
 				camera.hasChanged = false;
 				return;

@@ -1,37 +1,61 @@
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
 
 namespace jKnepel.UnitySync
 {
     [System.Serializable]
-    [CreateAssetMenu(fileName = "UnitySyncSettings", menuName = "ScriptableObjects/UnitySyncSettings", order = 1)]
     public class SyncSettings : ScriptableObject
     {
-		public void OnEnable()
-		{
-            if (instance != null)
-                instance = this;
-		}
+		private const string _fileName = "UnitySyncSettings.asset";
+		private const string _settingsPath = "Assets/Resources/" + _fileName;
 
-		private static SyncSettings instance;
-        public static SyncSettings Instance
-	    {
-            get
-		    {
-                if (instance == null)
-			    {
-                    instance = Resources.Load<SyncSettings>("UnitySyncSettings");
-                    if (instance == null)
-				    {
-                        instance = (SyncSettings)CreateInstance(typeof(SyncSettings));
-                    }
-			    }
-                return instance;
-		    }
-	    }
+		internal static SyncSettings cachedSettings;
+		public static SyncSettings GetOrCreateSettings()
+		{
+			if (cachedSettings)
+				return cachedSettings;
+
+			SyncSettings settings = Resources.Load<SyncSettings>(Path.GetFileNameWithoutExtension(_fileName));
+
+#if UNITY_EDITOR
+			if (!settings)
+			{
+				settings = AssetDatabase.LoadAssetAtPath<SyncSettings>(_settingsPath);
+			}
+			if (!settings)
+			{
+				string[] allSettings = AssetDatabase.FindAssets("t:SyncSettings");
+				if (allSettings.Length > 0)
+				{
+					settings = AssetDatabase.LoadAssetAtPath<SyncSettings>(AssetDatabase.GUIDToAssetPath(allSettings[0]));
+				}
+			}
+			if (!settings)
+			{
+				settings = CreateInstance<SyncSettings>();
+				string dir = Path.GetDirectoryName(_settingsPath);
+				if (!Directory.Exists(dir))
+					Directory.CreateDirectory(dir);
+				AssetDatabase.CreateAsset(settings, _settingsPath);
+				AssetDatabase.SaveAssets();
+			}
+#else
+			if (!settings)
+			{
+				settings = ScriptableObject.CreateInstance<SyncSettings>();
+			}
+#endif
+			cachedSettings = settings;
+			return cachedSettings;
+		}
     
 		// user settings
         public string ImportSceneName = "SyncImportScene";
@@ -49,7 +73,7 @@ namespace jKnepel.UnitySync
 		public string IP = GetLocalIPAddress();
 		public int Port = 26822;
 		private readonly string _syncLocalScenename = "UnitySync Local Objects";
-		public string SyncLocalScenename { get { return _syncLocalScenename; } }
+		public string SyncLocalScenename { get => _syncLocalScenename; }
 
         // prefabs
         public SyncClientVisualizer ClientVisualizer;
@@ -85,4 +109,31 @@ namespace jKnepel.UnitySync
 			return ipAddress;
 		}
 	}
+
+#if UNITY_EDITOR && UNITY_IMGUI
+	internal class SyncSettingsProvider : SettingsProvider
+	{
+		private SyncSettings _settings;
+		private Editor _settingsEditor;
+
+		public override void OnGUI(string searchContext)
+		{
+			if (!_settings)
+			{
+				_settings = SyncSettings.GetOrCreateSettings();
+				_settingsEditor = Editor.CreateEditor(_settings);
+			}
+			_settingsEditor.OnInspectorGUI();
+		}
+
+		[SettingsProvider]
+		public static SettingsProvider CreateSyncSettingsProvider()
+		{
+			SyncSettings.GetOrCreateSettings();
+			return new SyncSettingsProvider("Project/UnitySync", SettingsScope.Project);
+		}
+
+		public SyncSettingsProvider(string path, SettingsScope scopes, IEnumerable<string> keywords = null) : base(path, scopes, keywords) { }
+	}
+#endif
 }

@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
-using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -20,8 +19,8 @@ namespace jKnepel.UnitySync
 		public static Action OnAwake;
 		public static Action OnStart;
 
-		public static bool IsSearchingRooms { get { return _client != null && _client.IsSearchingForRooms; } }
-		public static bool IsConnected { get { return _client != null && _client.IsConnected; } }
+		public static bool IsSearchingRooms { get => _client != null && _client.IsSearchingForRooms; }
+		public static bool IsConnected { get => _client != null && _client.IsConnected; }
 
 		public static List<SyncOpenRoom> OpenRooms
 		{
@@ -68,8 +67,6 @@ namespace jKnepel.UnitySync
 			SyncRuntimeManager.Instance.OnStart += Start;
 			SyncRuntimeManager.Instance.OnUpdate += Update;
 #endif
-
-			_ = SyncSettings.Instance;
 
 			_client = new();
 		}

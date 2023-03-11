@@ -1,10 +1,11 @@
 using UnityEngine;
 
+[System.Serializable]
 public class SyncClientVisualizer : MonoBehaviour
 {
     [SerializeField] private new Renderer renderer;
     [SerializeField] private TMPro.TMP_Text usernameObject;
-    private Material material;
+    [SerializeField] private Material material;
 
     public void UpdateVisualizer(string sender, string username, Color color)
 	{

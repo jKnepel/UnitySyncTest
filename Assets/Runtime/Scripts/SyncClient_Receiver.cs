@@ -25,7 +25,7 @@ namespace jKnepel.UnitySync
 					// check if packet comes from other client
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
 					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(SyncSettings.Instance.IP))
+					if (sender.Equals(_settings.IP))
 						continue;
 
 					// get bytes used for crc32 check
@@ -118,8 +118,8 @@ namespace jKnepel.UnitySync
 				}
 				else if (client.Visualizer == null && room.Equals(CurrentRoom))
 				{
-					GameObject obj = GameObject.Instantiate(SyncSettings.Instance.ClientVisualizer.gameObject,
-						SyncSettings.Instance.SyncParentContainer);
+					GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject,
+						_settings.SyncParentContainer);
 					client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
 					client.Visualizer.UpdateVisualizer(sender, username, color);
 				}
@@ -130,7 +130,7 @@ namespace jKnepel.UnitySync
 		{
 			while (_disposeCount == 0)
 			{
-				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > SyncSettings.Instance.ClientTimeoutDelay)
+				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > _settings.ClientTimeoutDelay)
 				{
 					_mainThreadActions.Enqueue(client.Dispose);
 					room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
@@ -138,14 +138,14 @@ namespace jKnepel.UnitySync
 						OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
 					return;
 				}
-				await Task.Delay(SyncSettings.Instance.ClientTimeoutDelay);
+				await Task.Delay(_settings.ClientTimeoutDelay);
 			}
 		}
 
 		// TODO : optimize this
 		private void UpdateClientVisualizer(string sender, byte[] data)
 		{
-			if (SyncSettings.Instance.IsDebug)
+			if (_settings.IsDebug)
 				Debug.Log($"Received Camera Update from {sender}");
 
 			int size = sizeof(float);
@@ -181,14 +181,14 @@ namespace jKnepel.UnitySync
 				{
 					return;
 				}
-				SceneManager.MoveGameObjectToScene(createdObject, SyncSettings.Instance.SyncScene);
+				SceneManager.MoveGameObjectToScene(createdObject, _settings.SyncScene);
 
 				SyncManager.AddSyncMessage(new($"GameObject '{createdObject.name}' imported."));
 			};
 
 			using MemoryStream memoryStream = new();
 			await memoryStream.WriteAsync(hierarchy);
-			await DeserializeGameObject(SyncSettings.Instance.SyncScene, new ImportOptions(), memoryStream, onLoadComplete);
+			await DeserializeGameObject(_settings.SyncScene, new ImportOptions(), memoryStream, onLoadComplete);
 
 			SyncManager.AddSyncMessage(new($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}"));
 
@@ -200,7 +200,7 @@ namespace jKnepel.UnitySync
 			GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
 			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncSettings.Instance.IsDebug, -1, true, onLoadComplete);
+			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), _settings.IsDebug, -1, true, onLoadComplete);
 		}
 
 		#endregion
