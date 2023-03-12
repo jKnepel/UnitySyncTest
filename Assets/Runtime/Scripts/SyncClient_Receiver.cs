@@ -101,8 +101,11 @@ namespace jKnepel.UnitySync
 					// apply all packets in buffer that are now available
 					while (client.ReceivedPacketsBuffer.Count > 0)
 					{
-						if (!client.ReceivedPacketsBuffer.TryRemove((ushort)(sequence + 1), out SyncPacket packet))
+						sequence++;
+						if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out SyncPacket packet))
 							break;
+
+						client.ReliableRemoteSequence = sequence;
 						switch (packet.Type)
 						{
 							case SyncPacketType.ClientCamera:

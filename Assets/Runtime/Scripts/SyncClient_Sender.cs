@@ -138,7 +138,7 @@ namespace jKnepel.UnitySync
 			{
 				_sender.Send(packetData, packetData.Length, new(IPAddress.Parse(client.IP), _settings.Port));
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
-					_ = ResendPacketData(client, sequence, retries++);
+					_ = ResendPacketData(client, sequence, retries + 1);
 			}
 			return;
 		}
