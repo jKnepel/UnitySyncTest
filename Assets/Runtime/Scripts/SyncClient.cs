@@ -224,7 +224,7 @@ namespace jKnepel.UnitySync
 					switch (packet.Type)
 					{
 						case SyncPacketType.ClientCamera:
-							UpdateClientVisualizer(packet.Sender, packet.Data);
+							UpdateClientVisualizer(packet);
 							break;
 						default: break;
 					}
@@ -346,7 +346,7 @@ namespace jKnepel.UnitySync
 			}
 
 			if (CurrentRoom.ConnectedClients.Count == 0)
-				OpenRooms.TryRemove(CurrentRoom.Roomname, out SyncOpenRoom _);
+				OpenRooms.TryRemove(CurrentRoom.Roomname, out _);
 			CurrentRoom = null;
 			IsRoomOwner = false;
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));

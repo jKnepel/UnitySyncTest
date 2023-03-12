@@ -34,6 +34,7 @@ namespace jKnepel.UnitySync
 
 					// get relevant data bytes
 					byte[] sequenceBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					ushort sequence = BitConverter.ToUInt16(sequenceBytes);
 					SyncPacketType packetType = (SyncPacketType)receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH];
 					byte[] data = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
 
@@ -43,25 +44,72 @@ namespace jKnepel.UnitySync
 						continue;
 					}
 
-					if (!CheckPacketCRC32(checksumBytes, remainder))
+					if (!IsConnected)
 						continue;
 
-					// check sequencing
+					if (!CheckPacketCRC32(checksumBytes, remainder, CurrentRoom.RoomnameBytes))
+						continue;
+
 					if (!CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 						continue;
-					ushort sequence = BitConverter.ToUInt16(sequenceBytes);
-					if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
+
+					// remove ACK'd packets from buffer
+					if (packetType == SyncPacketType.ACK)
+					{
+						client.SendPacketsBuffer.TryRemove(sequence, out _);
 						continue;
-					client.UnreliableRemoteSequence = sequence++;
+					}
+
+					// TODO : handle chunked packets
+
+					// check packet sequence
+					// TODO : handle unreliable packets aside from client camera
+					if (packetType == SyncPacketType.ClientCamera)
+					{   // unreliable packet sequences
+						if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
+							continue;
+
+						client.UnreliableRemoteSequence = sequence;
+					}
+					else
+					{   // reliable packet sequences
+						SendACK(client, sequence);
+
+						if (!IsNewPacket(sequence, client.ReliableRemoteSequence))
+							continue;
+
+						if (!IsNextPacket(sequence, client.ReliableRemoteSequence))
+						{	// if the packet is new but a packet is missing in-between
+							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, client, data));
+							// TODO : if not received within timeframe timeout client
+							continue;
+						}
+
+						client.ReliableRemoteSequence = sequence;
+					}
 
 					// handle data depending on packet type
 					DebugByteMessage(data, "Received Bytes: ");
 					switch (packetType)
 					{
 						case SyncPacketType.ClientCamera:
-							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, sender, data));
+							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, client, data));
 							break;
 						default: break;
+					}
+
+					// apply all packets in buffer that are now available
+					while (client.ReceivedPacketsBuffer.Count > 0)
+					{
+						if (!client.ReceivedPacketsBuffer.TryRemove((ushort)(sequence + 1), out SyncPacket packet))
+							break;
+						switch (packet.Type)
+						{
+							case SyncPacketType.ClientCamera:
+								_receivedPackets.Enqueue(packet);
+								break;
+							default: break;
+						}
 					}
 				}
 				catch (IndexOutOfRangeException) { continue; }
@@ -133,9 +181,9 @@ namespace jKnepel.UnitySync
 				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > _settings.ClientTimeoutDelay)
 				{
 					_mainThreadActions.Enqueue(client.Dispose);
-					room.ConnectedClients.TryRemove(client.IP, out SyncConnectedClient _);
+					room.ConnectedClients.TryRemove(client.IP, out _);
 					if (room.ConnectedClients.Count == 0 && !room.Equals(CurrentRoom))
-						OpenRooms.TryRemove(room.Roomname, out SyncOpenRoom _);
+						OpenRooms.TryRemove(room.Roomname, out _);
 					return;
 				}
 				await Task.Delay(_settings.ClientTimeoutDelay);
@@ -143,34 +191,31 @@ namespace jKnepel.UnitySync
 		}
 
 		// TODO : optimize this
-		private void UpdateClientVisualizer(string sender, byte[] data)
+		private void UpdateClientVisualizer(SyncPacket packet)
 		{
 			if (_settings.IsDebug)
-				Debug.Log($"Received Camera Update from {sender}");
+				Debug.Log($"Received Camera Update from {packet.Client.IP}");
 
 			int size = sizeof(float);
-			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
-			byte[] positionY = GetBytesFromArray(data, 1 * size, size);
-			byte[] positionZ = GetBytesFromArray(data, 2 * size, size);
-			byte[] rotationX = GetBytesFromArray(data, 3 * size, size);
-			byte[] rotationY = GetBytesFromArray(data, 4 * size, size);
-			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
+			byte[] positionX = GetBytesFromArray(packet.Data, 0 * size, size);
+			byte[] positionY = GetBytesFromArray(packet.Data, 1 * size, size);
+			byte[] positionZ = GetBytesFromArray(packet.Data, 2 * size, size);
+			byte[] rotationX = GetBytesFromArray(packet.Data, 3 * size, size);
+			byte[] rotationY = GetBytesFromArray(packet.Data, 4 * size, size);
+			byte[] rotationZ = GetBytesFromArray(packet.Data, 5 * size, size);
 
-			if (CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
-			{
-				client.LastHeartbeat = DateTime.Now;
-				if (client.Visualizer == null)
-					return;
+			packet.Client.LastHeartbeat = DateTime.Now;
+			if (packet.Client.Visualizer == null)
+				return;
 
-				client.Visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),
-					BitConverter.ToSingle(positionY),
-					BitConverter.ToSingle(positionZ));
-				client.Visualizer.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
-					BitConverter.ToSingle(rotationY),
-					BitConverter.ToSingle(rotationZ));
-				if (!client.Visualizer.gameObject.activeSelf)
-					client.Visualizer.gameObject.SetActive(true);
-			}
+			packet.Client.Visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),
+				BitConverter.ToSingle(positionY),
+				BitConverter.ToSingle(positionZ));
+			packet.Client.Visualizer.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
+				BitConverter.ToSingle(rotationY),
+				BitConverter.ToSingle(rotationZ));
+			if (!packet.Client.Visualizer.gameObject.activeSelf)
+				packet.Client.Visualizer.gameObject.SetActive(true);
 		}
 
 		private async void ImportHierarchy(byte[] hierarchy)
@@ -207,11 +252,8 @@ namespace jKnepel.UnitySync
 
 		#region helper
 
-		private bool CheckPacketCRC32(byte[] checksum, byte[] packet, byte[] roomname = null)
+		private static bool CheckPacketCRC32(byte[] checksum, byte[] packet, byte[] roomname)
 		{
-			if (roomname == null)
-				roomname = CurrentRoom.RoomnameBytes;
-
 			// calculate crc32 checksum from protocol id, roomname and packet
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + roomname.Length + packet.Length];
 			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
@@ -231,6 +273,12 @@ namespace jKnepel.UnitySync
 		{
 			return ((packetSequence > remoteSequence) && (packetSequence - remoteSequence <= 32768))
 				|| ((packetSequence < remoteSequence) && (remoteSequence - packetSequence > 32768));
+		}
+
+		private static bool IsNextPacket(ushort packetSequence, ushort remoteSequence)
+		{
+			return (packetSequence == (ushort)(remoteSequence + 1))
+				|| (packetSequence == 0 && remoteSequence == 65535);
 		}
 
 		#endregion

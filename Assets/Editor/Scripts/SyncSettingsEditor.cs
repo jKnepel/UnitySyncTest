@@ -35,6 +35,8 @@ namespace jKnepel.UnitySync
 				_settings.ClientTimeoutDelay = EditorGUILayout.IntField("Client Timeout Delay:", _settings.ClientTimeoutDelay);
 				_settings.EditorUpdatesDelay = EditorGUILayout.IntField("Editor Update Delay:", _settings.EditorUpdatesDelay);
 				_settings.ClientVisualizerUpdateDelay = EditorGUILayout.IntField("Client Visualizer Update Delay:", _settings.ClientVisualizerUpdateDelay);
+				_settings.ResendReliablePacketsDelay = EditorGUILayout.IntField("Resend Reliable Packets Delay: ", _settings.ResendReliablePacketsDelay);
+				_settings.MaxNumberResendReliablePackets = EditorGUILayout.IntField("Number of Resends of Reliable Packets: ", _settings.MaxNumberResendReliablePackets);
 				EditorGUI.indentLevel--;
 			}
 

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net.Sockets;
@@ -7,6 +6,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
 using UnityEditor;
+using System.Collections.Generic;
 #endif
 
 namespace jKnepel.UnitySync
@@ -67,6 +67,9 @@ namespace jKnepel.UnitySync
         public int ClientTimeoutDelay = 3000;
         public int EditorUpdatesDelay = 500;
         public int ClientVisualizerUpdateDelay = 50;
+
+		public int ResendReliablePacketsDelay = 250;
+		public int MaxNumberResendReliablePackets = 5;
 
 		// debug settings
         public bool IsDebug = false;
@@ -133,7 +136,8 @@ namespace jKnepel.UnitySync
 			return new SyncSettingsProvider("Project/UnitySync", SettingsScope.Project);
 		}
 
-		public SyncSettingsProvider(string path, SettingsScope scopes, IEnumerable<string> keywords = null) : base(path, scopes, keywords) { }
+		public SyncSettingsProvider(string path, SettingsScope scopes, IEnumerable<string> keywords = null) 
+			: base(path, scopes, keywords) { }
 	}
 #endif
 }

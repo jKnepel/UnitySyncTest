@@ -40,7 +40,7 @@ namespace jKnepel.UnitySync
 		{
             if (!Application.isEditor)
 			{
-                SyncRuntimeManager _ = Instance;
+                _ = Instance;
                 SyncManager.Init();
 			}
 		}

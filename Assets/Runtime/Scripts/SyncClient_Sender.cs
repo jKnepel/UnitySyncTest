@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -27,7 +29,7 @@ namespace jKnepel.UnitySync
 				while (_disposeCount == 0)
 				{
 					_pauseEvent.WaitOne(Timeout.Infinite);
-
+					
 					byte[] username = Encoding.ASCII.GetBytes(_settings.Username);
 					byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
 
@@ -52,8 +54,7 @@ namespace jKnepel.UnitySync
 					Array.Copy(color, 0, data, currentPosition, COLOR_LENGTH);
 
 					// add crc32 to the packet
-					byte[] checksumBytes = CalculateChecksum(GetBytesFromArray(data, CRC32_LENGTH));
-					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
+					CalculateAndAddChecksum(data);
 
 					_sender.Send(data, data.Length, _broadCastEndpoint);
 					DebugByteMessage(data, "Send Heartbeat Bytes: ");
@@ -89,21 +90,66 @@ namespace jKnepel.UnitySync
 					continue;
 
 				// add packet type and data to packet
-				byte[] data = new byte[CRC32_LENGTH + DATA_TYPE_LENGTH + SEQUENCE_ID_LENGTH + packet.Data.Length];
+				byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + packet.Data.Length];
 				data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
 				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
 
-				// add local sequence number and checksum for each client and send packet to them
-				foreach (SyncConnectedClient client in CurrentRoom.ConnectedClients.Values)
+				// define receivers of the packet
+				List<SyncConnectedClient> clients = new();
+				if (packet.Client == null)
+					clients = CurrentRoom.ConnectedClients.Values.ToList();
+				else
+					clients.Add(packet.Client);
+
+				// add sequence number and checksum for each client and send packet to them
+				foreach (SyncConnectedClient client in clients)
 				{
-					client.UnreliableLocalSequence++;
-					Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
-					byte[] checksumBytes = CalculateChecksum(GetBytesFromArray(data, CRC32_LENGTH));
-					Array.Copy(checksumBytes, 0, data, 0, CRC32_LENGTH);
+					// TODO : handle unreliable packets aside from client camera
+					if (packet.Type == SyncPacketType.ClientCamera)
+					{	// handle unreliable packets
+						client.UnreliableLocalSequence++;
+						Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					}
+					else
+					{	// handle reliable packets
+						client.ReliableLocalSequence++;
+						Array.Copy(BitConverter.GetBytes(client.ReliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					}
+
+					CalculateAndAddChecksum(data);
 					_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), _settings.Port));
+					
+					// save reliable packets in buffer in case of resends
+					if (packet.Type != SyncPacketType.ClientCamera)
+					{
+						client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
+						_ = ResendPacketData(client, client.ReliableLocalSequence, 0);
+					}
 				}
 				DebugByteMessage(data, $"Send {packet.Type} Bytes: ");
 			}
+		}
+
+		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries)
+		{
+			await Task.Delay(_settings.ResendReliablePacketsDelay);
+			// TODO : handle timeouts when packets dont arrive without max number of resends
+			if (client != null && client.SendPacketsBuffer.TryGetValue(sequence, out byte[] packetData))
+			{
+				_sender.Send(packetData, packetData.Length, new(IPAddress.Parse(client.IP), _settings.Port));
+				if (retries < _settings.MaxNumberResendReliablePackets - 1)
+					_ = ResendPacketData(client, sequence, retries++);
+			}
+			return;
+		}
+
+		private void SendACK(SyncConnectedClient client, ushort sequence)
+		{
+			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH];
+			Array.Copy(BitConverter.GetBytes(sequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
+			CalculateAndAddChecksum(data);
+			_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), _settings.Port));
 		}
 
 		#endregion
@@ -177,14 +223,20 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
-		private byte[] CalculateChecksum(byte[] packet)
+		private void CalculateAndAddChecksum(byte[] packet)
 		{
-			// calculate crc32 checksum from protocol id, roomname and packet
-			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + CurrentRoom.RoomnameBytes.Length + packet.Length];
+			// get packet without CRC32 bytes
+			byte[] packetData = GetBytesFromArray(packet, CRC32_LENGTH);
+
+			// calculate CRC32 checksum from protocol id, roomname and packet
+			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + CurrentRoom.RoomnameBytes.Length + packetData.Length];
 			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
 			Array.Copy(CurrentRoom.RoomnameBytes, 0, bytes, PROTOCOL_ID_LENGTH, CurrentRoom.RoomnameBytes.Length);
-			Array.Copy(packet, 0, bytes, PROTOCOL_ID_LENGTH + CurrentRoom.RoomnameBytes.Length, packet.Length);
-			return BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
+			Array.Copy(packetData, 0, bytes, PROTOCOL_ID_LENGTH + CurrentRoom.RoomnameBytes.Length, packetData.Length);
+			
+			// and add it to packet
+			byte[] checksumBytes = BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
+			Array.Copy(checksumBytes, 0, packet, 0, CRC32_LENGTH);
 		}
 
 		#endregion

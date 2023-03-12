@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using UnityEngine;
 
 namespace jKnepel.UnitySync
@@ -11,8 +12,13 @@ namespace jKnepel.UnitySync
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
+		public readonly ConcurrentDictionary<ushort, SyncPacket> ReceivedPacketsBuffer = new();
+		public readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
+
 		public ushort UnreliableLocalSequence { get; set; }
 		public ushort UnreliableRemoteSequence { get; set; }
+		public ushort ReliableLocalSequence { get; set; }
+		public ushort ReliableRemoteSequence { get; set; }
 
 		public SyncConnectedClient(string ip, string username, Color32 color)
 		{
@@ -24,6 +30,8 @@ namespace jKnepel.UnitySync
 
 			UnreliableLocalSequence = 0;
 			UnreliableRemoteSequence = 0;
+			ReliableLocalSequence = 0;
+			ReliableRemoteSequence = 0;
 		}
 
 		public void Dispose()
