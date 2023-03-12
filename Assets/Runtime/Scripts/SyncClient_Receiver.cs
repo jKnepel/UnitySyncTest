@@ -82,6 +82,7 @@ namespace jKnepel.UnitySync
 						{	// if the packet is new but a packet is missing in-between
 							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, client, data));
 							// TODO : if not received within timeframe timeout client
+							// TODO : lock if packets reference unity objects 
 							continue;
 						}
 
@@ -105,6 +106,7 @@ namespace jKnepel.UnitySync
 						if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out SyncPacket packet))
 							break;
 
+						// TODO : unlock if packets reference unity objects 
 						client.ReliableRemoteSequence = sequence;
 						switch (packet.Type)
 						{
@@ -169,8 +171,7 @@ namespace jKnepel.UnitySync
 				}
 				else if (client.Visualizer == null && room.Equals(CurrentRoom))
 				{
-					GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject,
-						_settings.SyncParentContainer);
+					GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _settings.SyncParentContainer);
 					client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
 					client.Visualizer.UpdateVisualizer(sender, username, color);
 				}
@@ -278,6 +279,12 @@ namespace jKnepel.UnitySync
 				|| ((packetSequence < remoteSequence) && (remoteSequence - packetSequence > 32768));
 		}
 
+		/// <summary>
+		/// Checks if a packet is next after remote sequence number.
+		/// </summary>
+		/// <param name="packetSequence"></param>
+		/// <param name="remoteSequence"></param>
+		/// <returns>if the packet is new</returns>
 		private static bool IsNextPacket(ushort packetSequence, ushort remoteSequence)
 		{
 			return (packetSequence == (ushort)(remoteSequence + 1))

@@ -352,9 +352,9 @@ namespace jKnepel.UnitySync
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
 		}
 
-#endregion
+		#endregion
 
-#region helper methods
+		#region helper methods
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
 		{
@@ -390,6 +390,7 @@ namespace jKnepel.UnitySync
 			}
 
 			// highlight selected object
+			// TODO : doesnt work on gameobjects with renderer
 			GameObject selection = Selection.activeGameObject;
 			if (selection != null && selection.scene == _settings.SyncScene)
 			{
@@ -430,6 +431,6 @@ namespace jKnepel.UnitySync
 			Debug.Log(msg);
 		}
 
-#endregion
+		#endregion
 	}
 }

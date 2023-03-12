@@ -133,10 +133,10 @@ namespace jKnepel.UnitySync
 		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries)
 		{
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
-			// TODO : handle timeouts when packets dont arrive without max number of resends
 			if (client != null && client.SendPacketsBuffer.TryGetValue(sequence, out byte[] packetData))
 			{
 				_sender.Send(packetData, packetData.Length, new(IPAddress.Parse(client.IP), _settings.Port));
+				// TODO : handle timeout when packets dont arrive within max number of resends
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
 					_ = ResendPacketData(client, sequence, retries + 1);
 			}
