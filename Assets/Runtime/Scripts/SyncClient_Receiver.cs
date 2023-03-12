@@ -82,7 +82,7 @@ namespace jKnepel.UnitySync
 						{	// if the packet is new but a packet is missing in-between
 							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, client, data));
 							// TODO : if not received within timeframe timeout client
-							// TODO : lock if packets reference unity objects 
+							// TODO : lock if packets reference unity objects
 							continue;
 						}
 
@@ -100,20 +100,24 @@ namespace jKnepel.UnitySync
 					}
 
 					// apply all packets in buffer that are now available
-					while (client.ReceivedPacketsBuffer.Count > 0)
+					// TODO : handle unreliable packets aside from client camera
+					if (packetType != SyncPacketType.ClientCamera)
 					{
-						sequence++;
-						if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out SyncPacket packet))
-							break;
-
-						// TODO : unlock if packets reference unity objects 
-						client.ReliableRemoteSequence = sequence;
-						switch (packet.Type)
+						while (client.ReceivedPacketsBuffer.Count > 0)
 						{
-							case SyncPacketType.ClientCamera:
-								_receivedPackets.Enqueue(packet);
+							sequence++;
+							if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out SyncPacket packet))
 								break;
-							default: break;
+
+							// TODO : unlock if packets reference unity objects
+							client.ReliableRemoteSequence = sequence;
+							switch (packet.Type)
+							{
+								case SyncPacketType.ClientCamera:
+									_receivedPackets.Enqueue(packet);
+									break;
+								default: break;
+							}
 						}
 					}
 				}
