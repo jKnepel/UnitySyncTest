@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Threading;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
@@ -250,10 +251,22 @@ namespace jKnepel.UnitySync
 #if UNITY_EDITOR
 			if (EditorApplication.isPlaying)
 			{
-				Debug.LogWarning($"Can't connect to room while Editor is in Playmode");
+				Debug.LogWarning($"Can't connect to room while Editor is in Playmode!");
 				return false;
 			}
 #endif
+
+			if (roomname.Length > 100 || _settings.Username.Length > 100)
+			{
+				Debug.LogWarning($"The Roomname and Username must be shorter than 100 Characters!");
+				return false;
+			}
+
+			if (!IsASCIIString(roomname) || !IsASCIIString(_settings.Username))
+			{
+				Debug.LogWarning($"The Roomname or Username contains a non-ASCII Character!");
+				return false;
+			}
 
 			// create/save scene if room is joined/created
 			Scene scene = SceneManager.GetSceneByName(scenename);
@@ -396,10 +409,15 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
-		public bool CheckReceiver(SyncConnectedClient receiver)
+		private bool CheckReceiver(SyncConnectedClient receiver)
 		{
 			return IsConnectedToRoom
 				&& CurrentRoom.ConnectedClients.TryGetValue(receiver.IP, out _);
+		}
+
+		private bool IsASCIIString(string str)
+		{
+			return (Encoding.UTF8.GetByteCount(str)) == str.Length;
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
