@@ -109,7 +109,7 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Connect to a Room or create a new one. Membership in a Room is required before Data can be send.
 		/// </summary>
-		/// <param name="roomname">Name of the Room.</param>
+		/// <param name="roomname">Name of the Room</param>
 		/// <param name="scenename">
 		/// Name of the Scene that should be synced upon creation of the Room.
 		/// If the client joins a Room, this will become the Name of the temporary Scene.

@@ -7,24 +7,16 @@ namespace jKnepel.UnitySync
         public byte[] Data { get; private set; }
 
         /// <summary>
-        /// Creates packet for specific Client. Used for creating received/yet to be sent packets from/to clients.
+        /// Creates received/yet to be sent packets from/to clients.
         /// </summary>
         /// <param name="type"></param>
-        /// <param name="client"></param>
         /// <param name="data"></param>
-        public SyncPacket(SyncPacketType type, SyncConnectedClient client, byte[] data)
+        /// <param name="client"></param>
+        public SyncPacket(SyncPacketType type, byte[] data, SyncConnectedClient client = null)
 		{
             Type = type;
             Client = client;
             Data = data;
 		}
-
-        /// <summary>
-        /// Creates packet with no Client specified. Used for creating yet to be sent packets addressed 
-        /// to all clients.
-        /// </summary>
-        /// <param name="type"></param>
-        /// <param name="data"></param>
-        public SyncPacket(SyncPacketType type, byte[] data) : this(type, null, data) { }
     }
 }

@@ -386,10 +386,7 @@ namespace jKnepel.UnitySync
 			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 				return false;
 
-			SyncPacket packet = receiver == null
-				? new(SyncPacketType.ReliableData, data)
-				: new(SyncPacketType.ReliableData, receiver, data);
-			_packetsToSend.Enqueue(packet);
+			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, data, receiver));
 			return true;
 		}
 
@@ -398,10 +395,7 @@ namespace jKnepel.UnitySync
 			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 				return false;
 
-			SyncPacket packet = receiver == null
-				? new(SyncPacketType.UnreliableData, data)
-				: new(SyncPacketType.UnreliableData, receiver, data);
-			_packetsToSend.Enqueue(packet);
+			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, data, receiver));
 			return true;
 		}
 

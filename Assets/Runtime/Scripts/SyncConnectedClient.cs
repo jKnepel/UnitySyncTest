@@ -25,7 +25,7 @@ namespace jKnepel.UnitySync
 		public SyncConnectedClient(IPAddress ip, string username, Color32 color)
 		{
 			IP = ip;
-			IPString = ip.ToString(); ;
+			IPString = ip.ToString();
 			Username = username;
 			Visualizer = null;
 			Color = color;

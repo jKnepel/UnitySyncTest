@@ -80,7 +80,7 @@ namespace jKnepel.UnitySync
 
 						if (!IsNextPacket(sequence, client.ReliableRemoteSequence))
 						{	// if the packet is new but a packet is missing in-between
-							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, client, data));
+							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, data, client));
 							// TODO : if not received within timeframe timeout client
 							// TODO : lock if packets reference unity objects
 							continue;
@@ -94,7 +94,7 @@ namespace jKnepel.UnitySync
 					switch (packetType)
 					{
 						case SyncPacketType.ClientCamera:
-							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, client, data));
+							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, data, client));
 							break;
 						default: break;
 					}
