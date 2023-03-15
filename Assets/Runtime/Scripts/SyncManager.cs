@@ -130,7 +130,7 @@ namespace jKnepel.UnitySync
 		/// </summary>
 		/// <returns>
 		/// <see langword="true"/> if the Client successfully disconnected from the Room <br/>
-		/// <see langword="true"/> if the Disconnect failed or the Client was already disconnected
+		/// <see langword="false"/> if the Disconnect failed or the Client was already disconnected
 		/// </returns>
 		public static bool DisconnectFromRoom()
 		{

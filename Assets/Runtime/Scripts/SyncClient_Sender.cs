@@ -30,6 +30,7 @@ namespace jKnepel.UnitySync
 				{
 					_pauseEvent.WaitOne(Timeout.Infinite);
 					
+					// TODO : add input validation for ASCII
 					byte[] username = Encoding.ASCII.GetBytes(_settings.Username);
 					byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
 
