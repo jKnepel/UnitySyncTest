@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Net;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,8 +25,8 @@ namespace jKnepel.UnitySync
 				{
 					// check if packet comes from other client
 					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
-					string sender = _receiveEndpoint.Address.ToString();
-					if (sender.Equals(_settings.IP))
+					IPAddress sender = _receiveEndpoint.Address;
+					if (sender.Equals(_ip))
 						continue;
 
 					// get bytes used for crc32 check
@@ -44,7 +45,7 @@ namespace jKnepel.UnitySync
 						continue;
 					}
 
-					if (!IsConnected)
+					if (!IsConnectedToRoom)
 						continue;
 
 					if (!CheckPacketCRC32(checksumBytes, remainder, CurrentRoom.RoomnameBytes))
@@ -63,8 +64,7 @@ namespace jKnepel.UnitySync
 					// TODO : handle chunked packets
 
 					// check packet sequence
-					// TODO : handle unreliable packets aside from client camera
-					if (packetType == SyncPacketType.ClientCamera)
+					if (SyncPacketChannels.UnreliableSyncPackets.Contains(packetType))
 					{   // unreliable packet sequences
 						if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
 							continue;
@@ -101,7 +101,7 @@ namespace jKnepel.UnitySync
 
 					// apply all packets in buffer that are now available
 					// TODO : handle unreliable packets aside from client camera
-					if (packetType != SyncPacketType.ClientCamera)
+					if (SyncPacketChannels.ReliableSyncPackets.Contains(packetType))
 					{
 						while (client.ReceivedPacketsBuffer.Count > 0)
 						{
@@ -129,7 +129,7 @@ namespace jKnepel.UnitySync
 
 		#region packet receiving
 
-		private void UpdateHeartbeat(string sender, byte[] checksum, byte[] data)
+		private void UpdateHeartbeat(IPAddress sender, byte[] checksum, byte[] data)
 		{
 			// read roomname and check for bitswitches
 			int currentPosition = SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH;
@@ -171,13 +171,13 @@ namespace jKnepel.UnitySync
 			{
 				if (client.Visualizer)
 				{
-					client.Visualizer.UpdateVisualizer(sender, username, color);
+					client.Visualizer.UpdateVisualizer(client.IPString, username, color);
 				}
 				else if (client.Visualizer == null && room.Equals(CurrentRoom))
 				{
 					GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _settings.SyncParentContainer);
 					client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
-					client.Visualizer.UpdateVisualizer(sender, username, color);
+					client.Visualizer.UpdateVisualizer(client.IPString, username, color);
 				}
 			});
 		}

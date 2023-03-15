@@ -41,6 +41,7 @@ namespace jKnepel.UnitySync
 
 		private static readonly SyncSettings _settings = SyncSettings.GetOrCreateSettings();
 
+		private readonly IPAddress _ip;
 		private readonly UdpClient _listener;
 		private readonly UdpClient _sender;
 		private readonly IPEndPoint _broadCastEndpoint;
@@ -67,8 +68,8 @@ namespace jKnepel.UnitySync
 
 		#region public members
 
-		public bool IsSearchingForRooms { get; private set; }
-		public bool IsConnected { get => CurrentRoom != null; }
+		public bool IsClientActive { get; private set; }
+		public bool IsConnectedToRoom { get => CurrentRoom != null; }
 		public bool IsRoomOwner { get; private set; }
 		public readonly ConcurrentDictionary<string, SyncOpenRoom> OpenRooms = new();
 		public SyncOpenRoom CurrentRoom { get; private set; }
@@ -81,8 +82,7 @@ namespace jKnepel.UnitySync
 		{
 			try
 			{
-				if (_settings.IP.Length == 0)
-					throw(new SocketException());
+				_ip = IPAddress.Parse(_settings.IP);
 
 				if (_settings.SyncParentContainer != null)
 				{
@@ -113,24 +113,31 @@ namespace jKnepel.UnitySync
 				_heartbeatThread = new(() => HeartbeatThread()) { IsBackground = true };
 				_heartbeatThread.Start();
 
-				IsSearchingForRooms = true;
+				IsClientActive = true;
 			}
 			catch (Exception ex)
 			{
-				IsSearchingForRooms = false;
+				IsClientActive = false;
 				switch (ex)
 				{
 					case SocketException:
-						Debug.LogError(ex.ToString());
+						Debug.LogError("An Error ocurred when accessing the socket. "
+							+ "Make sure the port is not occupied by another process!");
 						break;
 					case ArgumentOutOfRangeException:
-						Debug.LogError(ex.ToString());
+						Debug.LogError("The Given Port is outside the possible Range!");
+						break;
+					case ArgumentNullException:
+						Debug.LogError("The local IP can't be null!");
+						break;
+					case FormatException:
+						Debug.LogError("The local IP is not a valid IP Address!");
 						break;
 					case ThreadStartException:
-						Debug.LogError(ex.ToString());
+						Debug.LogError("An Error ocurred when starting the Threads. Please try again later!");
 						break;
 					case OutOfMemoryException:
-						Debug.LogError(ex.ToString());
+						Debug.LogError("Not enough memory available to start the Threads!");
 						break;
 					default: 
 						ExceptionDispatchInfo.Capture(ex).Throw();
@@ -153,6 +160,11 @@ namespace jKnepel.UnitySync
 		{
 			if (Interlocked.Increment(ref _disposeCount) == 1)
 			{
+				OpenRooms.Clear();
+				CurrentRoom = null;
+				IsClientActive = false;
+				IsRoomOwner = false;
+
 				_listenerThread.Abort();
 				_listenerThread.Join();
 				_senderThread.Abort();
@@ -191,20 +203,6 @@ namespace jKnepel.UnitySync
 #endif
 						_settings.SyncParentContainer = null;
 					}
-
-					if (!IsRoomOwner && _settings.SyncScene.IsValid())
-					{
-#if UNITY_EDITOR
-						EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
-#else
-						SceneManager.UnloadSceneAsync(_settings.SyncScene);
-#endif
-					}
-
-					OpenRooms.Clear();
-					CurrentRoom = null;
-					IsSearchingForRooms = false;
-					IsRoomOwner = false;
 				}
 			}
 		}
@@ -241,19 +239,19 @@ namespace jKnepel.UnitySync
 #endif
 		}
 
-		public void ConnectToRoom(string roomname, string scenename, bool createroom = false)
+		public bool ConnectToRoom(string roomname, string scenename, bool createroom = false)
 		{
-			if (IsConnected)
+			if (IsConnectedToRoom)
 			{
 				Debug.LogWarning($"The client is already connected!");
-				return;
+				return false;
 			}
 
 #if UNITY_EDITOR
 			if (EditorApplication.isPlaying)
 			{
 				Debug.LogWarning($"Can't connect to room while Editor is in Playmode");
-				return;
+				return false;
 			}
 #endif
 
@@ -264,12 +262,12 @@ namespace jKnepel.UnitySync
 				if (OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
 				{
 					Debug.LogWarning($"The Room {roomname} already exists!");
-					return;
+					return false;
 				}
 				if (!scene.IsValid() && !scene.isLoaded)
 				{
 					Debug.LogWarning($"The Scene {scenename} is not valid!");
-					return;
+					return false;
 				}
 				_settings.SyncScene = scene;
 				CurrentRoom = new(roomname);
@@ -281,12 +279,12 @@ namespace jKnepel.UnitySync
 				if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
 				{
 					Debug.LogWarning($"The Room {roomname} doesn't exist yet!");
-					return;
+					return false;
 				}
 				if (scene.IsValid() || scene.isLoaded)
 				{
 					Debug.LogWarning($"The Scene {scenename} already exists!");
-					return;
+					return false;
 				}
 
 #if UNITY_EDITOR
@@ -311,12 +309,13 @@ namespace jKnepel.UnitySync
 #endif
 			SyncManager.OnUpdate += Update;
 			SyncManager.AddSyncMessage(new("Client connected to Room!"));
+			return true;
 		}
 
-		public void DisconnectFromRoom()
+		public bool DisconnectFromRoom()
 		{
-			if (!IsConnected)
-				return;
+			if (!IsConnectedToRoom)
+				return false;
 
 			_pauseEvent.Reset();
 
@@ -350,11 +349,58 @@ namespace jKnepel.UnitySync
 			CurrentRoom = null;
 			IsRoomOwner = false;
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
+			return true;
+		}
+
+		#endregion
+
+		#region public methods
+
+		// TODO : add manual sync Hierarchy
+
+		// TODO : add manual delete Hierarchy
+
+		// TODO : add manual sync GameObject
+
+		// TODO : add manual delete GameObject
+
+		// TODO : add manual sync Component
+
+		// TODO : add manual delete Component
+
+		public bool SendDataReliable(byte[] data, SyncConnectedClient receiver = null)
+		{
+			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+				return false;
+
+			SyncPacket packet = receiver == null
+				? new(SyncPacketType.ReliableData, data)
+				: new(SyncPacketType.ReliableData, receiver, data);
+			_packetsToSend.Enqueue(packet);
+			return true;
+		}
+
+		public bool SendDataUnreliable(byte[] data, SyncConnectedClient receiver = null)
+		{
+			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+				return false;
+
+			SyncPacket packet = receiver == null
+				? new(SyncPacketType.UnreliableData, data)
+				: new(SyncPacketType.UnreliableData, receiver, data);
+			_packetsToSend.Enqueue(packet);
+			return true;
 		}
 
 		#endregion
 
 		#region helper methods
+
+		public bool CheckReceiver(SyncConnectedClient receiver)
+		{
+			return IsConnectedToRoom
+				&& CurrentRoom.ConnectedClients.TryGetValue(receiver.IP, out _);
+		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
 		{

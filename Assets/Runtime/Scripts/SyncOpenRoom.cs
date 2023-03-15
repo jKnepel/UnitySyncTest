@@ -1,4 +1,4 @@
-using System;
+using System.Net;
 using System.Text;
 using System.Collections.Concurrent;
 
@@ -8,7 +8,7 @@ namespace jKnepel.UnitySync
     {
         public string Roomname { get; private set; }
         public byte[] RoomnameBytes { get; private set; }
-        public ConcurrentDictionary<string, SyncConnectedClient> ConnectedClients { get; private set; }
+        public ConcurrentDictionary<IPAddress, SyncConnectedClient> ConnectedClients { get; private set; }
 
         public SyncOpenRoom(string roomname)
 		{

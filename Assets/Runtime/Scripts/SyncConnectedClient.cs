@@ -1,12 +1,14 @@
 using System;
 using System.Collections.Concurrent;
+using System.Net;
 using UnityEngine;
 
 namespace jKnepel.UnitySync
 {
 	public class SyncConnectedClient
 	{
-		public string IP { get; private set; }
+		public IPAddress IP { get; private set; }
+		public string IPString { get; private set; }
 		public string Username { get; set; }
 		public SyncClientVisualizer Visualizer { get; set; }
 		public Color32 Color { get; set; }
@@ -20,9 +22,10 @@ namespace jKnepel.UnitySync
 		public ushort ReliableLocalSequence { get; set; }
 		public ushort ReliableRemoteSequence { get; set; }
 
-		public SyncConnectedClient(string ip, string username, Color32 color)
+		public SyncConnectedClient(IPAddress ip, string username, Color32 color)
 		{
 			IP = ip;
+			IPString = ip.ToString(); ;
 			Username = username;
 			Visualizer = null;
 			Color = color;
@@ -36,6 +39,8 @@ namespace jKnepel.UnitySync
 
 		public void Dispose()
 		{
+
+
 			if (Visualizer == null)
 				return;
 

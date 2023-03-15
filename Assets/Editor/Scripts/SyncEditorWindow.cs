@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
@@ -8,7 +7,7 @@ namespace jKnepel.UnitySync
 {
     public class SyncEditorWindow : EditorWindow
     {
-        #region
+        #region private members
 
         private static SyncSettings _settings;
         private Editor _syncSettingsEditor;
@@ -65,18 +64,24 @@ namespace jKnepel.UnitySync
                 EditorGUILayout.Space();
                 EditorGUILayout.Space();
 
-                if (!SyncManager.IsSearchingRooms)
+                if (!SyncManager.IsClientActive)
 				{
-                    GUILayout.Label($"Searching for Rooms is stopped!");
-                    if (GUILayout.Button(new GUIContent("Retry Search"), GUILayout.ExpandWidth(false)))
-                        SyncManager.RetryRoomDiscovery();
+                    GUILayout.Label($"Client has stopped working!");
+                    if (GUILayout.Button(new GUIContent("Reset Client"), GUILayout.ExpandWidth(false)))
+					{
+                        SyncManager.ResetClient();
+                        Repaint();
+					}
 				}
                 else
 				{
                     if (GUILayout.Button("Reset Client"))
-                        SyncManager.RetryRoomDiscovery();
+					{
+                        SyncManager.ResetClient();
+                        Repaint();
+					}
 
-                    if (!SyncManager.IsConnected)
+                    if (!SyncManager.IsConnectedToRoom)
                     {
                         // open rooms list
                         EditorGUILayout.BeginHorizontal();

@@ -64,7 +64,7 @@ namespace jKnepel.UnitySync
 			catch (Exception ex)
 			{
 				CurrentRoom = null;
-				IsSearchingForRooms = false;
+				IsClientActive = false;
 				switch (ex)
 				{
 					case SocketException:
@@ -89,6 +89,12 @@ namespace jKnepel.UnitySync
 				if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
 					continue;
 
+				if (packet.Data.Length > 1200)
+				{
+					// TODO : handle chunked packets
+					continue;
+				}
+
 				// add packet type and data to packet
 				byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + packet.Data.Length];
 				data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
@@ -104,8 +110,7 @@ namespace jKnepel.UnitySync
 				// add sequence number and checksum for each client and send packet to them
 				foreach (SyncConnectedClient client in clients)
 				{
-					// TODO : handle unreliable packets aside from client camera
-					if (packet.Type == SyncPacketType.ClientCamera)
+					if (SyncPacketChannels.UnreliableSyncPackets.Contains(packet.Type))
 					{	// handle unreliable packets
 						client.UnreliableLocalSequence++;
 						Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
@@ -117,10 +122,10 @@ namespace jKnepel.UnitySync
 					}
 
 					CalculateAndAddChecksum(data);
-					_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), _settings.Port));
+					_sender.Send(data, data.Length, new(client.IP, _settings.Port));
 					
 					// save reliable packets in buffer in case of resends
-					if (packet.Type != SyncPacketType.ClientCamera)
+					if (SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))
 					{
 						client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
 						_ = ResendPacketData(client, client.ReliableLocalSequence, 0);
@@ -135,7 +140,7 @@ namespace jKnepel.UnitySync
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
 			if (client != null && client.SendPacketsBuffer.TryGetValue(sequence, out byte[] packetData))
 			{
-				_sender.Send(packetData, packetData.Length, new(IPAddress.Parse(client.IP), _settings.Port));
+				_sender.Send(packetData, packetData.Length, new(client.IP, _settings.Port));
 				// TODO : handle timeout when packets dont arrive within max number of resends
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
 					_ = ResendPacketData(client, sequence, retries + 1);
@@ -149,7 +154,7 @@ namespace jKnepel.UnitySync
 			Array.Copy(BitConverter.GetBytes(sequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
 			CalculateAndAddChecksum(data);
-			_sender.Send(data, data.Length, new(IPAddress.Parse(client.IP), _settings.Port));
+			_sender.Send(data, data.Length, new(client.IP, _settings.Port));
 		}
 
 		#endregion
