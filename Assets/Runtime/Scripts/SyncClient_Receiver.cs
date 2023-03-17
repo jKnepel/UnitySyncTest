@@ -13,7 +13,7 @@ using UnityEngine.SceneManagement;
 
 namespace jKnepel.UnitySync
 {
-	public partial class SyncClient
+	internal sealed partial class SyncClient
 	{
 		#region threads
 

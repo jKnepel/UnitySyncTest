@@ -5,7 +5,7 @@ namespace jKnepel.UnitySync
 {
 	[CustomEditor(typeof(SyncSettings))]
 	[CanEditMultipleObjects]
-	public class SyncSettingsEditor : Editor
+	internal class SyncSettingsEditor : Editor
 	{
 		private SyncSettings _settings;
 
@@ -22,6 +22,7 @@ namespace jKnepel.UnitySync
 		public override void OnInspectorGUI()
 		{
 			// user settings
+			_settings.KeepSyncScene = EditorGUILayout.Toggle("Keep ImportScene:", _settings.KeepSyncScene);
 			_settings.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", _settings.ImportSceneName);
 			_settings.Username = EditorGUILayout.TextField("Username:", _settings.Username);
 			_settings.Color = EditorGUILayout.ColorField("Color:", _settings.Color);

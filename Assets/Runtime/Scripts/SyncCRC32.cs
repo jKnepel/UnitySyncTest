@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace jKnepel.UnitySync
 {
-	public static class SyncCRC32
+	internal static class SyncCRC32
 	{
 		private static readonly uint[] crc_32_tab =  // CRC polynomial 0xedb88320 
 		{

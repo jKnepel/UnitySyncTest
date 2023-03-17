@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace jKnepel.UnitySync
 {
-    public class SyncRuntimeManager : MonoBehaviour
+    internal class SyncRuntimeManager : MonoBehaviour
     {
         public event Action OnAwake;
         public event Action OnStart;

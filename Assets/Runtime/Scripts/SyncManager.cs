@@ -18,11 +18,68 @@ namespace jKnepel.UnitySync
 		public static Action OnUpdate;
 		public static Action OnAwake;
 		public static Action OnStart;
+		
+		public static Action OnSyncMessageAdded;
 
-		public static bool IsClientActive { get => _client != null && _client.IsClientActive; }
-		public static bool IsConnectedToRoom { get => _client != null && _client.IsConnectedToRoom; }
-		public static List<SyncOpenRoom> OpenRooms { get => IsClientActive ? _client.OpenRooms.Values.ToList() : null; }
-		public static SyncOpenRoom CurrentRoom { get => IsClientActive ? _client.CurrentRoom : null; }
+		/// <summary>
+		/// Action for when the Client successfully connected to the Network and is able to discover and join Rooms.
+		/// </summary>
+		public static Action OnClientConnected;
+
+		/// <summary>
+		/// Action for when the Client was disconnected from the Network and is now unable to discover and join Rooms.
+		/// </summary>
+		public static Action OnClientDisconnected;
+
+		/// <summary>
+		/// Action for when the Client connected to a Room and can now send Messages.
+		/// </summary>
+		public static Action OnConnectedToRoom;
+
+		/// <summary>
+		/// Action for when the Client disconnected from a Room and can no longer send any Messages.
+		/// </summary>
+		public static Action OnDisconnectedFromRoom;
+
+		/// <summary>
+		/// If the Client is connected to the Network and able to discover Rooms.
+		/// </summary>
+		public static bool IsClientActive 
+		{ 
+			get => _client != null && _client.IsClientActive; 
+		}
+		
+		/// <summary>
+		/// If the Client is connected to a Room and able to send Messages.
+		/// </summary>
+		public static bool IsConnectedToRoom 
+		{ 
+			get => _client != null && _client.IsConnectedToRoom; 
+		}
+		
+		/// <summary>
+		/// A List of all available Rooms.
+		/// </summary>
+		public static List<SyncOpenRoom> OpenRooms 
+		{ 
+			get => IsClientActive 
+				? _client.OpenRooms.Values.ToList() 
+				: null; 
+		}
+		
+		/// <summary>
+		/// The Room to which the Client is currently connected to.
+		/// </summary>
+		public static SyncOpenRoom CurrentRoom 
+		{ 
+			get => IsClientActive 
+				? _client.CurrentRoom 
+				: null; 
+		}
+
+		/// <summary>
+		/// A List of remote Clients connected to the same Room as the local Client.
+		/// </summary>
 		public static List<SyncConnectedClient> ConnectedClients 
 		{
 			get => IsClientActive 
@@ -65,8 +122,11 @@ namespace jKnepel.UnitySync
 		{
 			OnUpdate?.Invoke();
 
-			if (_mainThreadActions.TryDequeue(out Action action))
-				action?.Invoke();
+			while (_mainThreadActions.Count > 0)
+			{
+				if (_mainThreadActions.TryDequeue(out Action action))
+					action?.Invoke();
+			}
 		}
 
 		private static void Awake()
@@ -158,20 +218,17 @@ namespace jKnepel.UnitySync
 		/// Sends Data over Reliable UDP. This guarantees the arrival of all Data Packets in the correct Order.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
 		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
 		/// all Clients receive the Packet.
 		/// </param>
-		/// <returns>
-		/// <see langword="true"/> If the data was successfully send <br/>
-		/// <see langword="false"/> If the data failed to send
-		/// </returns>
-		public static bool SendDataReliable(byte[] data, SyncConnectedClient receiver = null)
+		public static void SendDataReliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (!IsClientActive || !IsConnectedToRoom)
-				return false;
+				return;
 
-			return _client.SendDataReliable(data, receiver);
+			_client.SendDataReliable(data, onDataSend, receiver);
 		}
 
 		/// <summary>
@@ -179,27 +236,24 @@ namespace jKnepel.UnitySync
 		/// This ensure arrival of Packets in the correct Order but does not guarantee that all Packets actually arrive.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
 		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
 		/// all Clients receive the Packet.
 		/// </param>
-		/// <returns>
-		/// <see langword="true"/> If the data was successfully send <br/>
-		/// <see langword="false"/> If the data failed to send
-		/// </returns>
-		public static bool SendDataUnreliable(byte[] data, SyncConnectedClient receiver = null)
+		public static void SendDataUnreliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (!IsClientActive || !IsConnectedToRoom)
-				return false;
+				return;
 
-			return _client.SendDataUnreliable(data, receiver);
+			_client.SendDataUnreliable(data, onDataSend, receiver);
 		}
 
 		public static void AddSyncMessage(SyncMessage message)
 		{
 			_mainThreadActions.Enqueue(() => {
 				SyncMessages.Add(message);
-				SyncEvents.OnSyncMessageAdded?.Invoke();
+				OnSyncMessageAdded?.Invoke();
 			});
 		}
 

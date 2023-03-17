@@ -5,7 +5,7 @@ using UnityEditor.SceneManagement;
 
 namespace jKnepel.UnitySync
 {
-    public class SyncEditorWindow : EditorWindow
+    internal class SyncEditorWindow : EditorWindow
     {
         #region private members
 
@@ -40,7 +40,7 @@ namespace jKnepel.UnitySync
             _texture = new(1, 1);
             _settings = SyncSettings.GetOrCreateSettings();
             _syncSettingsEditor = Editor.CreateEditor(_settings);
-            SyncEvents.OnSyncMessageAdded += AddSyncMessage;
+            SyncManager.OnSyncMessageAdded += AddSyncMessage;
 		}
 
 		public void CreateGUI()
@@ -49,7 +49,7 @@ namespace jKnepel.UnitySync
 
         private void OnDestroy()
 		{
-            SyncEvents.OnSyncMessageAdded -= AddSyncMessage;
+            SyncManager.OnSyncMessageAdded -= AddSyncMessage;
         }
 
         // TODO : add descriptions to labels, was too lazy

@@ -56,8 +56,9 @@ namespace jKnepel.UnitySync
 			cachedSettings = settings;
 			return cachedSettings;
 		}
-    
+
 		// user settings
+		public bool KeepSyncScene = true;
         public string ImportSceneName = "SyncImportScene";
         public string Username = "Username";
         public Color32 Color = new(255, 255, 255, 255);
@@ -82,8 +83,8 @@ namespace jKnepel.UnitySync
         public SyncClientVisualizer ClientVisualizer;
 		public Material HighlightMaterial;
 
-		public Scene SyncScene;
-		public Transform SyncParentContainer;
+		internal Scene SyncScene;
+		internal Transform SyncParentContainer;
 
 		private static string GetLocalIPAddress()
 		{

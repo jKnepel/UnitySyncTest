@@ -14,13 +14,13 @@ namespace jKnepel.UnitySync
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
-		public readonly ConcurrentDictionary<ushort, SyncPacket> ReceivedPacketsBuffer = new();
-		public readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, SyncPacket> ReceivedPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
 
-		public ushort UnreliableLocalSequence { get; set; }
-		public ushort UnreliableRemoteSequence { get; set; }
-		public ushort ReliableLocalSequence { get; set; }
-		public ushort ReliableRemoteSequence { get; set; }
+		internal ushort UnreliableLocalSequence { get; set; }
+		internal ushort UnreliableRemoteSequence { get; set; }
+		internal ushort ReliableLocalSequence { get; set; }
+		internal ushort ReliableRemoteSequence { get; set; }
 
 		public SyncConnectedClient(IPAddress ip, string username, Color32 color)
 		{

@@ -16,7 +16,7 @@ using UnityEditor.SceneManagement;
 
 namespace jKnepel.UnitySync
 {
-	public partial class SyncClient : IDisposable
+	internal sealed partial class SyncClient : IDisposable
 	{
 		#region packet constants
 
@@ -33,8 +33,6 @@ namespace jKnepel.UnitySync
 		private const int ROOMNAME_FLAG_LENGTH = 1;
 		private const int USERNAME_FLAG_LENGTH = 1;
 		private const int COLOR_LENGTH = 3;
-		private const int CLIENT_CAMERA_DATA_LENGTH = 24;
-		private const int Transform_DATA_LENGTH = 36;
 
 		#endregion
 
@@ -69,8 +67,37 @@ namespace jKnepel.UnitySync
 
 		#region public members
 
-		public bool IsClientActive { get; private set; }
-		public bool IsConnectedToRoom { get => CurrentRoom != null; }
+		private bool _isClientActive = false;
+		public bool IsClientActive 
+		{ 
+			get => _isClientActive;
+			private set 
+			{
+				_isClientActive = value;
+				if (value)
+					SyncManager.OnClientConnected?.Invoke();
+				else
+				{
+					Dispose();
+					SyncManager.OnClientDisconnected?.Invoke();
+				}
+			} 
+		}
+
+		private bool _isConnectedToRoom = false;
+		public bool IsConnectedToRoom
+		{
+			get => _isConnectedToRoom;
+			private set
+			{
+				_isConnectedToRoom = value;
+				if (value)
+					SyncManager.OnConnectedToRoom?.Invoke();
+				else
+					SyncManager.OnDisconnectedFromRoom?.Invoke();
+			}
+		}
+
 		public bool IsRoomOwner { get; private set; }
 		public readonly ConcurrentDictionary<string, SyncOpenRoom> OpenRooms = new();
 		public SyncOpenRoom CurrentRoom { get; private set; }
@@ -163,8 +190,8 @@ namespace jKnepel.UnitySync
 			{
 				OpenRooms.Clear();
 				CurrentRoom = null;
-				IsClientActive = false;
 				IsRoomOwner = false;
+				IsConnectedToRoom = false;
 
 				_listenerThread.Abort();
 				_listenerThread.Join();
@@ -203,6 +230,15 @@ namespace jKnepel.UnitySync
 						GameObject.Destroy(_settings.SyncParentContainer.gameObject);
 #endif
 						_settings.SyncParentContainer = null;
+					}
+
+					if (!IsRoomOwner && !_settings.KeepSyncScene && _settings.SyncScene.IsValid())
+					{
+#if UNITY_EDITOR
+						EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
+#else
+						SceneManager.UnloadSceneAsync(_settings.SyncScene);
+#endif
 					}
 				}
 			}
@@ -321,6 +357,7 @@ namespace jKnepel.UnitySync
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			SyncManager.OnUpdate += Update;
+			IsConnectedToRoom = true;
 			SyncManager.AddSyncMessage(new("Client connected to Room!"));
 			return true;
 		}
@@ -348,7 +385,7 @@ namespace jKnepel.UnitySync
 				_settings.SyncParentContainer = null;
 			}
 
-			if (!IsRoomOwner && _settings.SyncScene.IsValid())
+			if (!IsRoomOwner && !_settings.KeepSyncScene && _settings.SyncScene.IsValid())
 			{
 #if UNITY_EDITOR
 				EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
@@ -361,6 +398,7 @@ namespace jKnepel.UnitySync
 				OpenRooms.TryRemove(CurrentRoom.Roomname, out _);
 			CurrentRoom = null;
 			IsRoomOwner = false;
+			IsConnectedToRoom = false;
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
 			return true;
 		}
@@ -381,22 +419,26 @@ namespace jKnepel.UnitySync
 
 		// TODO : add manual delete Component
 
-		public bool SendDataReliable(byte[] data, SyncConnectedClient receiver = null)
+		public void SendDataReliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
-				return false;
+			{
+				onDataSend?.Invoke(false);
+				return;
+			}
 
-			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, data, receiver));
-			return true;
+			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, data, onDataSend, receiver));
 		}
 
-		public bool SendDataUnreliable(byte[] data, SyncConnectedClient receiver = null)
+		public void SendDataUnreliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
-				return false;
+			{
+				onDataSend?.Invoke(false);
+				return;
+			}
 
-			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, data, receiver));
-			return true;
+			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, data, onDataSend, receiver));
 		}
 
 		#endregion

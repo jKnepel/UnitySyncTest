@@ -16,7 +16,7 @@ using UnityEditor;
 
 namespace jKnepel.UnitySync
 {
-	public partial class SyncClient
+	internal sealed partial class SyncClient
 	{
 		#region threads
 
@@ -124,6 +124,8 @@ namespace jKnepel.UnitySync
 
 					CalculateAndAddChecksum(data);
 					_sender.Send(data, data.Length, new(client.IP, _settings.Port));
+					if (packet.OnDataSend != null)
+						packet.OnDataSend?.Invoke(true);
 					
 					// save reliable packets in buffer in case of resends
 					if (SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))

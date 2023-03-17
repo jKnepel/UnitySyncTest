@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace jKnepel.UnitySync
 {
-    public enum SyncPacketType : byte
+    internal enum SyncPacketType : byte
     {
         ACK,
         Heartbeat,
@@ -15,7 +15,7 @@ namespace jKnepel.UnitySync
         UnreliableData
     }
 
-    public static class SyncPacketChannels
+    internal static class SyncPacketChannels
 	{
         public static readonly List<SyncPacketType> ReliableSyncPackets = new()
         {
@@ -28,8 +28,6 @@ namespace jKnepel.UnitySync
 
         public static readonly List<SyncPacketType> UnreliableSyncPackets = new()
         {
-            SyncPacketType.ACK,
-            SyncPacketType.Heartbeat,
             SyncPacketType.ClientCamera,
             SyncPacketType.UnreliableData
         };
