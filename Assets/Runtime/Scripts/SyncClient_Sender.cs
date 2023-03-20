@@ -30,7 +30,8 @@ namespace jKnepel.UnitySync
 				{
 					_pauseEvent.WaitOne(Timeout.Infinite);
 					
-					// TODO : add input validation for ASCII
+					// TODO : maybe only create this once on thread start and just send within the loop
+					// TODO : add input validation for ASCII and max Length
 					byte[] username = Encoding.ASCII.GetBytes(_settings.Username);
 					byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
 
@@ -136,10 +137,12 @@ namespace jKnepel.UnitySync
 				}
 				DebugByteMessage(data, $"Send {packet.Type} Bytes: ");
 			}
+			// TODO : handle other exceptions and set IsClientActive = false
 		}
 
 		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries)
 		{
+			// TODO : use RTTx1.25 instead of constant delay
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
 			if (client != null && client.SendPacketsBuffer.TryGetValue(sequence, out byte[] packetData))
 			{
@@ -158,6 +161,7 @@ namespace jKnepel.UnitySync
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
 			CalculateAndAddChecksum(data);
 			_sender.Send(data, data.Length, new(client.IP, _settings.Port));
+			// TODO : handle other exceptions and set IsClientActive = false
 		}
 
 		#endregion
@@ -184,6 +188,8 @@ namespace jKnepel.UnitySync
 			}
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
+			// TODO : support all kinds of changesPublished
+			// TODO : add flag for turning off automatic update sync in editor
 		}
 
 		private async void SendHierarchy(GameObject go)
@@ -211,6 +217,7 @@ namespace jKnepel.UnitySync
 				return;
 			}
 
+			// TODO : combine de-/serializer
 			// TODO : optimize this
 			byte[] bytes = new byte[sizeof(float) * 6];
 			Array.Copy(BitConverter.GetBytes(camera.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));

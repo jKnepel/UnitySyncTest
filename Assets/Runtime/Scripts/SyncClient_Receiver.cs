@@ -81,8 +81,8 @@ namespace jKnepel.UnitySync
 						if (!IsNextPacket(sequence, client.ReliableRemoteSequence))
 						{	// if the packet is new but a packet is missing in-between
 							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, data, client));
-							// TODO : if not received within timeframe timeout client
-							// TODO : lock if packets reference unity objects
+							// TODO : if not received within RTTx1.25 timeframe timeout client
+							// TODO : lock gameobject if packets reference unity objects
 							continue;
 						}
 
@@ -122,6 +122,7 @@ namespace jKnepel.UnitySync
 					}
 				}
 				catch (IndexOutOfRangeException) { continue; }
+				// TODO : handle other exceptions and set IsClientActive = false
 			}
 		}
 

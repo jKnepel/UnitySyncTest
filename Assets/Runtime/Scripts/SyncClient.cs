@@ -467,6 +467,7 @@ namespace jKnepel.UnitySync
 		}
 
 #if UNITY_EDITOR
+		// NOTE : test method for when object highlighting is implemented over network
 		private void SelectionChanged()
 		{
 			// remove highlighting from old selection
@@ -490,7 +491,7 @@ namespace jKnepel.UnitySync
 			}
 
 			// highlight selected object
-			// TODO : doesnt work on gameobjects with renderer
+			// TODO : doesnt work on gameobjects without renderer
 			GameObject selection = Selection.activeGameObject;
 			if (selection != null && selection.scene == _settings.SyncScene)
 			{
