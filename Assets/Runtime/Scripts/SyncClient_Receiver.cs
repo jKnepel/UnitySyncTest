@@ -91,16 +91,15 @@ namespace jKnepel.UnitySync
 						}
 						packet.Slices.TryAdd(sliceNumber, data);
 
-						// if packet is not complete or a packet is missing in the sequence save it in buffer
+						// if packet is not complete or a packet is missing in the sequence keep it in buffer
 						if (!packet.IsPacketComplete() || (!IsNextPacket(sequence, client.ReliableRemoteSequence)
 							&& packetType != SyncPacketType.ReliableUnorderedData))
 							continue;
 
+						client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
 						client.ReliableRemoteSequence = sequence;
-						if (packet.ConcatenateChunkedPacket())
-							_receivedPackets.Enqueue(packet);
-						else
-							continue;
+						packet.ConcatenateChunkedPacket();
+						_receivedPackets.Enqueue(packet);
 					}
 					else
 					{   // handle packet by checking sequence and consume packet if it is relevant
@@ -145,14 +144,10 @@ namespace jKnepel.UnitySync
 								break;
 
 							// TODO : unlock gameobjects if packets reference unity objects
-							if (packet.IsChunked)
-							{	// only consume packet if chunked packet is complete
-								if (!packet.IsPacketComplete())
-									break;
+							// only consume chunked packet if it is complete
+							if (packet.IsChunked && !packet.ConcatenateChunkedPacket())
+								break;
 
-								if (!packet.ConcatenateChunkedPacket())
-									break;
-							}
 							client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
 							client.ReliableRemoteSequence = sequence;
 							_receivedPackets.Enqueue(packet);
