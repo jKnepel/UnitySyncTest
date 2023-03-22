@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Runtime.ExceptionServices;
@@ -33,11 +34,11 @@ namespace jKnepel.UnitySync
 					byte[] checksumBytes = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
 					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH);
 
-					// get relevant data bytes
+					// get relevant header bytes
 					byte[] sequenceBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					ushort sequence = BitConverter.ToUInt16(sequenceBytes);
-					SyncPacketType packetType = (SyncPacketType)receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH];
-					byte[] data = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
+					bool isChunked = (receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH] & (1 << 7)) != 0;
+					SyncPacketType packetType = GetOriginalType(receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH]);
 
 					if (packetType == SyncPacketType.Heartbeat)
 					{
@@ -54,74 +55,107 @@ namespace jKnepel.UnitySync
 					if (!CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 						continue;
 
-					// remove ACK'd packets from buffer
 					if (packetType == SyncPacketType.ACK)
-					{
-						client.SendPacketsBuffer.TryRemove(sequence, out _);
+					{   // remove ACK'd packets from buffer
+						if (isChunked)
+						{
+							byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
+							ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
+							client.SendSlicesBuffer.TryRemove((sequence, sliceNumber), out _);
+						}
+						else
+							client.SendPacketsBuffer.TryRemove(sequence, out _);
 						continue;
 					}
 
-					// TODO : handle chunked packets
+					byte[] data = isChunked
+						? GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER)
+						: GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
 
-					// check packet sequence
-					if (SyncPacketChannels.UnreliableSyncPackets.Contains(packetType))
-					{   // unreliable packet sequences
-						if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
-							continue;
+					if (isChunked)
+					{	// handle chunked packet by checking sequence and only consuming once its complete and relevant
+						byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
+						ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
 
-						client.UnreliableRemoteSequence = sequence;
-					}
-					else
-					{   // reliable packet sequences
-						SendACK(client, sequence);
-
+						SendACK(client, sequence, sliceNumber);
+						
 						if (!IsNewPacket(sequence, client.ReliableRemoteSequence))
 							continue;
 
-						if (!IsNextPacket(sequence, client.ReliableRemoteSequence))
-						{	// if the packet is new but a packet is missing in-between
-							client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, data, client));
-							// TODO : if not received within RTTx1.25 timeframe timeout client
-							// TODO : lock gameobject if packets reference unity objects
-							continue;
+						if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
+						{	// create chunked packet if it doesn't exist yet
+							byte[] numberOfSlicesBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, NUMBER_OF_SLICES);
+							ushort numberOfSlices = BitConverter.ToUInt16(numberOfSlicesBytes);
+							packet = new(packetType, client, numberOfSlices);
+							client.ReceivedPacketsBuffer.TryAdd(sequence, packet);
 						}
+						packet.Slices.TryAdd(sliceNumber, data);
+
+						// if packet is not complete or a packet is missing in the sequence save it in buffer
+						if (!packet.IsPacketComplete() || !IsNextPacket(sequence, client.ReliableRemoteSequence))
+							continue;
 
 						client.ReliableRemoteSequence = sequence;
+						if (packet.ConcatenateChunkedPacket())
+							_receivedPackets.Enqueue(packet);
+						else
+							continue;
+					}
+					else
+					{   // handle packet by checking sequence and consume packet if it is relevant
+						if (SyncPacketChannels.UnreliableSyncPackets.Contains(packetType))
+						{   // unreliable packet sequences
+							if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
+								continue;
+
+							client.UnreliableRemoteSequence = sequence;
+							_receivedPackets.Enqueue(new(packetType, data, client));
+						}
+						else
+						{   // reliable packet sequences
+							SendACK(client, sequence);
+
+							if (!IsNewPacket(sequence, client.ReliableRemoteSequence))
+								continue;
+
+							if (!IsNextPacket(sequence, client.ReliableRemoteSequence))
+							{   // if the packet is new but a packet is missing in-between
+								client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, data, client));
+								// TODO : if not received within RTTx1.25 timeframe timeout client
+								// TODO : lock gameobject if packets reference unity objects
+								continue;
+							}
+
+							client.ReliableRemoteSequence = sequence;
+							_receivedPackets.Enqueue(new(packetType, data, client));
+						}
 					}
 
-					// handle data depending on packet type
-					DebugByteMessage(data, "Received Bytes: ");
-					switch (packetType)
-					{
-						case SyncPacketType.ClientCamera:
-							_receivedPackets.Enqueue(new(SyncPacketType.ClientCamera, data, client));
-							break;
-						default: break;
-					}
-
-					// apply all packets in buffer that are now available
-					// TODO : handle unreliable packets aside from client camera
+					// apply all packets in buffer that are now next in line and complete
 					if (SyncPacketChannels.ReliableSyncPackets.Contains(packetType))
 					{
 						while (client.ReceivedPacketsBuffer.Count > 0)
 						{
 							sequence++;
-							if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out SyncPacket packet))
+							if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
 								break;
 
-							// TODO : unlock if packets reference unity objects
-							client.ReliableRemoteSequence = sequence;
-							switch (packet.Type)
-							{
-								case SyncPacketType.ClientCamera:
-									_receivedPackets.Enqueue(packet);
+							// TODO : unlock gameobjects if packets reference unity objects
+							if (packet.IsChunked)
+							{	// only consume packet if chunked packet is complete
+								if (!packet.IsPacketComplete())
 									break;
-								default: break;
+
+								if (!packet.ConcatenateChunkedPacket())
+									break;
 							}
+							client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
+							client.ReliableRemoteSequence = sequence;
+							_receivedPackets.Enqueue(packet);
 						}
 					}
 				}
-				catch (IndexOutOfRangeException) { continue; }
+				catch (OverflowException) { continue; }
 				// TODO : handle other exceptions and set IsClientActive = false
 			}
 		}
@@ -200,7 +234,7 @@ namespace jKnepel.UnitySync
 		}
 
 		// TODO : optimize this
-		private void UpdateClientVisualizer(SyncPacket packet)
+		private void UpdateClientVisualizer(SyncReceiverPacket packet)
 		{
 			if (_settings.IsDebug)
 				Debug.Log($"Received Camera Update from {packet.Client.IP}");
@@ -227,6 +261,16 @@ namespace jKnepel.UnitySync
 				packet.Client.Visualizer.gameObject.SetActive(true);
 		}
 
+		private void ReceiveReliableData(SyncReceiverPacket packet)
+		{
+			SyncManager.OnReliableDataReceived?.Invoke(packet.Data);
+		}
+
+		private void ReceiveUnreliableData(SyncReceiverPacket packet)
+		{
+			SyncManager.OnUnreliableDataReceived?.Invoke(packet.Data);
+		}
+
 		private async void ImportHierarchy(byte[] hierarchy)
 		{
 			Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
@@ -244,7 +288,7 @@ namespace jKnepel.UnitySync
 			await memoryStream.WriteAsync(hierarchy);
 			await DeserializeGameObject(_settings.SyncScene, new ImportOptions(), memoryStream, onLoadComplete);
 
-			SyncManager.AddSyncMessage(new($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}"));
+			Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
 
 			return;
 		}
@@ -260,6 +304,13 @@ namespace jKnepel.UnitySync
 		#endregion
 
 		#region helper
+
+		private static SyncPacketType GetOriginalType(byte typeBytes)
+		{
+			byte mask = 1 << 7;
+			typeBytes &= (byte)~mask;
+			return (SyncPacketType)typeBytes;
+		}
 
 		private static bool CheckPacketCRC32(byte[] checksum, byte[] packet, byte[] roomname)
 		{

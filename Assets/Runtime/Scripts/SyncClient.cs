@@ -27,6 +27,8 @@ namespace jKnepel.UnitySync
 		private const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
 		private const int DATA_TYPE_LENGTH = 1; // id of the packet type
 		private const int SEQUENCE_ID_LENGTH = 2; // sequence id for preventing old updates to be consumed
+		private const int NUMBER_OF_SLICES = 2; // flag showing the number of packets the chunk consists of
+		private const int SLICE_NUMBER = 2; // number of the current slice
 
 		// data
 		// private const int DATA_FLAG_LENGTH = 2; // flag containing data length
@@ -54,8 +56,8 @@ namespace jKnepel.UnitySync
 		private int _disposeCount;
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
-		private readonly ConcurrentQueue<SyncPacket> _packetsToSend = new();
-		private readonly ConcurrentQueue<SyncPacket> _receivedPackets = new();
+		private readonly ConcurrentQueue<SyncSenderPacket> _packetsToSend = new();
+		private readonly ConcurrentQueue<SyncReceiverPacket> _receivedPackets = new();
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
@@ -254,12 +256,21 @@ namespace jKnepel.UnitySync
 
 			while (_receivedPackets.Count > 0)
 			{
-				if (_receivedPackets.TryDequeue(out SyncPacket packet))
+				if (_receivedPackets.TryDequeue(out SyncReceiverPacket packet))
 				{
 					switch (packet.Type)
 					{
 						case SyncPacketType.ClientCamera:
 							UpdateClientVisualizer(packet);
+							break;
+						case SyncPacketType.ReliableData:
+							ReceiveReliableData(packet);
+							break;
+						case SyncPacketType.UnreliableData:
+							ReceiveUnreliableData(packet);
+							break;
+						case SyncPacketType.Hierarchy:
+							ImportHierarchy(packet.Data);
 							break;
 						default: break;
 					}
@@ -352,7 +363,7 @@ namespace jKnepel.UnitySync
 			_pauseEvent.Set();
 
 #if UNITY_EDITOR
-			Selection.selectionChanged += SelectionChanged;
+			//Selection.selectionChanged += SelectionChanged;
 			ObjectChangeEvents.changesPublished += ChangesPublished;
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif

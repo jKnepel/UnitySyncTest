@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -40,6 +41,16 @@ namespace jKnepel.UnitySync
 		/// Action for when the Client disconnected from a Room and can no longer send any Messages.
 		/// </summary>
 		public static Action OnDisconnectedFromRoom;
+
+		/// <summary>
+		/// Action for when the Client received reliable Data from a Client;
+		/// </summary>
+		public static Action<byte[]> OnReliableDataReceived;
+
+		/// <summary>
+		/// Action for when the Client received unreliable Data from a Client;
+		/// </summary>
+		public static Action<byte[]> OnUnreliableDataReceived;
 
 		/// <summary>
 		/// If the Client is connected to the Network and able to discover Rooms.
@@ -226,7 +237,10 @@ namespace jKnepel.UnitySync
 		public static void SendDataReliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				onDataSend?.Invoke(false);
 				return;
+			}
 
 			_client.SendDataReliable(data, onDataSend, receiver);
 		}
@@ -234,6 +248,8 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Sends Data over Unreliable UDP. 
 		/// This ensure arrival of Packets in the correct Order but does not guarantee that all Packets actually arrive.
+		/// It is recommended to keep the size of the Data array below 1200, since anything over this threshold will create a 
+		/// chunked Packet, slowing down the transmission.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
@@ -244,7 +260,17 @@ namespace jKnepel.UnitySync
 		public static void SendDataUnreliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				onDataSend?.Invoke(false);
 				return;
+			}
+
+			if (data.Length > 1200)
+			{
+				Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
+				onDataSend?.Invoke(false);
+				return;
+			}
 
 			_client.SendDataUnreliable(data, onDataSend, receiver);
 		}

@@ -14,8 +14,9 @@ namespace jKnepel.UnitySync
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
-		internal readonly ConcurrentDictionary<ushort, SyncPacket> ReceivedPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, SyncReceiverPacket> ReceivedPacketsBuffer = new();
 		internal readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<(ushort, ushort), byte[]> SendSlicesBuffer = new();
 
 		internal ushort UnreliableLocalSequence { get; set; }
 		internal ushort UnreliableRemoteSequence { get; set; }

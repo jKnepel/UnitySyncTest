@@ -88,19 +88,47 @@ namespace jKnepel.UnitySync
 			{
 				_pauseEvent.WaitOne(Timeout.Infinite);
 
-				if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out SyncPacket packet))
+				if (_packetsToSend.Count == 0 || !_packetsToSend.TryPeek(out SyncSenderPacket packet))
 					continue;
 
-				if (packet.Data.Length > 1200)
+				if (packet.IsChunked && !SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))
 				{
-					// TODO : handle chunked packets
+					Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
+					packet.OnDataSend?.Invoke(false);
+				}
+
+				byte[] packetData = packet.GetNextSlice();
+				if (!packet.IsChunked)
+				{	// remove packet from sender queue since it only needs to be send once
+					_packetsToSend.TryDequeue(out _);
+				}
+				else if (packetData == null)
+				{	// remove packet from sender queue once all slices were send
+					_packetsToSend.TryDequeue(out _);
 					continue;
 				}
 
-				// add packet type and data to packet
-				byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + packet.Data.Length];
-				data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
-				Array.Copy(packet.Data, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packet.Data.Length);
+				byte[] data;
+				if (packet.IsChunked)
+				{   // add packet type, slice numbers, current slice number and data to the packet
+					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH
+						+ NUMBER_OF_SLICES + SLICE_NUMBER + packetData.Length];
+					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
+					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
+					Array.Copy(BitConverter.GetBytes(packet.NumberOfSlices), 0, data,
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, NUMBER_OF_SLICES);
+					Array.Copy(BitConverter.GetBytes(packet.CurrentSliceNumber), 0, data,
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
+					Array.Copy(packetData, 0, data,
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER, packetData.Length);
+				}
+				else
+				{	// add packet type and data to the packet
+					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + packetData.Length];
+					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
+					Array.Copy(packetData, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packetData.Length);
+				}
+
 
 				// define receivers of the packet
 				List<SyncConnectedClient> clients = new();
@@ -113,31 +141,52 @@ namespace jKnepel.UnitySync
 				foreach (SyncConnectedClient client in clients)
 				{
 					if (SyncPacketChannels.UnreliableSyncPackets.Contains(packet.Type))
-					{	// handle unreliable packets
-						client.UnreliableLocalSequence++;
+					{   // handle unreliable packets
+						if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
+							client.UnreliableLocalSequence++;
 						Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					}
 					else
-					{	// handle reliable packets
-						client.ReliableLocalSequence++;
+					{   // handle reliable packets
+						if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
+							client.ReliableLocalSequence++;
 						Array.Copy(BitConverter.GetBytes(client.ReliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					}
 
 					CalculateAndAddChecksum(data);
+
 					_sender.Send(data, data.Length, new(client.IP, _settings.Port));
 					if (packet.OnDataSend != null)
 						packet.OnDataSend?.Invoke(true);
-					
-					// save reliable packets in buffer in case of resends
-					if (SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))
-					{
+
+					if (packet.IsChunked)
+					{	// save slices in buffer in case of resends
+						client.SendSlicesBuffer.TryAdd((client.ReliableLocalSequence, packet.CurrentSliceNumber), data);
+						_ = ResendSliceData(client, (client.ReliableLocalSequence, packet.CurrentSliceNumber), 0);
+					}
+					else if (SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))
+					{   // save reliable packets in buffer in case of resends
 						client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
 						_ = ResendPacketData(client, client.ReliableLocalSequence, 0);
 					}
 				}
-				DebugByteMessage(data, $"Send {packet.Type} Bytes: ");
+				DebugByteMessage(data, $"Send {packet.Type} Bytes: ", true);
 			}
 			// TODO : handle other exceptions and set IsClientActive = false
+		}
+
+		private async Task ResendSliceData(SyncConnectedClient client, (ushort, ushort) sequence, int retries)
+		{
+			// TODO : use RTTx1.25 instead of constant delay
+			await Task.Delay(_settings.ResendReliablePacketsDelay);
+			if (client != null && client.SendSlicesBuffer.TryGetValue(sequence, out byte[] packetData))
+			{
+				_sender.Send(packetData, packetData.Length, new(client.IP, _settings.Port));
+				// TODO : handle timeout when packets dont arrive within max number of resends
+				if (retries < _settings.MaxNumberResendReliablePackets - 1)
+					_ = ResendSliceData(client, sequence, retries + 1);
+			}
+			return;
 		}
 
 		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries)
@@ -164,6 +213,17 @@ namespace jKnepel.UnitySync
 			// TODO : handle other exceptions and set IsClientActive = false
 		}
 
+		private void SendACK(SyncConnectedClient client, ushort sequence, ushort sliceNumber)
+		{
+			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + SLICE_NUMBER];
+			Array.Copy(BitConverter.GetBytes(sequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
+			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
+			Array.Copy(BitConverter.GetBytes(sliceNumber), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, SLICE_NUMBER);
+			CalculateAndAddChecksum(data);
+			_sender.Send(data, data.Length, new(client.IP, _settings.Port));
+		}
+
 		#endregion
 
 		#region find updates
@@ -179,7 +239,7 @@ namespace jKnepel.UnitySync
 				GameObject go;
 				try { go = ((Component)o).gameObject; }
 				catch (InvalidCastException) { go = (GameObject)o; }
-				//SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
+				SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
 
 				// Limit hierarchy syncs
 				ObjectChangeEvents.changesPublished -= ChangesPublished;
