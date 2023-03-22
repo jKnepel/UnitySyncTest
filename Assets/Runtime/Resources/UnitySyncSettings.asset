@@ -17,14 +17,14 @@ MonoBehaviour:
   Username: Username
   Color:
     serializedVersion: 2
-    rgba: 4294967295
+    rgba: 4282702165
   HeartbeatDelay: 1000
   ClientTimeoutDelay: 3000
   EditorUpdatesDelay: 500
   ClientVisualizerUpdateDelay: 50
   ResendReliablePacketsDelay: 250
   MaxNumberResendReliablePackets: 5
-  IsDebug: 0
+  IsDebug: 1
   IP: 192.168.2.153
   Port: 26822
   ClientVisualizer: {fileID: 7080547937376749528, guid: 50aa1bbdf9c3eac459c8e97ce858b662, type: 3}
