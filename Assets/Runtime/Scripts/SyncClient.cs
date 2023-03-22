@@ -48,11 +48,10 @@ namespace jKnepel.UnitySync
 		private readonly IPEndPoint _broadCastEndpoint;
 		private IPEndPoint _receiveEndpoint;
 
-		private readonly Thread _senderThread;
 		private readonly Thread _listenerThread;
-		private readonly Thread _heartbeatThread;
+		private Thread _senderThread;
+		private Thread _heartbeatThread;
 
-		private readonly ManualResetEvent _pauseEvent = new(true);
 		private int _disposeCount;
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
@@ -134,14 +133,8 @@ namespace jKnepel.UnitySync
 
 				SyncManager.OnUpdate += Update;
 
-				_pauseEvent.Reset();
-
 				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
 				_listenerThread.Start();
-				_senderThread = new(() => SenderThread()) { IsBackground = true };
-				_senderThread.Start();
-				_heartbeatThread = new(() => HeartbeatThread()) { IsBackground = true };
-				_heartbeatThread.Start();
 
 				IsClientActive = true;
 			}
@@ -195,14 +188,21 @@ namespace jKnepel.UnitySync
 				IsRoomOwner = false;
 				IsConnectedToRoom = false;
 
-				_listenerThread.Abort();
-				_listenerThread.Join();
-				_senderThread.Abort();
-				_senderThread.Join();
-				_heartbeatThread.Abort();
-				_heartbeatThread.Join();
-
-				_pauseEvent.Dispose();
+				if (_listenerThread != null)
+				{
+					_listenerThread.Abort();
+					_listenerThread.Join();
+				}
+				if (_heartbeatThread != null)
+				{
+					_heartbeatThread.Abort();
+					_heartbeatThread.Join();
+				}
+				if (_senderThread != null)
+				{
+					_senderThread.Abort();
+					_senderThread.Join();
+				}
 
 				if (_sender != null)
 				{
@@ -366,7 +366,10 @@ namespace jKnepel.UnitySync
 			SceneManager.SetActiveScene(_settings.SyncScene);
 			_settings.SyncParentContainer = new GameObject("Cient Visualizer Parent").transform;
 
-			_pauseEvent.Set();
+			_heartbeatThread = new(() => HeartbeatThread()) { IsBackground = true };
+			_heartbeatThread.Start();
+			_senderThread = new(() => SenderThread()) { IsBackground = true };
+			_senderThread.Start();
 
 #if UNITY_EDITOR
 			//Selection.selectionChanged += SelectionChanged;
@@ -384,7 +387,16 @@ namespace jKnepel.UnitySync
 			if (!IsConnectedToRoom)
 				return false;
 
-			_pauseEvent.Reset();
+			if (_heartbeatThread != null)
+			{
+				_heartbeatThread.Abort();
+				_heartbeatThread.Join();
+			}
+			if (_senderThread != null)
+			{
+				_senderThread.Abort();
+				_senderThread.Join();
+			}
 
 #if UNITY_EDITOR
 			Selection.selectionChanged -= SelectionChanged;

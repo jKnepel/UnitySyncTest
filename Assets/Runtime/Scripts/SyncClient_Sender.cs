@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -22,42 +21,34 @@ namespace jKnepel.UnitySync
 
 		private void HeartbeatThread()
 		{
-			byte[] nullBytes16 = BitConverter.GetBytes((ushort)0);
+			byte[] username = Encoding.ASCII.GetBytes(_settings.Username);
+			byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
+
+			// prepare data with room name, username and -color
+			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH +
+				ROOMNAME_FLAG_LENGTH + CurrentRoom.RoomnameBytes.Length +
+				USERNAME_FLAG_LENGTH + username.Length +
+				COLOR_LENGTH];
+			int currentPosition = CRC32_LENGTH;
+			Array.Copy(BitConverter.GetBytes((ushort)0), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+			currentPosition += SEQUENCE_ID_LENGTH;
+			data[currentPosition] = (byte)SyncPacketType.Heartbeat;
+			currentPosition += DATA_TYPE_LENGTH;
+			data[currentPosition] = (byte)CurrentRoom.RoomnameBytes.Length;
+			currentPosition += ROOMNAME_FLAG_LENGTH;
+			Array.Copy(CurrentRoom.RoomnameBytes, 0, data, currentPosition, CurrentRoom.RoomnameBytes.Length);
+			currentPosition += CurrentRoom.RoomnameBytes.Length;
+			data[currentPosition] = (byte)username.Length;
+			currentPosition += USERNAME_FLAG_LENGTH;
+			Array.Copy(username, 0, data, currentPosition, username.Length);
+			currentPosition += username.Length;
+			Array.Copy(color, 0, data, currentPosition, COLOR_LENGTH);
+			CalculateAndAddChecksum(data);
 
 			try
 			{
 				while (_disposeCount == 0)
 				{
-					_pauseEvent.WaitOne(Timeout.Infinite);
-					
-					// TODO : maybe only create this once on thread start and just send within the loop
-					// TODO : add input validation for ASCII and max Length
-					byte[] username = Encoding.ASCII.GetBytes(_settings.Username);
-					byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
-
-					// prepare data with room name, username and -color
-					byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH +
-						ROOMNAME_FLAG_LENGTH + CurrentRoom.RoomnameBytes.Length +
-						USERNAME_FLAG_LENGTH + username.Length +
-						COLOR_LENGTH];
-					int currentPosition = CRC32_LENGTH;
-					Array.Copy(nullBytes16, 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
-					currentPosition += SEQUENCE_ID_LENGTH;
-					data[currentPosition] = (byte)SyncPacketType.Heartbeat;
-					currentPosition += DATA_TYPE_LENGTH;
-					data[currentPosition] = (byte)CurrentRoom.RoomnameBytes.Length;
-					currentPosition += ROOMNAME_FLAG_LENGTH;
-					Array.Copy(CurrentRoom.RoomnameBytes, 0, data, currentPosition, CurrentRoom.RoomnameBytes.Length);
-					currentPosition += CurrentRoom.RoomnameBytes.Length;
-					data[currentPosition] = (byte)username.Length;
-					currentPosition += USERNAME_FLAG_LENGTH;
-					Array.Copy(username, 0, data, currentPosition, username.Length);
-					currentPosition += username.Length;
-					Array.Copy(color, 0, data, currentPosition, COLOR_LENGTH);
-
-					// add crc32 to the packet
-					CalculateAndAddChecksum(data);
-
 					_sender.Send(data, data.Length, _broadCastEndpoint);
 					DebugByteMessage(data, "Send Heartbeat Bytes: ");
 					Thread.Sleep(_settings.HeartbeatDelay);
@@ -65,8 +56,6 @@ namespace jKnepel.UnitySync
 			}
 			catch (Exception ex)
 			{
-				CurrentRoom = null;
-				IsClientActive = false;
 				switch (ex)
 				{
 					case SocketException:
@@ -79,6 +68,7 @@ namespace jKnepel.UnitySync
 						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
+				IsClientActive = false;
 			}
 		}
 
@@ -86,8 +76,6 @@ namespace jKnepel.UnitySync
 		{
 			while (_disposeCount == 0)
 			{
-				_pauseEvent.WaitOne(Timeout.Infinite);
-
 				if (_packetsToSend.Count == 0 || !_packetsToSend.TryPeek(out SyncSenderPacket packet))
 					continue;
 
