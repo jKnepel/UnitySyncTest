@@ -43,14 +43,24 @@ namespace jKnepel.UnitySync
 		public static Action OnDisconnectedFromRoom;
 
 		/// <summary>
-		/// Action for when the Client received reliable Data from a Client;
+		/// Action for when the Client received reliable Data from a Client.
 		/// </summary>
 		public static Action<byte[]> OnReliableDataReceived;
 
 		/// <summary>
-		/// Action for when the Client received unreliable Data from a Client;
+		/// Action for when the Client received reliable unordered Data from a Client.
+		/// </summary>
+		public static Action<byte[]> OnReliableUnorderedDataReceived;
+
+		/// <summary>
+		/// Action for when the Client received unreliable Data from a Client.
 		/// </summary>
 		public static Action<byte[]> OnUnreliableDataReceived;
+
+		/// <summary>
+		/// Action for when the Client received unreliable unordered Data from a Client.
+		/// </summary>
+		public static Action<byte[]> OnUnreliableUnorderedDataReceived;
 
 		/// <summary>
 		/// If the Client is connected to the Network and able to discover Rooms.
@@ -246,6 +256,26 @@ namespace jKnepel.UnitySync
 		}
 
 		/// <summary>
+		/// Sends Data over Reliable UDP. This guarantees the arrival of all Data Packets without taking the Order into account.
+		/// </summary>
+		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
+		/// <param name="receiver">
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
+		/// all Clients receive the Packet.
+		/// </param>
+		public static void SendDataReliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataReliableUnordered(data, onDataSend, receiver);
+		}
+
+		/// <summary>
 		/// Sends Data over Unreliable UDP. 
 		/// This ensure arrival of Packets in the correct Order but does not guarantee that all Packets actually arrive.
 		/// It is recommended to keep the size of the Data array below 1200, since anything over this threshold will create a 
@@ -273,6 +303,24 @@ namespace jKnepel.UnitySync
 			}
 
 			_client.SendDataUnreliable(data, onDataSend, receiver);
+		}
+
+		public static void SendDataUnreliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			if (data.Length > 1200)
+			{
+				Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataUnreliableUnordered(data, onDataSend, receiver);
 		}
 
 		public static void AddSyncMessage(SyncMessage message)

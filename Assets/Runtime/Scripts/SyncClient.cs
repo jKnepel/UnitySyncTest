@@ -266,8 +266,14 @@ namespace jKnepel.UnitySync
 						case SyncPacketType.ReliableData:
 							ReceiveReliableData(packet);
 							break;
+						case SyncPacketType.ReliableUnorderedData:
+							ReceiveReliableUnorderedData(packet);
+							break;
 						case SyncPacketType.UnreliableData:
 							ReceiveUnreliableData(packet);
+							break;
+						case SyncPacketType.UnreliableUnorderedData:
+							ReceiveUnreliableUnorderedData(packet);
 							break;
 						case SyncPacketType.Hierarchy:
 							ImportHierarchy(packet.Data);
@@ -441,6 +447,17 @@ namespace jKnepel.UnitySync
 			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, data, onDataSend, receiver));
 		}
 
+		public void SendDataReliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+			{
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_packetsToSend.Enqueue(new(SyncPacketType.ReliableUnorderedData, data, onDataSend, receiver));
+		}
+
 		public void SendDataUnreliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
 			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
@@ -450,6 +467,17 @@ namespace jKnepel.UnitySync
 			}
 
 			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, data, onDataSend, receiver));
+		}
+
+		public void SendDataUnreliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+			{
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableUnorderedData, data, onDataSend, receiver));
 		}
 
 		#endregion

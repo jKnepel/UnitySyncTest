@@ -79,7 +79,8 @@ namespace jKnepel.UnitySync
 
 						SendACK(client, sequence, sliceNumber);
 						
-						if (!IsNewPacket(sequence, client.ReliableRemoteSequence))
+						if (!IsNewPacket(sequence, client.ReliableRemoteSequence)
+							&& packetType != SyncPacketType.ReliableUnorderedData)
 							continue;
 
 						if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
@@ -92,7 +93,8 @@ namespace jKnepel.UnitySync
 						packet.Slices.TryAdd(sliceNumber, data);
 
 						// if packet is not complete or a packet is missing in the sequence save it in buffer
-						if (!packet.IsPacketComplete() || !IsNextPacket(sequence, client.ReliableRemoteSequence))
+						if (!packet.IsPacketComplete() || (!IsNextPacket(sequence, client.ReliableRemoteSequence)
+							&& packetType != SyncPacketType.ReliableUnorderedData))
 							continue;
 
 						client.ReliableRemoteSequence = sequence;
@@ -105,7 +107,8 @@ namespace jKnepel.UnitySync
 					{   // handle packet by checking sequence and consume packet if it is relevant
 						if (SyncPacketChannels.UnreliableSyncPackets.Contains(packetType))
 						{   // unreliable packet sequences
-							if (!IsNewPacket(sequence, client.UnreliableRemoteSequence))
+							if (!IsNewPacket(sequence, client.UnreliableRemoteSequence)
+								&& packetType != SyncPacketType.UnreliableUnorderedData)
 								continue;
 
 							client.UnreliableRemoteSequence = sequence;
@@ -115,10 +118,12 @@ namespace jKnepel.UnitySync
 						{   // reliable packet sequences
 							SendACK(client, sequence);
 
-							if (!IsNewPacket(sequence, client.ReliableRemoteSequence))
+							if (!IsNewPacket(sequence, client.ReliableRemoteSequence) 
+								&& packetType != SyncPacketType.ReliableUnorderedData)
 								continue;
 
-							if (!IsNextPacket(sequence, client.ReliableRemoteSequence))
+							if (!IsNextPacket(sequence, client.ReliableRemoteSequence)
+								&& packetType != SyncPacketType.ReliableUnorderedData)
 							{   // if the packet is new but a packet is missing in-between
 								client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, data, client));
 								// TODO : if not received within RTTx1.25 timeframe timeout client
@@ -266,9 +271,19 @@ namespace jKnepel.UnitySync
 			SyncManager.OnReliableDataReceived?.Invoke(packet.Data);
 		}
 
+		private void ReceiveReliableUnorderedData(SyncReceiverPacket packet)
+		{
+			SyncManager.OnReliableUnorderedDataReceived?.Invoke(packet.Data);
+		}
+
 		private void ReceiveUnreliableData(SyncReceiverPacket packet)
 		{
 			SyncManager.OnUnreliableDataReceived?.Invoke(packet.Data);
+		}
+
+		private void ReceiveUnreliableUnorderedData(SyncReceiverPacket packet)
+		{
+			SyncManager.OnUnreliableUnorderedDataReceived?.Invoke(packet.Data);
 		}
 
 		private async void ImportHierarchy(byte[] hierarchy)

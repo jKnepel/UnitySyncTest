@@ -12,7 +12,9 @@ namespace jKnepel.UnitySync
         Component,
         Hierarchy,
         ReliableData,
-        UnreliableData
+        ReliableUnorderedData,
+        UnreliableData,
+        UnreliableUnorderedData
     }
 
     internal static class SyncPacketChannels
@@ -23,13 +25,15 @@ namespace jKnepel.UnitySync
             SyncPacketType.GameObject,
             SyncPacketType.Component,
             SyncPacketType.Hierarchy,
-            SyncPacketType.ReliableData
+            SyncPacketType.ReliableData,
+            SyncPacketType.ReliableUnorderedData
         };
 
         public static readonly List<SyncPacketType> UnreliableSyncPackets = new()
         {
             SyncPacketType.ClientCamera,
-            SyncPacketType.UnreliableData
+            SyncPacketType.UnreliableData,
+            SyncPacketType.UnreliableUnorderedData
         };
     }
 }
