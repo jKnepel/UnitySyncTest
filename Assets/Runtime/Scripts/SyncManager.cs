@@ -2,6 +2,8 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Net.Sockets;
+using System.Net.NetworkInformation;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -15,6 +17,9 @@ namespace jKnepel.UnitySync
 	public static class SyncManager
 	{
 		#region public members
+
+		public static bool IsDebug = false;
+		public static string IP = GetLocalIPAddress();
 
 		public static Action OnUpdate;
 		public static Action OnAwake;
@@ -158,6 +163,37 @@ namespace jKnepel.UnitySync
 		private static void Start()
 		{
 			OnStart?.Invoke();
+		}
+
+		#endregion
+
+		#region private methods
+
+		private static string GetLocalIPAddress()
+		{
+			// taken from https://stackoverflow.com/a/24814027
+			string ipAddress = "";
+			foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
+			{
+				if (item.OperationalStatus == OperationalStatus.Up)
+				{   // Fetch the properties of this adapter
+					IPInterfaceProperties adapterProperties = item.GetIPProperties();
+					// Check if the gateway adress exist, if not its most likley a virtual network or smth
+					if (adapterProperties.GatewayAddresses.FirstOrDefault() != null)
+					{   // Iterate over each available unicast adresses
+						foreach (UnicastIPAddressInformation ip in adapterProperties.UnicastAddresses)
+						{   // If the IP is a local IPv4 adress
+							if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+							{
+								ipAddress = ip.Address.ToString();
+								break;
+							}
+						}
+					}
+				}
+				if (ipAddress != "") { break; }
+			}
+			return ipAddress;
 		}
 
 		#endregion

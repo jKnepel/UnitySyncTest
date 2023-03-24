@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
 using System.Runtime.ExceptionServices;
@@ -111,7 +112,14 @@ namespace jKnepel.UnitySync
 		{
 			try
 			{
-				_ip = IPAddress.Parse(_settings.IP);
+				if (!CheckLocalIP(SyncManager.IP))
+				{
+					Debug.LogError("No network interface possesses the given local IP!");
+					IsClientActive = false;
+					return;
+				}
+
+				_ip = IPAddress.Parse(SyncManager.IP);
 
 				if (_settings.SyncParentContainer != null)
 				{
@@ -183,10 +191,10 @@ namespace jKnepel.UnitySync
 		{
 			if (Interlocked.Increment(ref _disposeCount) == 1)
 			{
-				OpenRooms.Clear();
+				IsConnectedToRoom = false;
 				CurrentRoom = null;
 				IsRoomOwner = false;
-				IsConnectedToRoom = false;
+				OpenRooms.Clear();
 
 				if (_listenerThread != null)
 				{
@@ -496,6 +504,30 @@ namespace jKnepel.UnitySync
 
 		#region helper methods
 
+		private bool CheckLocalIP(string localIp)
+		{
+			foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
+			{
+				if (item.OperationalStatus == OperationalStatus.Up)
+				{   // Fetch the properties of this adapter
+					IPInterfaceProperties adapterProperties = item.GetIPProperties();
+					// Check if the gateway adress exist, if not its most likley a virtual network or smth
+					if (adapterProperties.GatewayAddresses.FirstOrDefault() != null)
+					{   // Iterate over each available unicast adresses
+						foreach (UnicastIPAddressInformation ip in adapterProperties.UnicastAddresses)
+						{   // If the IP is a local IPv4 adress
+							if (ip.Address.AddressFamily == AddressFamily.InterNetwork && localIp == ip.Address.ToString())
+							{
+								return true;
+							}
+						}
+					}
+				}
+			}
+
+			return false;
+		}
+
 		private bool CheckReceiver(SyncConnectedClient receiver)
 		{
 			return IsConnectedToRoom
@@ -575,7 +607,7 @@ namespace jKnepel.UnitySync
 
 		private static void DebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
 		{
-			if (!_settings.IsDebug)
+			if (!SyncManager.IsDebug)
 				return;
 
 			foreach (byte d in bytes)

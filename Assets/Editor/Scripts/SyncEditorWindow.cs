@@ -85,7 +85,7 @@ namespace jKnepel.UnitySync
                     {
                         // open rooms list
                         EditorGUILayout.BeginHorizontal();
-                        GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms.Count}");
+                        GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms?.Count}");
                         GUILayout.FlexibleSpace();
                         if (GUILayout.Button(new GUIContent(_newRoomOptionsIsVisible ? "-" : "+", "Create a New Room"),
                             GUILayout.Width(20), GUILayout.Height(20)))
@@ -94,10 +94,10 @@ namespace jKnepel.UnitySync
                         _roomsViewPos = EditorGUILayout.BeginScrollView(_roomsViewPos,
                             EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
                         {
-                            if (SyncManager.OpenRooms.Count == 0)
+                            if (SyncManager.OpenRooms?.Count == 0)
                                 GUILayout.Label($"No Rooms found!");
 
-                            for (int i = 0; i < SyncManager.OpenRooms.Count; i++)
+                            for (int i = 0; i < SyncManager.OpenRooms?.Count; i++)
                             {
                                 SyncOpenRoom room = SyncManager.OpenRooms[i];
                                 EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));

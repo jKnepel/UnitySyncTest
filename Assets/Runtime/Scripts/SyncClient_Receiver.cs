@@ -63,7 +63,9 @@ namespace jKnepel.UnitySync
 							client.SendSlicesBuffer.TryRemove((sequence, sliceNumber), out _);
 						}
 						else
+						{
 							client.SendPacketsBuffer.TryRemove(sequence, out _);
+						}
 						continue;
 					}
 
@@ -235,7 +237,7 @@ namespace jKnepel.UnitySync
 		// TODO : optimize this
 		private void UpdateClientVisualizer(SyncReceiverPacket packet)
 		{
-			if (_settings.IsDebug)
+			if (SyncManager.IsDebug)
 				Debug.Log($"Received Camera Update from {packet.Client.IP}");
 
 			int size = sizeof(float);
@@ -307,7 +309,7 @@ namespace jKnepel.UnitySync
 			GLTFParser.ParseJson(stream, out GLTFRoot gLTFRoot, 0);
 
 			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
-			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), _settings.IsDebug, -1, true, onLoadComplete);
+			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncManager.IsDebug, -1, true, onLoadComplete);
 		}
 
 		#endregion
