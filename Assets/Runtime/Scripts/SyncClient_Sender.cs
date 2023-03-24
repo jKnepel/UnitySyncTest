@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -49,7 +50,7 @@ namespace jKnepel.UnitySync
 			{
 				while (_disposeCount == 0)
 				{
-					_sender.Send(data, data.Length, _broadCastEndpoint);
+					_udpClient.Send(data, data.Length, new(IPAddress.Broadcast, _port));
 					DebugByteMessage(data, "Send Heartbeat Bytes: ");
 					Thread.Sleep(_settings.HeartbeatDelay);
 				}
@@ -143,7 +144,7 @@ namespace jKnepel.UnitySync
 
 					CalculateAndAddChecksum(data);
 
-					_sender.Send(data, data.Length, new(client.IP, _settings.Port));
+					_udpClient.Send(data, data.Length, new(client.IP, _port));
 					if (packet.OnDataSend != null)
 						packet.OnDataSend?.Invoke(true);
 
@@ -169,7 +170,7 @@ namespace jKnepel.UnitySync
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
 			if (client != null && client.SendSlicesBuffer.TryGetValue(sequence, out byte[] packetData))
 			{
-				_sender.Send(packetData, packetData.Length, new(client.IP, _settings.Port));
+				_udpClient.Send(packetData, packetData.Length, new(client.IP, _port));
 				// TODO : handle timeout when packets dont arrive within max number of resends
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
 					_ = ResendSliceData(client, sequence, retries + 1);
@@ -183,7 +184,7 @@ namespace jKnepel.UnitySync
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
 			if (client != null && client.SendPacketsBuffer.TryGetValue(sequence, out byte[] packetData))
 			{
-				_sender.Send(packetData, packetData.Length, new(client.IP, _settings.Port));
+				_udpClient.Send(packetData, packetData.Length, new(client.IP, _port));
 				// TODO : handle timeout when packets dont arrive within max number of resends
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
 					_ = ResendPacketData(client, sequence, retries + 1);
@@ -197,7 +198,7 @@ namespace jKnepel.UnitySync
 			Array.Copy(BitConverter.GetBytes(sequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
 			CalculateAndAddChecksum(data);
-			_sender.Send(data, data.Length, new(client.IP, _settings.Port));
+			_udpClient.Send(data, data.Length, new(client.IP, _port));
 			// TODO : handle other exceptions and set IsClientActive = false
 		}
 
@@ -209,7 +210,7 @@ namespace jKnepel.UnitySync
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
 			Array.Copy(BitConverter.GetBytes(sliceNumber), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, SLICE_NUMBER);
 			CalculateAndAddChecksum(data);
-			_sender.Send(data, data.Length, new(client.IP, _settings.Port));
+			_udpClient.Send(data, data.Length, new(client.IP, _port));
 		}
 
 		#endregion

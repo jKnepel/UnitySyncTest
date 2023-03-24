@@ -44,12 +44,10 @@ namespace jKnepel.UnitySync
 		private static readonly SyncSettings _settings = SyncSettings.GetOrCreateSettings();
 
 		private readonly IPAddress _ip;
-		private readonly UdpClient _listener;
-		private readonly UdpClient _sender;
-		private readonly IPEndPoint _broadCastEndpoint;
-		private IPEndPoint _receiveEndpoint;
+		private readonly int _port;
+		private readonly UdpClient _udpClient;
 
-		private readonly Thread _listenerThread;
+		private readonly Thread _udpClientThread;
 		private Thread _senderThread;
 		private Thread _heartbeatThread;
 
@@ -120,6 +118,10 @@ namespace jKnepel.UnitySync
 				}
 
 				_ip = IPAddress.Parse(SyncManager.IP);
+				_port = _settings.Port;
+
+				_udpClient = new(_settings.Port);
+				_udpClient.EnableBroadcast = true;
 
 				if (_settings.SyncParentContainer != null)
 				{
@@ -131,18 +133,10 @@ namespace jKnepel.UnitySync
 					_settings.SyncParentContainer = null;
 				}
 
-				_listener = new(_settings.Port);
-				_listener.EnableBroadcast = true;
-				_sender = new();
-				_sender.EnableBroadcast = true;
-
-				_broadCastEndpoint = new(IPAddress.Broadcast, _settings.Port);
-				_receiveEndpoint = new(IPAddress.Any, _settings.Port);
-
 				SyncManager.OnUpdate += Update;
 
-				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
-				_listenerThread.Start();
+				_udpClientThread = new(() => ListenerThread()) { IsBackground = true };
+				_udpClientThread.Start();
 
 				IsClientActive = true;
 			}
@@ -196,10 +190,10 @@ namespace jKnepel.UnitySync
 				IsRoomOwner = false;
 				OpenRooms.Clear();
 
-				if (_listenerThread != null)
+				if (_udpClientThread != null)
 				{
-					_listenerThread.Abort();
-					_listenerThread.Join();
+					_udpClientThread.Abort();
+					_udpClientThread.Join();
 				}
 				if (_heartbeatThread != null)
 				{
@@ -212,15 +206,10 @@ namespace jKnepel.UnitySync
 					_senderThread.Join();
 				}
 
-				if (_sender != null)
+				if (_udpClient != null)
 				{
-					_sender.Close();
-					_sender.Dispose();
-				}
-				if (_listener != null)
-				{
-					_listener.Close();
-					_listener.Dispose();
+					_udpClient.Close();
+					_udpClient.Dispose();
 				}
 
 				if (disposing)

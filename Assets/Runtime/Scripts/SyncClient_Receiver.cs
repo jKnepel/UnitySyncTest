@@ -24,9 +24,11 @@ namespace jKnepel.UnitySync
 				try
 				{
 					// check if packet comes from other client
-					byte[] receivedBytes = _listener.Receive(ref _receiveEndpoint);
-					IPAddress sender = _receiveEndpoint.Address;
-					if (sender.Equals(_ip))
+					IPEndPoint receiveEndpoint = new(IPAddress.Any, _settings.Port);
+					byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
+					IPAddress sender = receiveEndpoint.Address;
+					Debug.Log(sender.ToString());
+					if (sender.Equals(_ip) && false)
 						continue;
 
 					// get bytes used for crc32 check
