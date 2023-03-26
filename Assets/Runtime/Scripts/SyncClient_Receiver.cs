@@ -194,19 +194,6 @@ namespace jKnepel.UnitySync
 			// update client values
 			client.Color = color;
 			client.LastHeartbeat = DateTime.Now;
-			_mainThreadActions.Enqueue(() =>
-			{
-				if (client.Visualizer)
-				{
-					client.Visualizer.UpdateVisualizer(client.IPString, username, color);
-				}
-				else if (client.Visualizer == null && room.Equals(CurrentRoom))
-				{
-					GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _settings.SyncParentContainer);
-					client.Visualizer = obj.GetComponent<SyncClientVisualizer>();
-					client.Visualizer.UpdateVisualizer(client.IPString, username, color);
-				}
-			});
 		}
 
 		private async Task TimeoutClient(SyncConnectedClient client, SyncOpenRoom room)
@@ -215,7 +202,6 @@ namespace jKnepel.UnitySync
 			{
 				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > _settings.ClientTimeoutDelay)
 				{
-					_mainThreadActions.Enqueue(client.Dispose);
 					room.ConnectedClients.TryRemove(client.IP, out _);
 					if (room.ConnectedClients.Count == 0 && !room.Equals(CurrentRoom))
 						OpenRooms.TryRemove(room.Roomname, out _);
