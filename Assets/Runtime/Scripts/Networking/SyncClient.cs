@@ -9,7 +9,7 @@ using System.Threading;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
 
-namespace jKnepel.UnitySync
+namespace jKnepel.UnitySync.Networking
 {
 	internal sealed partial class SyncClient : IDisposable
 	{
@@ -20,13 +20,13 @@ namespace jKnepel.UnitySync
 		// headers
 		private const int PROTOCOL_ID_LENGTH = 4;
 		private const int CRC32_LENGTH = 4; // checksum and contains protocol and room id
-		private const int DATA_TYPE_LENGTH = 1; // id of the packet type
 		private const int SEQUENCE_ID_LENGTH = 2; // sequence id for preventing old updates to be consumed
+		private const int PACKET_TYPE_LENGTH = 1; // id of the packet type
+		private const int MODULE_HASH_LENGTH = 4; // flag containing the hash of the used module
 		private const int NUMBER_OF_SLICES = 2; // flag showing the number of packets the chunk consists of
 		private const int SLICE_NUMBER = NUMBER_OF_SLICES; // number of the current slice
 
 		// data
-		// private const int DATA_FLAG_LENGTH = 2; // flag containing data length
 		private const int ROOMNAME_FLAG_LENGTH = 1;
 		private const int USERNAME_FLAG_LENGTH = 1;
 		private const int COLOR_LENGTH = 3;
@@ -41,7 +41,7 @@ namespace jKnepel.UnitySync
 		private readonly int _port;
 		private readonly UdpClient _udpClient;
 
-		private readonly Thread _udpClientThread;
+		private readonly Thread _listenerThread;
 		private Thread _senderThread;
 		private Thread _heartbeatThread;
 
@@ -49,7 +49,6 @@ namespace jKnepel.UnitySync
 
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 		private readonly ConcurrentQueue<SyncSenderPacket> _packetsToSend = new();
-		private readonly ConcurrentQueue<SyncReceiverPacket> _receivedPackets = new();
 
 		#endregion
 
@@ -113,8 +112,8 @@ namespace jKnepel.UnitySync
 
 				SyncManager.OnUpdate += Update;
 
-				_udpClientThread = new(() => ListenerThread()) { IsBackground = true };
-				_udpClientThread.Start();
+				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
+				_listenerThread.Start();
 
 				IsClientActive = true;
 			}
@@ -168,10 +167,10 @@ namespace jKnepel.UnitySync
 				IsRoomOwner = false;
 				OpenRooms.Clear();
 
-				if (_udpClientThread != null)
+				if (_listenerThread != null)
 				{
-					_udpClientThread.Abort();
-					_udpClientThread.Join();
+					_listenerThread.Abort();
+					_listenerThread.Join();
 				}
 				if (_heartbeatThread != null)
 				{
@@ -203,29 +202,6 @@ namespace jKnepel.UnitySync
 			{
 				if (_mainThreadActions.TryDequeue(out Action action))
 					action?.Invoke();
-			}
-
-			while (_receivedPackets.Count > 0)
-			{
-				if (_receivedPackets.TryDequeue(out SyncReceiverPacket packet))
-				{
-					switch (packet.Type)
-					{
-						case SyncPacketType.ReliableData:
-							ReceiveReliableData(packet);
-							break;
-						case SyncPacketType.ReliableUnorderedData:
-							ReceiveReliableUnorderedData(packet);
-							break;
-						case SyncPacketType.UnreliableData:
-							ReceiveUnreliableData(packet);
-							break;
-						case SyncPacketType.UnreliableUnorderedData:
-							ReceiveUnreliableUnorderedData(packet);
-							break;
-						default: break;
-					}
-				}
 			}
 		}
 
@@ -314,60 +290,48 @@ namespace jKnepel.UnitySync
 
 		#region public methods
 
-		// TODO : add manual sync Hierarchy
-
-		// TODO : add manual delete Hierarchy
-
-		// TODO : add manual sync GameObject
-
-		// TODO : add manual delete GameObject
-
-		// TODO : add manual sync Component
-
-		// TODO : add manual delete Component
-
-		public void SendDataReliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
 				onDataSend?.Invoke(false);
 				return;
 			}
 
-			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, data, onDataSend, receiver));
+			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, moduleHash, data, onDataSend, receiver));
 		}
 
-		public void SendDataReliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
 				onDataSend?.Invoke(false);
 				return;
 			}
 
-			_packetsToSend.Enqueue(new(SyncPacketType.ReliableUnorderedData, data, onDataSend, receiver));
+			_packetsToSend.Enqueue(new(SyncPacketType.ReliableUnorderedData, moduleHash, data, onDataSend, receiver));
 		}
 
-		public void SendDataUnreliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
 				onDataSend?.Invoke(false);
 				return;
 			}
 
-			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, data, onDataSend, receiver));
+			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, moduleHash, data, onDataSend, receiver));
 		}
 
-		public void SendDataUnreliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
+			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
 				onDataSend?.Invoke(false);
 				return;
 			}
 
-			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableUnorderedData, data, onDataSend, receiver));
+			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableUnorderedData, moduleHash, data, onDataSend, receiver));
 		}
 
 		#endregion

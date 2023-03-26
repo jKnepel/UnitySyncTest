@@ -4,7 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using UnityEngine;
 
-namespace jKnepel.UnitySync
+namespace jKnepel.UnitySync.Networking
 {
 	internal sealed partial class SyncClient
 	{
@@ -20,7 +20,7 @@ namespace jKnepel.UnitySync
 					IPEndPoint receiveEndpoint = new(IPAddress.Any, _settings.Port);
 					byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
 					IPAddress sender = receiveEndpoint.Address;
-					if (sender.Equals(_ip))
+					if (sender.Equals(_ip) && false)
 						continue;
 
 					// get bytes used for crc32 check
@@ -52,7 +52,7 @@ namespace jKnepel.UnitySync
 					{   // remove ACK'd packets from buffer
 						if (isChunked)
 						{
-							byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
+							byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH);
 							ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
 							client.SendSlicesBuffer.TryRemove((sequence, sliceNumber), out _);
 						}
@@ -63,13 +63,17 @@ namespace jKnepel.UnitySync
 						continue;
 					}
 
+					//----- Handle Data Packets -----
+
+					byte[] moduleHashBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH);
+					uint moduleHash = BitConverter.ToUInt32(moduleHashBytes);
 					byte[] data = isChunked
-						? GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER)
-						: GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH);
+						? GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER)
+						: GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH);
 
 					if (isChunked)
 					{	// handle chunked packet by checking sequence and only consuming once its complete and relevant
-						byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
+						byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
 						ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
 
 						SendACK(client, sequence, sliceNumber);
@@ -80,9 +84,9 @@ namespace jKnepel.UnitySync
 
 						if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
 						{	// create chunked packet if it doesn't exist yet
-							byte[] numberOfSlicesBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, NUMBER_OF_SLICES);
+							byte[] numberOfSlicesBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, NUMBER_OF_SLICES);
 							ushort numberOfSlices = BitConverter.ToUInt16(numberOfSlicesBytes);
-							packet = new(packetType, client, numberOfSlices);
+							packet = new(packetType, moduleHash, client, numberOfSlices);
 							client.ReceivedPacketsBuffer.TryAdd(sequence, packet);
 						}
 						packet.Slices.TryAdd(sliceNumber, data);
@@ -95,7 +99,7 @@ namespace jKnepel.UnitySync
 						client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
 						client.ReliableRemoteSequence = sequence;
 						packet.ConcatenateChunkedPacket();
-						_receivedPackets.Enqueue(packet);
+						SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
 					}
 					else
 					{   // handle packet by checking sequence and consume packet if it is relevant
@@ -106,7 +110,7 @@ namespace jKnepel.UnitySync
 								continue;
 
 							client.UnreliableRemoteSequence = sequence;
-							_receivedPackets.Enqueue(new(packetType, data, client));
+							SyncManager.DataReceived?.Invoke(moduleHash, client, data);
 						}
 						else if (IsReliableData(packetType))
 						{   // reliable packet sequences
@@ -119,14 +123,14 @@ namespace jKnepel.UnitySync
 							if (!IsNextPacket(sequence, client.ReliableRemoteSequence)
 								&& packetType != SyncPacketType.ReliableUnorderedData)
 							{   // if the packet is new but a packet is missing in-between
-								client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, data, client));
+								client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, moduleHash, data, client));
 								// TODO : if not received within RTTx1.25 timeframe timeout client
 								// TODO : lock gameobject if packets reference unity objects
 								continue;
 							}
 
 							client.ReliableRemoteSequence = sequence;
-							_receivedPackets.Enqueue(new(packetType, data, client));
+							SyncManager.DataReceived?.Invoke(moduleHash, client, data);
 
 							// apply all packets in buffer that are now next in line and complete
 							while (client.ReceivedPacketsBuffer.Count > 0)
@@ -142,7 +146,7 @@ namespace jKnepel.UnitySync
 
 								client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
 								client.ReliableRemoteSequence = sequence;
-								_receivedPackets.Enqueue(packet);
+								SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
 							}
 						}
 					}
@@ -159,7 +163,7 @@ namespace jKnepel.UnitySync
 		private void UpdateHeartbeat(IPAddress sender, byte[] checksum, byte[] data)
 		{
 			// read roomname and check for bitswitches
-			int currentPosition = SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH;
+			int currentPosition = SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH;
 			int roomnameLength = data[currentPosition];
 			currentPosition += ROOMNAME_FLAG_LENGTH;
 			byte[] roomnameBytes = GetBytesFromArray(data, currentPosition, roomnameLength);
@@ -209,26 +213,6 @@ namespace jKnepel.UnitySync
 				}
 				await Task.Delay(_settings.ClientTimeoutDelay);
 			}
-		}
-
-		private void ReceiveReliableData(SyncReceiverPacket packet)
-		{
-			SyncManager.OnReliableDataReceived?.Invoke(packet.Data);
-		}
-
-		private void ReceiveReliableUnorderedData(SyncReceiverPacket packet)
-		{
-			SyncManager.OnReliableUnorderedDataReceived?.Invoke(packet.Data);
-		}
-
-		private void ReceiveUnreliableData(SyncReceiverPacket packet)
-		{
-			SyncManager.OnUnreliableDataReceived?.Invoke(packet.Data);
-		}
-
-		private void ReceiveUnreliableUnorderedData(SyncReceiverPacket packet)
-		{
-			SyncManager.OnUnreliableUnorderedDataReceived?.Invoke(packet.Data);
 		}
 
 		#endregion

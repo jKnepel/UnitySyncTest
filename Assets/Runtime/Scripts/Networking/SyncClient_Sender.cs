@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
 
-namespace jKnepel.UnitySync
+namespace jKnepel.UnitySync.Networking
 {
 	internal sealed partial class SyncClient
 	{
@@ -21,7 +21,7 @@ namespace jKnepel.UnitySync
 			byte[] color = { _settings.Color.r, _settings.Color.g, _settings.Color.b };
 
 			// prepare data with room name, username and -color
-			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH +
+			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH +
 				ROOMNAME_FLAG_LENGTH + CurrentRoom.RoomnameBytes.Length +
 				USERNAME_FLAG_LENGTH + username.Length +
 				COLOR_LENGTH];
@@ -29,7 +29,7 @@ namespace jKnepel.UnitySync
 			Array.Copy(BitConverter.GetBytes((ushort)0), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 			currentPosition += SEQUENCE_ID_LENGTH;
 			data[currentPosition] = (byte)SyncPacketType.Heartbeat;
-			currentPosition += DATA_TYPE_LENGTH;
+			currentPosition += PACKET_TYPE_LENGTH;
 			data[currentPosition] = (byte)CurrentRoom.RoomnameBytes.Length;
 			currentPosition += ROOMNAME_FLAG_LENGTH;
 			Array.Copy(CurrentRoom.RoomnameBytes, 0, data, currentPosition, CurrentRoom.RoomnameBytes.Length);
@@ -96,22 +96,25 @@ namespace jKnepel.UnitySync
 				byte[] data;
 				if (packet.IsChunked)
 				{   // add packet type, slice numbers, current slice number and data to the packet
-					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH
+					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH
 						+ NUMBER_OF_SLICES + SLICE_NUMBER + packetData.Length];
 					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
 					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
+					Array.Copy(BitConverter.GetBytes(packet.ModuleHash), 0, data, 
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, MODULE_HASH_LENGTH);
 					Array.Copy(BitConverter.GetBytes(packet.NumberOfSlices), 0, data,
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, NUMBER_OF_SLICES);
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, NUMBER_OF_SLICES);
 					Array.Copy(BitConverter.GetBytes(packet.CurrentSliceNumber), 0, data,
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
 					Array.Copy(packetData, 0, data,
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER, packetData.Length);
+						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER, packetData.Length);
 				}
 				else
 				{	// add packet type and data to the packet
-					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + packetData.Length];
+					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + packetData.Length];
 					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
-					Array.Copy(packetData, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, packetData.Length);
+					Array.Copy(BitConverter.GetBytes(packet.ModuleHash), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, MODULE_HASH_LENGTH);
+					Array.Copy(packetData, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, packetData.Length);
 				}
 
 
@@ -190,7 +193,7 @@ namespace jKnepel.UnitySync
 
 		private void SendACK(SyncConnectedClient client, ushort sequence)
 		{
-			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH];
+			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH];
 			Array.Copy(BitConverter.GetBytes(sequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
 			CalculateAndAddChecksum(data);
@@ -200,11 +203,11 @@ namespace jKnepel.UnitySync
 
 		private void SendACK(SyncConnectedClient client, ushort sequence, ushort sliceNumber)
 		{
-			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH + SLICE_NUMBER];
+			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + SLICE_NUMBER];
 			Array.Copy(BitConverter.GetBytes(sequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
-			Array.Copy(BitConverter.GetBytes(sliceNumber), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, SLICE_NUMBER);
+			Array.Copy(BitConverter.GetBytes(sliceNumber), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, SLICE_NUMBER);
 			CalculateAndAddChecksum(data);
 			_udpClient.Send(data, data.Length, new(client.IP, _port));
 		}

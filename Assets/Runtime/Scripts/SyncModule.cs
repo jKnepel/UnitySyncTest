@@ -1,0 +1,89 @@
+using jKnepel.UnitySync.Networking;
+using System;
+
+namespace jKnepel.UnitySync
+{
+    public abstract class SyncModule
+    {
+		protected readonly uint _moduleHash;
+
+        public SyncModule()
+		{
+            _moduleHash = SyncManager.RegisterModule(this);
+		}
+
+        public abstract void OnReceiveData(SyncConnectedClient client, byte[] data);
+
+        public abstract void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null);
+    }
+
+	public abstract class SyncReliableModule : SyncModule
+	{
+		/// <summary>
+		/// Sends Data over Reliable UDP. This guarantees the arrival of all Data Packets in the correct Order.
+		/// </summary>
+		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
+		/// <param name="receiver">
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
+		/// all Clients receive the Packet.
+		/// </param>
+		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			SyncManager.SendDataReliable(_moduleHash, data, onDataSend, receiver);
+		}
+	}
+
+	public abstract class SyncReliableUnorderedModule : SyncModule
+	{
+		/// <summary>
+		/// Sends Data over Reliable UDP. This guarantees the arrival of all Data Packets without taking the Order into account.
+		/// </summary>
+		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
+		/// <param name="receiver">
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
+		/// all Clients receive the Packet.
+		/// </param>
+		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			SyncManager.SendDataReliableUnordered(_moduleHash, data, onDataSend, receiver);
+		}
+	}
+
+	public abstract class SyncUnreliableModule : SyncModule
+	{
+		/// <summary>
+		/// Sends Data over Unreliable UDP. 
+		/// This ensure arrival of Packets in the correct Order but does not guarantee that all Packets actually arrive.
+		/// The size of the Data array must be below 1200.
+		/// </summary>
+		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
+		/// <param name="receiver">
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
+		/// all Clients receive the Packet.
+		/// </param>
+		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			SyncManager.SendDataUnreliable(_moduleHash, data, onDataSend, receiver);
+		}
+	}
+
+	public abstract class SyncUnreliableUnorderedModule : SyncModule
+	{
+		/// <summary>
+		/// Sends Data over Unreliable UDP. The size of the Data array must be below 1200.
+		/// </summary>
+		/// <param name="data">The serialized Data that should be send.</param>
+		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
+		/// <param name="receiver">
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
+		/// all Clients receive the Packet.
+		/// </param>
+		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			SyncManager.SendDataUnreliableUnordered(_moduleHash, data, onDataSend, receiver);
+		}
+	}
+}

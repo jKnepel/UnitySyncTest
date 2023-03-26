@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using UnityEngine;
 
-namespace jKnepel.UnitySync
+namespace jKnepel.UnitySync.Networking
 {
 	public class SyncConnectedClient
 	{
