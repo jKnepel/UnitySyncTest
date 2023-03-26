@@ -20,7 +20,7 @@ namespace jKnepel.UnitySync.Networking
 					IPEndPoint receiveEndpoint = new(IPAddress.Any, _settings.Port);
 					byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
 					IPAddress sender = receiveEndpoint.Address;
-					if (sender.Equals(_ip) && false)
+					if (sender.Equals(_ip))
 						continue;
 
 					// get bytes used for crc32 check
