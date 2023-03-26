@@ -5,11 +5,26 @@ namespace jKnepel.UnitySync
 {
     public abstract class SyncModule
     {
-		protected readonly uint _moduleHash;
+		protected readonly uint ModuleHash;
+		protected bool IsModuleRegistered
+		{
+			get => SyncManager.IsModuleRegistered(ModuleHash);
+		}
 
         public SyncModule()
 		{
-            _moduleHash = SyncManager.RegisterModule(this);
+            ModuleHash = SyncManager.RegisterModule(this);
+		}
+
+		~SyncModule()
+		{
+			if (IsModuleRegistered)
+				UnregisterModule();
+		}
+
+		public void UnregisterModule()
+		{
+			SyncManager.UnregisterModule(ModuleHash);
 		}
 
         public abstract void OnReceiveData(SyncConnectedClient client, byte[] data);
@@ -30,7 +45,7 @@ namespace jKnepel.UnitySync
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			SyncManager.SendDataReliable(_moduleHash, data, onDataSend, receiver);
+			SyncManager.SendDataReliable(ModuleHash, data, onDataSend, receiver);
 		}
 	}
 
@@ -47,7 +62,7 @@ namespace jKnepel.UnitySync
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			SyncManager.SendDataReliableUnordered(_moduleHash, data, onDataSend, receiver);
+			SyncManager.SendDataReliableUnordered(ModuleHash, data, onDataSend, receiver);
 		}
 	}
 
@@ -66,7 +81,7 @@ namespace jKnepel.UnitySync
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			SyncManager.SendDataUnreliable(_moduleHash, data, onDataSend, receiver);
+			SyncManager.SendDataUnreliable(ModuleHash, data, onDataSend, receiver);
 		}
 	}
 
@@ -83,7 +98,7 @@ namespace jKnepel.UnitySync
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			SyncManager.SendDataUnreliableUnordered(_moduleHash, data, onDataSend, receiver);
+			SyncManager.SendDataUnreliableUnordered(ModuleHash, data, onDataSend, receiver);
 		}
 	}
 }

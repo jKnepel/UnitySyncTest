@@ -261,10 +261,10 @@ namespace jKnepel.UnitySync.Networking
 			return true;
 		}
 
-		public bool DisconnectFromRoom()
+		public void DisconnectFromRoom()
 		{
 			if (!IsConnectedToRoom)
-				return false;
+				return;
 
 			if (_heartbeatThread != null)
 			{
@@ -283,7 +283,7 @@ namespace jKnepel.UnitySync.Networking
 			IsRoomOwner = false;
 			IsConnectedToRoom = false;
 			SyncManager.AddSyncMessage(new("Client Disconnected from Room!"));
-			return true;
+			return;
 		}
 
 		#endregion

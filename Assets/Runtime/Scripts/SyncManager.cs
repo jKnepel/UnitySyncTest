@@ -13,9 +13,6 @@ using UnityEditor;
 
 namespace jKnepel.UnitySync
 {
-#if UNITY_EDITOR
-	[InitializeOnLoad()]
-#endif
 	public static class SyncManager
 	{
 		#region public members
@@ -93,6 +90,16 @@ namespace jKnepel.UnitySync
 			get => IsClientActive 
 				? _client.CurrentRoom.ConnectedClients.Values.ToList()
 				: null;
+		}
+
+		/// <summary>
+		/// If the Client created the Room that they are currently connected to.
+		/// </summary>
+		public static bool IsRoomOwner 
+		{
+			get => IsClientActive
+				? _client.IsRoomOwner
+				: false;
 		}
 
 		public static readonly List<SyncMessage> SyncMessages = new();
@@ -199,78 +206,7 @@ namespace jKnepel.UnitySync
 
 		#region internal methods
 
-		internal static void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataReliable(moduleHash, data, onDataSend, receiver);
-		}
-
-		internal static void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataReliableUnordered(moduleHash, data, onDataSend, receiver);
-		}
-
-		internal static void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			if (data.Length > 1200)
-			{
-				Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataUnreliable(moduleHash, data, onDataSend, receiver);
-		}
-
-		internal static void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			if (data.Length > 1200)
-			{
-				Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataUnreliableUnordered(moduleHash, data, onDataSend, receiver);
-		}
-
-		#endregion
-
-		#region public methods
-
-		/// <summary>
-		/// Retrieves the Settings used for the Sync Client.
-		/// </summary>
-		/// <returns></returns>
-		public static SyncSettings GetSyncSettings()
-		{
-			return SyncSettings.GetOrCreateSettings();
-		}
-
-		public static uint RegisterModule(SyncModule module)
+		internal static uint RegisterModule(SyncModule module)
 		{
 			uint hash = 0;
 			hash ^= (uint)nameof(module).GetHashCode();
@@ -295,6 +231,92 @@ namespace jKnepel.UnitySync
 
 			_registeredModules.Add(hash, module);
 			return hash;
+		}
+
+		internal static void UnregisterModule(uint moduleHash)
+		{
+			if (!_registeredModules.Remove(moduleHash))
+				Debug.LogWarning($"The given Module could not be found!");
+		}
+
+		internal static bool IsModuleRegistered(uint moduleHash)
+		{
+			return _registeredModules.TryGetValue(moduleHash, out _);
+		}
+
+		internal static void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataReliable(moduleHash, data, onDataSend, receiver);
+		}
+
+		internal static void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataReliableUnordered(moduleHash, data, onDataSend, receiver);
+		}
+
+		internal static void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			if (data.Length > 1200)
+			{
+				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataUnreliable(moduleHash, data, onDataSend, receiver);
+		}
+
+		internal static void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			if (data.Length > 1200)
+			{
+				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataUnreliableUnordered(moduleHash, data, onDataSend, receiver);
+		}
+
+		#endregion
+
+		#region public methods
+
+		/// <summary>
+		/// Retrieves the Settings used for the Sync Client.
+		/// </summary>
+		/// <returns></returns>
+		public static SyncSettings GetSyncSettings()
+		{
+			return SyncSettings.GetOrCreateSettings();
 		}
 
 		/// <summary>
@@ -329,18 +351,14 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Disconnects the Client from the Room
 		/// </summary>
-		/// <returns>
-		/// <see langword="true"/> if the Client successfully disconnected from the Room <br/>
-		/// <see langword="false"/> if the Disconnect failed or the Client was already disconnected
-		/// </returns>
-		public static bool DisconnectFromRoom()
+		public static void DisconnectFromRoom()
 		{
 			if (_client == null)
 			{
 				_client = new();
-				return false;
+				return;
 			}
-			return _client.DisconnectFromRoom();
+			_client.DisconnectFromRoom();
 		}
 
 		public static void AddSyncMessage(SyncMessage message)

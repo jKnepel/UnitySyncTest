@@ -35,5 +35,22 @@ namespace jKnepel.UnitySync.Networking
 			ReliableLocalSequence = 0;
 			ReliableRemoteSequence = 0;
 		}
+
+		public override bool Equals(object obj)
+		{
+			if ((obj == null) || !GetType().Equals(obj.GetType()))
+			{
+				return false;
+			}
+			else
+			{
+				return IP.Equals(((SyncConnectedClient)obj).IP);
+			}
+		}
+
+		public override int GetHashCode()
+		{
+			return IPString.GetHashCode();
+		}
 	}
 }
