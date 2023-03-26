@@ -227,19 +227,15 @@ namespace jKnepel.UnitySync
 		/// Connect to a Room or create a new one. Membership in a Room is required before Data can be send.
 		/// </summary>
 		/// <param name="roomname">Name of the Room</param>
-		/// <param name="scenename">
-		/// Name of the Scene that should be synced upon creation of the Room.
-		/// If the client joins a Room, this will become the Name of the temporary Scene.
-		/// </param>
 		/// <param name="createroom">Wether an existing Room should be joined or a new Room should be created.</param>
 		/// <returns><see langword="true"/> if the Client successfully connected to the Room</returns>
-		public static bool ConnectToRoom(string roomname, string scenename, bool createroom = false)
+		public static bool ConnectToRoom(string roomname, bool createroom = false)
 		{
 			if (_client == null)
 			{
 				_client = new();
 			}
-			return _client.ConnectToRoom(roomname, scenename, createroom);
+			return _client.ConnectToRoom(roomname, createroom);
 		}
 
 		/// <summary>

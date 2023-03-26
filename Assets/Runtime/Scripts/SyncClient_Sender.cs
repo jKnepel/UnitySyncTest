@@ -7,12 +7,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.ExceptionServices;
-using UnityGLTF;
-using Toph.GLTFSerializer.Components;
 using UnityEngine;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 namespace jKnepel.UnitySync
 {
@@ -80,7 +75,8 @@ namespace jKnepel.UnitySync
 				if (_packetsToSend.Count == 0 || !_packetsToSend.TryPeek(out SyncSenderPacket packet))
 					continue;
 
-				if (packet.IsChunked && !SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))
+				if (packet.IsChunked 
+					&& (packet.Type == SyncPacketType.UnreliableData || packet.Type == SyncPacketType.UnreliableUnorderedData))
 				{
 					Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
 					packet.OnDataSend?.Invoke(false);
@@ -129,13 +125,13 @@ namespace jKnepel.UnitySync
 				// add sequence number and checksum for each client and send packet to them
 				foreach (SyncConnectedClient client in clients)
 				{
-					if (SyncPacketChannels.UnreliableSyncPackets.Contains(packet.Type))
+					if (IsUnreliableData(packet.Type))
 					{   // handle unreliable packets
 						if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
 							client.UnreliableLocalSequence++;
 						Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
 					}
-					else
+					else if (IsReliableData(packet.Type))
 					{   // handle reliable packets
 						if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
 							client.ReliableLocalSequence++;
@@ -153,7 +149,7 @@ namespace jKnepel.UnitySync
 						client.SendSlicesBuffer.TryAdd((client.ReliableLocalSequence, packet.CurrentSliceNumber), data);
 						_ = ResendSliceData(client, (client.ReliableLocalSequence, packet.CurrentSliceNumber), 0);
 					}
-					else if (SyncPacketChannels.ReliableSyncPackets.Contains(packet.Type))
+					else if (IsReliableData(packet.Type))
 					{   // save reliable packets in buffer in case of resends
 						client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
 						_ = ResendPacketData(client, client.ReliableLocalSequence, 0);
@@ -211,76 +207,6 @@ namespace jKnepel.UnitySync
 			Array.Copy(BitConverter.GetBytes(sliceNumber), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + DATA_TYPE_LENGTH, SLICE_NUMBER);
 			CalculateAndAddChecksum(data);
 			_udpClient.Send(data, data.Length, new(client.IP, _port));
-		}
-
-		#endregion
-
-		#region find updates
-
-#if UNITY_EDITOR
-		private void ChangesPublished(ref ObjectChangeEventStream stream)
-		{
-			ChangeGameObjectOrComponentPropertiesEventArgs obj;
-			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
-			if (obj.scene == _settings.SyncScene)
-			{
-				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
-				GameObject go;
-				try { go = ((Component)o).gameObject; }
-				catch (InvalidCastException) { go = (GameObject)o; }
-				SendHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
-
-				// Limit hierarchy syncs
-				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(_settings.EditorUpdatesDelay)
-					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
-			}
-
-			// TODO : add functionality for sending hierarchy only on hierarchy changes
-			// TODO : support all kinds of changesPublished
-			// TODO : add flag for turning off automatic update sync in editor
-		}
-
-		private async void SendHierarchy(GameObject go)
-		{
-			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
-			byte[] bytes = await gltf.SerializeGameObject(new ExportOptions());
-			_packetsToSend.Enqueue(new(SyncPacketType.Hierarchy, bytes));
-		}
-#endif
-
-		private void CurrentCameraMoved(Transform camera)
-		{
-			// limit camera syncs
-			if (_cameraUpdateDelay < _settings.ClientVisualizerUpdateDelay)
-			{
-				camera.hasChanged = false;
-				return;
-			}
-
-			if (_lastCameraPosition != null
-				&& camera.position.Equals(_lastCameraPosition)
-				&& camera.eulerAngles.Equals(_lastCameraRotation))
-			{
-				camera.hasChanged = false;
-				return;
-			}
-
-			// TODO : combine de-/serializer
-			// TODO : optimize this
-			byte[] bytes = new byte[sizeof(float) * 6];
-			Array.Copy(BitConverter.GetBytes(camera.position.x), 0, bytes, 0 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.position.y), 0, bytes, 1 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.position.z), 0, bytes, 2 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.x), 0, bytes, 3 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.y), 0, bytes, 4 * sizeof(float), sizeof(float));
-			Array.Copy(BitConverter.GetBytes(camera.eulerAngles.z), 0, bytes, 5 * sizeof(float), sizeof(float));
-			_packetsToSend.Enqueue(new(SyncPacketType.ClientCamera, bytes));
-
-			_lastCameraPosition = camera.position;
-			_lastCameraRotation = camera.eulerAngles;
-			camera.hasChanged = false;
-			_cameraUpdateDelay = 0;
 		}
 
 		#endregion

@@ -105,7 +105,7 @@ namespace jKnepel.UnitySync
                                     GUILayout.Label(room.Roomname);
                                     GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
                                     if (GUILayout.Button(new GUIContent("Connect To Room"), GUILayout.ExpandWidth(false)))
-                                        SyncManager.ConnectToRoom(room.Roomname, _settings.ImportSceneName);
+                                        SyncManager.ConnectToRoom(room.Roomname);
                                 }
                                 EditorGUILayout.EndHorizontal();
                             }
@@ -125,7 +125,7 @@ namespace jKnepel.UnitySync
                                 _newRoomName = EditorGUILayout.TextField("Roomname:", _newRoomName);
                                 _newRoomDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", _newRoomDropdownIndex, sceneNames);
                                 if (GUILayout.Button(new GUIContent("Create")))
-                                    SyncManager.ConnectToRoom(_newRoomName, sceneNames[_newRoomDropdownIndex], true);
+                                    SyncManager.ConnectToRoom(_newRoomName, true);
                             }
                             EditorGUILayout.EndVertical();
                         }

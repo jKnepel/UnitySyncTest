@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
@@ -9,11 +8,6 @@ using System.Text;
 using System.Threading;
 using System.Runtime.ExceptionServices;
 using UnityEngine;
-using UnityEngine.SceneManagement;
-#if UNITY_EDITOR
-using UnityEditor;
-using UnityEditor.SceneManagement;
-#endif
 
 namespace jKnepel.UnitySync
 {
@@ -29,7 +23,7 @@ namespace jKnepel.UnitySync
 		private const int DATA_TYPE_LENGTH = 1; // id of the packet type
 		private const int SEQUENCE_ID_LENGTH = 2; // sequence id for preventing old updates to be consumed
 		private const int NUMBER_OF_SLICES = 2; // flag showing the number of packets the chunk consists of
-		private const int SLICE_NUMBER = 2; // number of the current slice
+		private const int SLICE_NUMBER = NUMBER_OF_SLICES; // number of the current slice
 
 		// data
 		// private const int DATA_FLAG_LENGTH = 2; // flag containing data length
@@ -56,12 +50,6 @@ namespace jKnepel.UnitySync
 		private readonly ConcurrentQueue<Action> _mainThreadActions = new();
 		private readonly ConcurrentQueue<SyncSenderPacket> _packetsToSend = new();
 		private readonly ConcurrentQueue<SyncReceiverPacket> _receivedPackets = new();
-
-		private Vector3 _lastCameraPosition;
-		private Vector3 _lastCameraRotation;
-		private int _cameraUpdateDelay = _settings.ClientVisualizerUpdateDelay;
-
-		private GameObject _selectedGameObject;
 
 		#endregion
 
@@ -122,16 +110,6 @@ namespace jKnepel.UnitySync
 
 				_udpClient = new(_settings.Port);
 				_udpClient.EnableBroadcast = true;
-
-				if (_settings.SyncParentContainer != null)
-				{
-#if UNITY_EDITOR
-					GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
-#else
-					GameObject.Destroy(_settings.SyncParentContainer.gameObject);
-#endif
-					_settings.SyncParentContainer = null;
-				}
 
 				SyncManager.OnUpdate += Update;
 
@@ -214,31 +192,7 @@ namespace jKnepel.UnitySync
 
 				if (disposing)
 				{
-#if UNITY_EDITOR
-					Selection.selectionChanged -= SelectionChanged;
-					ObjectChangeEvents.changesPublished -= ChangesPublished;
-					EditorApplication.playModeStateChanged -= PreventPlayMode;
-#endif
 					SyncManager.OnUpdate -= Update;
-
-					if (_settings.SyncParentContainer != null)
-					{
-#if UNITY_EDITOR
-						GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
-#else
-						GameObject.Destroy(_settings.SyncParentContainer.gameObject);
-#endif
-						_settings.SyncParentContainer = null;
-					}
-
-					if (!IsRoomOwner && !_settings.KeepSyncScene && _settings.SyncScene.IsValid())
-					{
-#if UNITY_EDITOR
-						EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
-#else
-						SceneManager.UnloadSceneAsync(_settings.SyncScene);
-#endif
-					}
 				}
 			}
 		}
@@ -257,9 +211,6 @@ namespace jKnepel.UnitySync
 				{
 					switch (packet.Type)
 					{
-						case SyncPacketType.ClientCamera:
-							UpdateClientVisualizer(packet);
-							break;
 						case SyncPacketType.ReliableData:
 							ReceiveReliableData(packet);
 							break;
@@ -272,39 +223,19 @@ namespace jKnepel.UnitySync
 						case SyncPacketType.UnreliableUnorderedData:
 							ReceiveUnreliableUnorderedData(packet);
 							break;
-						case SyncPacketType.Hierarchy:
-							ImportHierarchy(packet.Data);
-							break;
 						default: break;
 					}
 				}
 			}
-
-			_cameraUpdateDelay++;
-#if UNITY_EDITOR
-			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
-				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
-#else
-			if (Camera.current.transform && Camera.current.transform.hasChanged)
-				CurrentCameraMoved(Camera.current.transform);
-#endif
 		}
 
-		public bool ConnectToRoom(string roomname, string scenename, bool createroom = false)
+		public bool ConnectToRoom(string roomname, bool createroom = false)
 		{
 			if (IsConnectedToRoom)
 			{
 				Debug.LogWarning($"The client is already connected!");
 				return false;
 			}
-
-#if UNITY_EDITOR
-			if (EditorApplication.isPlaying)
-			{
-				Debug.LogWarning($"Can't connect to room while Editor is in Playmode!");
-				return false;
-			}
-#endif
 
 			if (roomname.Length > 100 || _settings.Username.Length > 100)
 			{
@@ -319,7 +250,6 @@ namespace jKnepel.UnitySync
 			}
 
 			// create/save scene if room is joined/created
-			Scene scene = SceneManager.GetSceneByName(scenename);
 			if (createroom)
 			{
 				if (OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
@@ -327,12 +257,6 @@ namespace jKnepel.UnitySync
 					Debug.LogWarning($"The Room {roomname} already exists!");
 					return false;
 				}
-				if (!scene.IsValid() && !scene.isLoaded)
-				{
-					Debug.LogWarning($"The Scene {scenename} is not valid!");
-					return false;
-				}
-				_settings.SyncScene = scene;
 				CurrentRoom = new(roomname);
 				OpenRooms.TryAdd(CurrentRoom.Roomname, CurrentRoom);
 				IsRoomOwner = true;
@@ -344,35 +268,17 @@ namespace jKnepel.UnitySync
 					Debug.LogWarning($"The Room {roomname} doesn't exist yet!");
 					return false;
 				}
-				if (scene.IsValid() || scene.isLoaded)
-				{
-					Debug.LogWarning($"The Scene {scenename} already exists!");
-					return false;
-				}
 
-#if UNITY_EDITOR
-				_settings.SyncScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-				_settings.SyncScene.name = scenename;
-#else
-				_settings.SyncScene = SceneManager.CreateScene(scenename);
-#endif
 				CurrentRoom = room;
 				IsRoomOwner = false;
 				// TODO : announce myself to room
 			}
-			SceneManager.SetActiveScene(_settings.SyncScene);
-			_settings.SyncParentContainer = new GameObject("Cient Visualizer Parent").transform;
-
+			
 			_heartbeatThread = new(() => HeartbeatThread()) { IsBackground = true };
 			_heartbeatThread.Start();
 			_senderThread = new(() => SenderThread()) { IsBackground = true };
 			_senderThread.Start();
 
-#if UNITY_EDITOR
-			//Selection.selectionChanged += SelectionChanged;
-			ObjectChangeEvents.changesPublished += ChangesPublished;
-			EditorApplication.playModeStateChanged += PreventPlayMode;
-#endif
 			SyncManager.OnUpdate += Update;
 			IsConnectedToRoom = true;
 			SyncManager.AddSyncMessage(new("Client connected to Room!"));
@@ -393,31 +299,6 @@ namespace jKnepel.UnitySync
 			{
 				_senderThread.Abort();
 				_senderThread.Join();
-			}
-
-#if UNITY_EDITOR
-			Selection.selectionChanged -= SelectionChanged;
-			ObjectChangeEvents.changesPublished -= ChangesPublished;
-			EditorApplication.playModeStateChanged -= PreventPlayMode;
-#endif
-
-			if (_settings.SyncParentContainer != null)
-			{
-#if UNITY_EDITOR
-				GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
-#else
-				GameObject.Destroy(_settings.SyncParentContainer.gameObject);
-#endif
-				_settings.SyncParentContainer = null;
-			}
-
-			if (!IsRoomOwner && !_settings.KeepSyncScene && _settings.SyncScene.IsValid())
-			{
-#if UNITY_EDITOR
-				EditorSceneManager.UnloadSceneAsync(_settings.SyncScene);
-#else
-                SceneManager.UnloadSceneAsync(_settings.SyncScene);
-#endif
 			}
 
 			if (CurrentRoom.ConnectedClients.Count == 0)
@@ -523,9 +404,19 @@ namespace jKnepel.UnitySync
 				&& CurrentRoom.ConnectedClients.TryGetValue(receiver.IP, out _);
 		}
 
-		private bool IsASCIIString(string str)
+		private static bool IsASCIIString(string str)
 		{
 			return (Encoding.UTF8.GetByteCount(str)) == str.Length;
+		}
+
+		private static bool IsUnreliableData(SyncPacketType type)
+		{
+			return type == SyncPacketType.UnreliableData || type == SyncPacketType.UnreliableUnorderedData;
+		}
+		
+		private static bool IsReliableData(SyncPacketType type)
+		{
+			return type == SyncPacketType.ReliableData || type == SyncPacketType.ReliableUnorderedData;
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
@@ -537,62 +428,6 @@ namespace jKnepel.UnitySync
 			Array.Copy(array, offset, bytes, 0, size);
 			return bytes;
 		}
-
-#if UNITY_EDITOR
-		// NOTE : test method for when object highlighting is implemented over network
-		private void SelectionChanged()
-		{
-			// remove highlighting from old selection
-			// TODO : doesnt work when leaving room
-			if (_selectedGameObject != null)
-			{
-				Renderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
-				for (int i = renderer.sharedMaterials.Length - 1; i >= 0; i--)
-				{
-					if (renderer.sharedMaterials[i].name.Equals(_settings.HighlightMaterial.name))
-					{
-						Material[] materials = new Material[renderer.sharedMaterials.Length - 1];
-						if (i > 0)
-							Array.Copy(renderer.sharedMaterials, 0, materials, 0, i);
-						if (i < renderer.sharedMaterials.Length - 1)
-							Array.Copy(renderer.sharedMaterials, i + 1, materials, i, renderer.sharedMaterials.Length - i - 1);
-						renderer.sharedMaterials = materials;
-						break;
-					}
-				}
-			}
-
-			// highlight selected object
-			// TODO : doesnt work on gameobjects without renderer
-			GameObject selection = Selection.activeGameObject;
-			if (selection != null && selection.scene == _settings.SyncScene)
-			{
-				_selectedGameObject = selection;
-				MeshRenderer renderer = _selectedGameObject.GetComponent<MeshRenderer>();
-				Material[] materials = new Material[renderer.sharedMaterials.Length + 1];
-				renderer.sharedMaterials.CopyTo(materials, 0);
-				Material newMaterial = new(_settings.HighlightMaterial);
-				newMaterial.SetColor("_Color", _settings.Color);
-#if UNITY_EDITOR
-				newMaterial.SetFloat("_Width", 1f);
-#else
-				newMaterial.SetFloat("_Width", 0.1f);
-#endif
-				materials[^1] = newMaterial;
-				renderer.sharedMaterials = materials;
-			}
-			else
-			{
-				_selectedGameObject = null;
-			}
-		}
-
-		private static void PreventPlayMode(PlayModeStateChange state)
-		{
-			if (state == PlayModeStateChange.ExitingEditMode)
-				EditorApplication.isPlaying = false;
-		}
-#endif
 
 		private static void DebugByteMessage(byte[] bytes, string msg, bool inBinary = false)
 		{
