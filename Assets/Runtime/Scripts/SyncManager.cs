@@ -3,6 +3,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -28,24 +29,34 @@ namespace jKnepel.UnitySync
 		public static Action OnSyncMessageAdded;
 
 		/// <summary>
-		/// Action for when the Client successfully connected to the Network and is able to discover and join Rooms.
+		/// Action for when the local Client successfully connected to the Network and is able to discover and join Rooms.
 		/// </summary>
-		public static Action OnClientConnected;
+		public static Action OnLocalClientConnected;
 
 		/// <summary>
-		/// Action for when the Client was disconnected from the Network and is now unable to discover and join Rooms.
+		/// Action for when the local Client was disconnected from the Network and is now unable to discover and join Rooms.
 		/// </summary>
-		public static Action OnClientDisconnected;
+		public static Action OnLocalClientDisconnected;
 
 		/// <summary>
-		/// Action for when the Client connected to a Room and can now send Messages.
+		/// Action for when the local Client connected to a Room and can now send Messages.
 		/// </summary>
 		public static Action OnConnectedToRoom;
 
 		/// <summary>
-		/// Action for when the Client disconnected from a Room and can no longer send any Messages.
+		/// Action for when the local Client disconnected from a Room and can no longer send any Messages.
 		/// </summary>
 		public static Action OnDisconnectedFromRoom;
+
+		/// <summary>
+		/// Action for when a Client connected to the current Room and can now receive Messages.
+		/// </summary>
+		public static Action<IPAddress> OnClientConnected;
+
+		/// <summary>
+		/// Action for when a Client disconnected from the current Room and can no longer receive any Messages.
+		/// </summary>
+		public static Action<IPAddress> OnClientDisconnected;
 
 		/// <summary>
 		/// If the Client is connected to the Network and able to discover Rooms.

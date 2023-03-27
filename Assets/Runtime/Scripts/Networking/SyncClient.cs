@@ -62,11 +62,11 @@ namespace jKnepel.UnitySync.Networking
 			{
 				_isClientActive = value;
 				if (value)
-					SyncManager.OnClientConnected?.Invoke();
+					SyncManager.OnLocalClientConnected?.Invoke();
 				else
 				{
 					Dispose();
-					SyncManager.OnClientDisconnected?.Invoke();
+					SyncManager.OnLocalClientDisconnected?.Invoke();
 				}
 			} 
 		}
@@ -294,6 +294,7 @@ namespace jKnepel.UnitySync.Networking
 		{
 			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
+				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
 				onDataSend?.Invoke(false);
 				return;
 			}
@@ -305,6 +306,7 @@ namespace jKnepel.UnitySync.Networking
 		{
 			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
+				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
 				onDataSend?.Invoke(false);
 				return;
 			}
@@ -316,6 +318,7 @@ namespace jKnepel.UnitySync.Networking
 		{
 			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
+				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
 				onDataSend?.Invoke(false);
 				return;
 			}
@@ -327,6 +330,7 @@ namespace jKnepel.UnitySync.Networking
 		{
 			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
 			{
+				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
 				onDataSend?.Invoke(false);
 				return;
 			}
