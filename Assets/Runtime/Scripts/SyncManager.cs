@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
+using System.Text;
 using System.Reflection;
 using UnityEngine;
 #if UNITY_EDITOR
@@ -208,21 +209,26 @@ namespace jKnepel.UnitySync
 
 		internal static uint RegisterModule(SyncModule module)
 		{
-			uint hash = 0;
-			hash ^= (uint)nameof(module).GetHashCode();
+			string moduleValues = nameof(module);
 			foreach (var f in module.GetType().GetMembers(BindingFlags.Public | BindingFlags.NonPublic))
 			{
 				if (f.MemberType == MemberTypes.Field || (f.MemberType & MemberTypes.Property) != 0)
 				{
-					// TODO : implement custom hashcode method
-					hash ^= (uint)f.Name.GetHashCode();
+					moduleValues += f.Name;
 				}
 
 				if (f is FieldInfo fi)
 				{
-					hash ^= (uint)fi.FieldType.Name.GetHashCode();
+					moduleValues += fi.FieldType.Name;
+				}
+
+				if (f.MemberType == MemberTypes.Method)
+				{
+					moduleValues += f.Name;
 				}
 			}
+			uint hash = SyncCRC32.CRC32Bytes(Encoding.ASCII.GetBytes(moduleValues));
+
 			if (_registeredModules.TryGetValue(hash, out _))
 			{
 				Debug.LogError("Only one Module of each type can be registered!");
