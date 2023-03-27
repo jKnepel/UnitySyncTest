@@ -72,8 +72,6 @@ namespace jKnepel.UnitySync
 
 		// debug settings
 		public int Port = 26822;
-		private readonly string _syncLocalScenename = "UnitySync Local Objects";
-		public string SyncLocalScenename { get => _syncLocalScenename; }
 
         // prefabs
         public SyncClientVisualizer ClientVisualizer;

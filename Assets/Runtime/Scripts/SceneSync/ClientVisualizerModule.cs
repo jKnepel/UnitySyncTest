@@ -23,13 +23,12 @@ namespace jKnepel.UnitySync.SceneSync
 
 		#region lifecycle
 
-		public ClientVisualizerModule() : base()
+		public ClientVisualizerModule(Transform parent) : base()
 		{
 			SyncManager.OnUpdate += Update;
 			SyncManager.OnClientDisconnected += RemoveConnectedClient;
 
-			_visualizerParent = new GameObject().transform;
-			_visualizerParent.name = "SceneSync Visualizer Parent";
+			_visualizerParent = parent;
 		}
 
 		~ClientVisualizerModule()
@@ -42,12 +41,8 @@ namespace jKnepel.UnitySync.SceneSync
 			SyncManager.OnUpdate -= Update;
 			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
 
-#if UNITY_EDITOR
-			GameObject.DestroyImmediate(_visualizerParent.gameObject);
-#else
-			GameObject.Destroy(_visualizerParent.gameObject);
-#endif
-			UnregisterModule();
+			if (IsModuleRegistered)
+				UnregisterModule();
 		}
 
 		public void Update()

@@ -9,10 +9,28 @@ namespace jKnepel.UnitySync.SceneSync
 {
     public static class SceneSyncManager
     {
-		private static SyncSettings _settings = SyncManager.GetSyncSettings();
+		private readonly static SyncSettings _settings = SyncManager.GetSyncSettings();
+
         private static ClientVisualizerModule _clientVisualizerModule;
 
+		#region lifecycle
+
+		static SceneSyncManager()
+		{
+			if (_settings.SyncParentContainer != null)
+			{
+#if UNITY_EDITOR
+				GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
+#else
+			GameObject.Destroy(_settings.SyncParentContainer.gameObject);
+#endif
+				_settings.SyncParentContainer = null;
+			}
+		}
+
         public static void Init() { }
+
+		#endregion
 
 		#region public methods
 
@@ -74,7 +92,9 @@ namespace jKnepel.UnitySync.SceneSync
 				return false;
 			}
 
-			_clientVisualizerModule = new();
+			_settings.SyncParentContainer = new GameObject().transform;
+			_settings.SyncParentContainer.name = "SceneSync Visualizer Parent";
+			_clientVisualizerModule = new(_settings.SyncParentContainer);
 
 #if UNITY_EDITOR
 			//Selection.selectionChanged += SelectionChanged;
@@ -100,8 +120,16 @@ namespace jKnepel.UnitySync.SceneSync
                 SceneManager.UnloadSceneAsync(_settings.SyncScene);
 #endif
 			}
+
 			_clientVisualizerModule.Dispose();
 			_clientVisualizerModule = null;
+
+#if UNITY_EDITOR
+			GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
+#else
+			GameObject.Destroy(_settings.SyncParentContainer.gameObject);
+#endif
+			_settings.SyncParentContainer = null;
 
 			SyncManager.DisconnectFromRoom();
 			return;
