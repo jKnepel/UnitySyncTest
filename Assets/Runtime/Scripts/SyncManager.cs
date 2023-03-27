@@ -1,9 +1,13 @@
+using jKnepel.UnitySync.Networking;
 using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
+using System.Text;
+using System.Reflection;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -11,9 +15,6 @@ using UnityEditor;
 
 namespace jKnepel.UnitySync
 {
-#if UNITY_EDITOR
-	[InitializeOnLoad()]
-#endif
 	public static class SyncManager
 	{
 		#region public members
@@ -28,44 +29,34 @@ namespace jKnepel.UnitySync
 		public static Action OnSyncMessageAdded;
 
 		/// <summary>
-		/// Action for when the Client successfully connected to the Network and is able to discover and join Rooms.
+		/// Action for when the local Client successfully connected to the Network and is able to discover and join Rooms.
 		/// </summary>
-		public static Action OnClientConnected;
+		public static Action OnLocalClientConnected;
 
 		/// <summary>
-		/// Action for when the Client was disconnected from the Network and is now unable to discover and join Rooms.
+		/// Action for when the local Client was disconnected from the Network and is now unable to discover and join Rooms.
 		/// </summary>
-		public static Action OnClientDisconnected;
+		public static Action OnLocalClientDisconnected;
 
 		/// <summary>
-		/// Action for when the Client connected to a Room and can now send Messages.
+		/// Action for when the local Client connected to a Room and can now send Messages.
 		/// </summary>
 		public static Action OnConnectedToRoom;
 
 		/// <summary>
-		/// Action for when the Client disconnected from a Room and can no longer send any Messages.
+		/// Action for when the local Client disconnected from a Room and can no longer send any Messages.
 		/// </summary>
 		public static Action OnDisconnectedFromRoom;
 
 		/// <summary>
-		/// Action for when the Client received reliable Data from a Client.
+		/// Action for when a Client connected to the current Room and can now receive Messages.
 		/// </summary>
-		public static Action<byte[]> OnReliableDataReceived;
+		public static Action<IPAddress> OnClientConnected;
 
 		/// <summary>
-		/// Action for when the Client received reliable unordered Data from a Client.
+		/// Action for when a Client disconnected from the current Room and can no longer receive any Messages.
 		/// </summary>
-		public static Action<byte[]> OnReliableUnorderedDataReceived;
-
-		/// <summary>
-		/// Action for when the Client received unreliable Data from a Client.
-		/// </summary>
-		public static Action<byte[]> OnUnreliableDataReceived;
-
-		/// <summary>
-		/// Action for when the Client received unreliable unordered Data from a Client.
-		/// </summary>
-		public static Action<byte[]> OnUnreliableUnorderedDataReceived;
+		public static Action<IPAddress> OnClientDisconnected;
 
 		/// <summary>
 		/// If the Client is connected to the Network and able to discover Rooms.
@@ -113,13 +104,31 @@ namespace jKnepel.UnitySync
 				: null;
 		}
 
+		/// <summary>
+		/// If the Client created the Room that they are currently connected to.
+		/// </summary>
+		public static bool IsRoomOwner 
+		{
+			get => IsClientActive
+				? _client.IsRoomOwner
+				: false;
+		}
+
 		public static readonly List<SyncMessage> SyncMessages = new();
+
+		#endregion
+
+		#region internal members
+
+		public static Action<uint, SyncConnectedClient, byte[]> DataReceived;
 
 		#endregion
 
 		#region private members
 
 		private static SyncClient _client;
+
+		private readonly static Dictionary<uint, SyncModule> _registeredModules = new();
 
 		private static readonly ConcurrentQueue<Action> _mainThreadActions = new();
 
@@ -139,6 +148,7 @@ namespace jKnepel.UnitySync
 			SyncRuntimeManager.Instance.OnUpdate += Update;
 #endif
 
+			DataReceived += OnDataReceived;
 			_client = new();
 		}
 
@@ -196,6 +206,123 @@ namespace jKnepel.UnitySync
 			return ipAddress;
 		}
 
+		private static void OnDataReceived(uint moduleHash, SyncConnectedClient client, byte[] data)
+		{
+			if (_registeredModules.TryGetValue(moduleHash, out SyncModule module))
+			{
+				_mainThreadActions.Enqueue(() => module.OnReceiveData(client, data));
+			}
+		}
+
+		#endregion
+
+		#region internal methods
+
+		internal static uint RegisterModule(SyncModule module)
+		{
+			string moduleValues = nameof(module);
+			foreach (var f in module.GetType().GetMembers(BindingFlags.Public | BindingFlags.NonPublic))
+			{
+				if (f.MemberType == MemberTypes.Field || (f.MemberType & MemberTypes.Property) != 0)
+				{
+					moduleValues += f.Name;
+				}
+
+				if (f is FieldInfo fi)
+				{
+					moduleValues += fi.FieldType.Name;
+				}
+
+				if (f.MemberType == MemberTypes.Method)
+				{
+					moduleValues += f.Name;
+				}
+			}
+			uint hash = SyncCRC32.CRC32Bytes(Encoding.ASCII.GetBytes(moduleValues));
+
+			if (_registeredModules.TryGetValue(hash, out _))
+			{
+				Debug.LogError("Only one Module of each type can be registered!");
+				return 0;
+			}
+
+			_registeredModules.Add(hash, module);
+			return hash;
+		}
+
+		internal static void UnregisterModule(uint moduleHash)
+		{
+			if (!_registeredModules.Remove(moduleHash))
+				Debug.LogWarning($"The given Module could not be found!");
+		}
+
+		internal static bool IsModuleRegistered(uint moduleHash)
+		{
+			return _registeredModules.TryGetValue(moduleHash, out _);
+		}
+
+		internal static void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataReliable(moduleHash, data, onDataSend, receiver);
+		}
+
+		internal static void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataReliableUnordered(moduleHash, data, onDataSend, receiver);
+		}
+
+		internal static void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			if (data.Length > 1200)
+			{
+				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataUnreliable(moduleHash, data, onDataSend, receiver);
+		}
+
+		internal static void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		{
+			if (!IsClientActive || !IsConnectedToRoom)
+			{
+				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			if (data.Length > 1200)
+			{
+				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			_client.SendDataUnreliableUnordered(moduleHash, data, onDataSend, receiver);
+		}
+
 		#endregion
 
 		#region public methods
@@ -227,136 +354,28 @@ namespace jKnepel.UnitySync
 		/// Connect to a Room or create a new one. Membership in a Room is required before Data can be send.
 		/// </summary>
 		/// <param name="roomname">Name of the Room</param>
-		/// <param name="scenename">
-		/// Name of the Scene that should be synced upon creation of the Room.
-		/// If the client joins a Room, this will become the Name of the temporary Scene.
-		/// </param>
 		/// <param name="createroom">Wether an existing Room should be joined or a new Room should be created.</param>
 		/// <returns><see langword="true"/> if the Client successfully connected to the Room</returns>
-		public static bool ConnectToRoom(string roomname, string scenename, bool createroom = false)
+		public static bool ConnectToRoom(string roomname, bool createroom = false)
 		{
 			if (_client == null)
 			{
 				_client = new();
 			}
-			return _client.ConnectToRoom(roomname, scenename, createroom);
+			return _client.ConnectToRoom(roomname, createroom);
 		}
 
 		/// <summary>
 		/// Disconnects the Client from the Room
 		/// </summary>
-		/// <returns>
-		/// <see langword="true"/> if the Client successfully disconnected from the Room <br/>
-		/// <see langword="false"/> if the Disconnect failed or the Client was already disconnected
-		/// </returns>
-		public static bool DisconnectFromRoom()
+		public static void DisconnectFromRoom()
 		{
 			if (_client == null)
 			{
 				_client = new();
-				return false;
-			}
-			return _client.DisconnectFromRoom();
-		}
-
-		// TODO : add manual sync Hierarchy
-
-		// TODO : add manual delete Hierarchy
-
-		// TODO : add manual sync GameObject
-
-		// TODO : add manual delete GameObject
-
-		// TODO : add manual sync Component
-
-		// TODO : add manual delete Component
-
-		/// <summary>
-		/// Sends Data over Reliable UDP. This guarantees the arrival of all Data Packets in the correct Order.
-		/// </summary>
-		/// <param name="data">The serialized Data that should be send.</param>
-		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
-		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
-		/// </param>
-		public static void SendDataReliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
 				return;
 			}
-
-			_client.SendDataReliable(data, onDataSend, receiver);
-		}
-
-		/// <summary>
-		/// Sends Data over Reliable UDP. This guarantees the arrival of all Data Packets without taking the Order into account.
-		/// </summary>
-		/// <param name="data">The serialized Data that should be send.</param>
-		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
-		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
-		/// </param>
-		public static void SendDataReliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataReliableUnordered(data, onDataSend, receiver);
-		}
-
-		/// <summary>
-		/// Sends Data over Unreliable UDP. 
-		/// This ensure arrival of Packets in the correct Order but does not guarantee that all Packets actually arrive.
-		/// It is recommended to keep the size of the Data array below 1200, since anything over this threshold will create a 
-		/// chunked Packet, slowing down the transmission.
-		/// </summary>
-		/// <param name="data">The serialized Data that should be send.</param>
-		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
-		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
-		/// </param>
-		public static void SendDataUnreliable(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			if (data.Length > 1200)
-			{
-				Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataUnreliable(data, onDataSend, receiver);
-		}
-
-		public static void SendDataUnreliableUnordered(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			if (data.Length > 1200)
-			{
-				Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataUnreliableUnordered(data, onDataSend, receiver);
+			_client.DisconnectFromRoom();
 		}
 
 		public static void AddSyncMessage(SyncMessage message)

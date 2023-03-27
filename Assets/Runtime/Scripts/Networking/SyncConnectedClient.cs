@@ -3,14 +3,13 @@ using System.Collections.Concurrent;
 using System.Net;
 using UnityEngine;
 
-namespace jKnepel.UnitySync
+namespace jKnepel.UnitySync.Networking
 {
 	public class SyncConnectedClient
 	{
 		public IPAddress IP { get; private set; }
 		public string IPString { get; private set; }
 		public string Username { get; set; }
-		public SyncClientVisualizer Visualizer { get; set; }
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
@@ -28,7 +27,6 @@ namespace jKnepel.UnitySync
 			IP = ip;
 			IPString = ip.ToString();
 			Username = username;
-			Visualizer = null;
 			Color = color;
 			LastHeartbeat = DateTime.Now;
 
@@ -38,19 +36,21 @@ namespace jKnepel.UnitySync
 			ReliableRemoteSequence = 0;
 		}
 
-		public void Dispose()
+		public override bool Equals(object obj)
 		{
+			if ((obj == null) || !GetType().Equals(obj.GetType()))
+			{
+				return false;
+			}
+			else
+			{
+				return IP.Equals(((SyncConnectedClient)obj).IP);
+			}
+		}
 
-
-			if (Visualizer == null)
-				return;
-
-#if UNITY_EDITOR
-			GameObject.DestroyImmediate(Visualizer.gameObject);
-#else
-			GameObject.Destroy(Visualizer.gameObject);
-#endif
-			Visualizer = null;
+		public override int GetHashCode()
+		{
+			return IPString.GetHashCode();
 		}
 	}
 }

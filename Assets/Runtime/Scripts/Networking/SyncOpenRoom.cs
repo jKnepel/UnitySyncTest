@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Collections.Concurrent;
 
-namespace jKnepel.UnitySync
+namespace jKnepel.UnitySync.Networking
 {
     public class SyncOpenRoom
     {

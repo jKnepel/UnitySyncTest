@@ -1,3 +1,4 @@
+using jKnepel.UnitySync.SceneSync;
 using UnityEngine;
 using UnityEditor;
 
