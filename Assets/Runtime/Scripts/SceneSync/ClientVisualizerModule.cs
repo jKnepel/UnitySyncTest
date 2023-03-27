@@ -1,6 +1,7 @@
 using jKnepel.UnitySync.Networking;
 using System;
 using System.Collections.Generic;
+using System.Net;
 using UnityEngine;
 #if UNITY_EDITOR
 using UnityEditor;
@@ -18,9 +19,15 @@ namespace jKnepel.UnitySync.SceneSync
 		private Vector3 _lastCameraRotation;
 		private int _cameraUpdateDelay = _settings.ClientVisualizerUpdateDelay;
 
+		private Transform _visualizerParent;
+
 		public ClientVisualizerModule() : base()
 		{
 			SyncManager.OnUpdate += Update;
+			SyncManager.OnClientDisconnected += RemoveConnectedClient;
+
+			_visualizerParent = new GameObject().transform;
+			_visualizerParent.name = "SceneSync Visualizer Parent";
 		}
 
 		public void Update()
@@ -37,19 +44,32 @@ namespace jKnepel.UnitySync.SceneSync
 
 		public void Dispose()
 		{
-			// TODO : also remove on client timeout
-			foreach (SyncClientVisualizer visualizer in _visualizers.Values)
-			{
-				if (visualizer.gameObject != null)
-				{
+			SyncManager.OnUpdate -= Update;
+			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
+
 #if UNITY_EDITOR
-					GameObject.DestroyImmediate(visualizer.gameObject);
+			GameObject.DestroyImmediate(_visualizerParent.gameObject);
 #else
-					GameObject.Destroy(visualizer.gameObject);
+			GameObject.Destroy(_visualizerParent.gameObject);
 #endif
+			UnregisterModule();
+		}
+
+		public void RemoveConnectedClient(IPAddress ip)
+		{
+			foreach (KeyValuePair<SyncConnectedClient, SyncClientVisualizer> client in _visualizers)
+			{
+				if (client.Key.IP.Equals(ip))
+				{
+					_visualizers.Remove(client.Key);
+#if UNITY_EDITOR
+					GameObject.DestroyImmediate(client.Value.gameObject);
+#else
+					GameObject.Destroy(client.Value.gameObject);
+#endif
+					break;
 				}
 			}
-			UnregisterModule();
 		}
 
 		public override void OnReceiveData(SyncConnectedClient client, byte[] data)
@@ -68,7 +88,7 @@ namespace jKnepel.UnitySync.SceneSync
 			client.LastHeartbeat = DateTime.Now;
 			if (!_visualizers.TryGetValue(client, out SyncClientVisualizer visualizer))
 			{
-				GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _settings.SyncParentContainer);
+				GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _visualizerParent);
 				visualizer = obj.GetComponent<SyncClientVisualizer>();
 				visualizer.UpdateVisualizer(client.IPString, client.Username, client.Color);
 				_visualizers.Add(client, visualizer);
