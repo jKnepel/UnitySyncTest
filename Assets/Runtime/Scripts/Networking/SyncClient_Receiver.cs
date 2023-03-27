@@ -191,10 +191,10 @@ namespace jKnepel.UnitySync.Networking
 			if (!room.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
 			{
 				client = new(sender, username, color);
-				if (room.Equals(CurrentRoom))
-					SyncManager.OnClientConnected?.Invoke(sender);
 				room.ConnectedClients.TryAdd(sender, client);
 				_ = TimeoutClient(client, room);
+				if (room.Equals(CurrentRoom))
+					_mainThreadActions.Enqueue(() => SyncManager.OnClientConnected?.Invoke(sender));
 			}
 
 			// update client values
@@ -208,9 +208,9 @@ namespace jKnepel.UnitySync.Networking
 			{
 				if ((DateTime.Now - client.LastHeartbeat).TotalMilliseconds > _settings.ClientTimeoutDelay)
 				{
-					if (room.Equals(CurrentRoom))
-						SyncManager.OnClientDisconnected?.Invoke(client.IP);
 					room.ConnectedClients.TryRemove(client.IP, out _);
+					if (room.Equals(CurrentRoom))
+						_mainThreadActions.Enqueue(() => SyncManager.OnClientDisconnected?.Invoke(client.IP));
 					if (room.ConnectedClients.Count == 0 && !room.Equals(CurrentRoom))
 						OpenRooms.TryRemove(room.Roomname, out _);
 					return;
