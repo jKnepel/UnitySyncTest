@@ -21,6 +21,8 @@ namespace jKnepel.UnitySync.SceneSync
 
 		private Transform _visualizerParent;
 
+		#region lifecycle
+
 		public ClientVisualizerModule() : base()
 		{
 			SyncManager.OnUpdate += Update;
@@ -30,16 +32,9 @@ namespace jKnepel.UnitySync.SceneSync
 			_visualizerParent.name = "SceneSync Visualizer Parent";
 		}
 
-		public void Update()
+		~ClientVisualizerModule()
 		{
-			_cameraUpdateDelay++;
-#if UNITY_EDITOR
-			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
-				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
-#else
-			if (Camera.current.transform && Camera.current.transform.hasChanged)
-				CurrentCameraMoved(Camera.current.transform);
-#endif
+			Dispose();
 		}
 
 		public void Dispose()
@@ -54,6 +49,22 @@ namespace jKnepel.UnitySync.SceneSync
 #endif
 			UnregisterModule();
 		}
+
+		public void Update()
+		{
+			_cameraUpdateDelay++;
+#if UNITY_EDITOR
+			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
+				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
+#else
+			if (Camera.current.transform && Camera.current.transform.hasChanged)
+				CurrentCameraMoved(Camera.current.transform);
+#endif
+		}
+
+		#endregion
+
+		#region public methods
 
 		public void RemoveConnectedClient(IPAddress ip)
 		{
@@ -104,6 +115,10 @@ namespace jKnepel.UnitySync.SceneSync
 				visualizer.gameObject.SetActive(true);
 		}
 
+		#endregion
+
+		#region private methods
+
 		private void CurrentCameraMoved(Transform camera)
 		{
 			// limit camera syncs
@@ -147,5 +162,7 @@ namespace jKnepel.UnitySync.SceneSync
 			Array.Copy(array, offset, bytes, 0, size);
 			return bytes;
 		}
+
+		#endregion
 	}
 }
