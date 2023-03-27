@@ -220,8 +220,9 @@ namespace jKnepel.UnitySync
 
 		internal static uint RegisterModule(SyncModule module)
 		{
-			string moduleValues = nameof(module);
-			foreach (var f in module.GetType().GetMembers(BindingFlags.Public | BindingFlags.NonPublic))
+			string moduleValues = module.GetType().Name;
+			BindingFlags flags = BindingFlags.Instance | BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
+			foreach (var f in module.GetType().GetMembers(flags))
 			{
 				if (f.MemberType == MemberTypes.Field || (f.MemberType & MemberTypes.Property) != 0)
 				{
