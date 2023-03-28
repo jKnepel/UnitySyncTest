@@ -14,6 +14,9 @@ namespace jKnepel.UnitySync
         public SyncModule()
 		{
             ModuleHash = SyncManager.RegisterModule(this);
+			SyncManager.OnAwake += Awake;
+			SyncManager.OnStart += Start;
+			SyncManager.OnUpdate += Update;
 		}
 
 		~SyncModule()
@@ -28,9 +31,14 @@ namespace jKnepel.UnitySync
 
 		private void Dispose(bool isDisposing)
 		{
-			if (isDisposing || IsModuleRegistered)
+			if (isDisposing)
 			{
-				UnregisterModule();
+				SyncManager.OnAwake -= Awake;
+				SyncManager.OnStart -= Start;
+				SyncManager.OnUpdate -= Update;
+
+				if (IsModuleRegistered)
+					UnregisterModule();
 			}
 		}
 
@@ -38,6 +46,10 @@ namespace jKnepel.UnitySync
 		{
 			SyncManager.UnregisterModule(ModuleHash);
 		}
+
+		public virtual void Awake() { }
+		public virtual void Start() { }
+		public virtual void Update() { }
 
         public abstract void OnReceiveData(SyncConnectedClient sender, byte[] data);
 

@@ -1,5 +1,4 @@
 using System;
-using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
@@ -136,9 +135,7 @@ namespace jKnepel.UnitySync.SceneSync
         public static void DisconnectFromRoom()
 		{
 			if (!SyncManager.IsConnectedToRoom)
-			{
 				return;
-			}
 
 #if UNITY_EDITOR
 			//Selection.selectionChanged -= SelectionChanged;
@@ -172,9 +169,9 @@ namespace jKnepel.UnitySync.SceneSync
 			SyncManager.DisconnectFromRoom();
 		}
 
-		public static Task<bool> SyncHierarchy(GameObject go)
+		public static void SyncHierarchy(GameObject go, Action<bool> onDataSend = null)
 		{
-			return _gLTFHierarchyModule.SyncHierarchy(go);
+			_gLTFHierarchyModule.SyncHierarchy(go, onDataSend);
 		}
 
 		// TODO : add delete hierarchy
@@ -205,12 +202,7 @@ namespace jKnepel.UnitySync.SceneSync
 				GameObject go;
 				try { go = ((Component)o).gameObject; }
 				catch (InvalidCastException) { go = (GameObject)o; }
-				_ = SyncHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
-
-				// Limit hierarchy syncs
-				ObjectChangeEvents.changesPublished -= ChangesPublished;
-				Task.Delay(_settings.EditorUpdatesDelay)
-					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
+				SyncHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
 			}
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
@@ -218,7 +210,7 @@ namespace jKnepel.UnitySync.SceneSync
 		}
 #endif
 
-#endregion
+		#endregion
 
 		#region helper methods
 

@@ -64,8 +64,8 @@ namespace jKnepel.UnitySync
         // packet frequency settings
         public int HeartbeatDelay = 1000;
         public int ClientTimeoutDelay = 3000;
-        public int EditorUpdatesDelay = 500;
-        public int ClientVisualizerUpdateDelay = 50;
+        public int ClientVisualizerDelay = 50;
+        public int GLTFHierarchyDelay = 500;
 
 		public int ResendReliablePacketsDelay = 250;
 		public int MaxNumberResendReliablePackets = 5;

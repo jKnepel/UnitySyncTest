@@ -22,9 +22,9 @@ namespace jKnepel.UnitySync
 		public static bool IsDebug = false;
 		public static string IP = GetLocalIPAddress();
 
-		public static Action OnUpdate;
 		public static Action OnAwake;
 		public static Action OnStart;
+		public static Action OnUpdate;
 		
 		public static Action OnSyncMessageAdded;
 
@@ -154,6 +154,16 @@ namespace jKnepel.UnitySync
 
 		public static void Init() { }
 
+		private static void Awake()
+		{
+			OnAwake?.Invoke();
+		}
+
+		private static void Start()
+		{
+			OnStart?.Invoke();
+		}
+
 		private static void Update()
 		{
 			OnUpdate?.Invoke();
@@ -163,16 +173,6 @@ namespace jKnepel.UnitySync
 				if (_mainThreadActions.TryDequeue(out Action action))
 					action?.Invoke();
 			}
-		}
-
-		private static void Awake()
-		{
-			OnAwake?.Invoke();
-		}
-
-		private static void Start()
-		{
-			OnStart?.Invoke();
 		}
 
 		#endregion

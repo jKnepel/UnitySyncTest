@@ -1,6 +1,8 @@
 using jKnepel.UnitySync.Networking;
 using System;
+using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
 using System.Runtime.ExceptionServices;
 using System.Threading.Tasks;
 using GLTF;
@@ -15,6 +17,31 @@ namespace jKnepel.UnitySync
 	public class GLTFHierarchyModule : SyncReliableModule
 	{
 		private static readonly SyncSettings _settings = SyncManager.GetSyncSettings();
+
+		private static readonly ConcurrentDictionary<int, BufferedHierarchy> _bufferedHierarchies = new();
+		private static int _gltfHierarchyDelay = _settings.GLTFHierarchyDelay;
+
+		#region lifecycle
+
+		public override void Dispose()
+		{
+			_bufferedHierarchies.Clear();
+			base.Dispose();
+		}
+
+		public override void Update()
+		{
+			_gltfHierarchyDelay++;
+			if (_gltfHierarchyDelay >= _settings.GLTFHierarchyDelay)
+			{
+				// TODO : order of send is random, consider using different collection?
+				BufferedHierarchy hier =  _bufferedHierarchies.ElementAt(0).Value;
+				SyncHierarchy(hier);
+				_gltfHierarchyDelay = 0;
+			}
+		}
+
+		#endregion
 
 		#region receive data
 
@@ -57,19 +84,41 @@ namespace jKnepel.UnitySync
 
 		#region send data
 
-		public async Task<bool> SyncHierarchy(GameObject go)
+		public void SyncHierarchy(GameObject go, Action<bool> onDataSend)
 		{
-			GLTFRootGameObject gltf = go.GetRootParent().GetOrAddComponent<GLTFRootGameObject>();
-			byte[] data = await gltf.SerializeGameObject(new ExportOptions());
-
-			return Task.Run(() =>
+			if (_bufferedHierarchies.TryGetValue(go.GetInstanceID(), out BufferedHierarchy hierarchy))
 			{
-				TaskCompletionSource<bool> t = new();
-				SendData(data, wasSend => t.TrySetResult(wasSend));
-				return t.Task;
-			}).Result;
+				hierarchy.OnDataSend = (Action<bool>)Delegate.Combine(hierarchy.OnDataSend, onDataSend);
+			}
+			else
+			{
+				GameObject root = go.GetRootParent();
+				int instanceID = root.GetInstanceID();
+				_bufferedHierarchies.TryAdd(instanceID, new(instanceID, root, onDataSend));
+			}
+		}
+
+		private async void SyncHierarchy(BufferedHierarchy hier)
+		{
+			GLTFRootGameObject root = hier.GameObject.GetOrAddComponent<GLTFRootGameObject>();
+			byte[] data = await root.SerializeGameObject(new ExportOptions());
+			SendData(data, wasSend => hier.OnDataSend?.Invoke(wasSend));
 		}
 
 		#endregion
+
+		private class BufferedHierarchy
+		{
+			public readonly int InstanceID;
+			public readonly GameObject GameObject;
+			public Action<bool> OnDataSend;
+
+			public BufferedHierarchy(int instanceId, GameObject gameObject, Action<bool> onDataSend)
+			{
+				InstanceID = instanceId;
+				GameObject = gameObject;
+				OnDataSend = onDataSend;
+			}
+		}
 	}
 }

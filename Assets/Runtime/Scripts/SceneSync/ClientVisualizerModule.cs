@@ -17,7 +17,7 @@ namespace jKnepel.UnitySync.SceneSync
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
-		private int _cameraUpdateDelay = _settings.ClientVisualizerUpdateDelay;
+		private int _clientVisualizerDelay = _settings.ClientVisualizerDelay;
 
 		private Transform _visualizerParent;
 
@@ -25,7 +25,6 @@ namespace jKnepel.UnitySync.SceneSync
 
 		public ClientVisualizerModule(Transform parent) : base()
 		{
-			SyncManager.OnUpdate += Update;
 			SyncManager.OnClientDisconnected += RemoveConnectedClient;
 
 			_visualizerParent = parent;
@@ -33,15 +32,13 @@ namespace jKnepel.UnitySync.SceneSync
 
 		public override void Dispose()
 		{
-			SyncManager.OnUpdate -= Update;
 			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
-
 			base.Dispose();
 		}
 
-		public void Update()
+		public override void Update()
 		{
-			_cameraUpdateDelay++;
+			_clientVisualizerDelay++;
 #if UNITY_EDITOR
 			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
 				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
@@ -53,7 +50,7 @@ namespace jKnepel.UnitySync.SceneSync
 
 		#endregion
 
-		#region public methods
+		#region receive data
 
 		public void RemoveConnectedClient(IPAddress ip)
 		{
@@ -106,12 +103,12 @@ namespace jKnepel.UnitySync.SceneSync
 
 		#endregion
 
-		#region private methods
+		#region send data
 
 		private void CurrentCameraMoved(Transform camera)
 		{
 			// limit camera syncs
-			if (_cameraUpdateDelay < _settings.ClientVisualizerUpdateDelay)
+			if (_clientVisualizerDelay < _settings.ClientVisualizerDelay)
 			{
 				camera.hasChanged = false;
 				return;
@@ -139,7 +136,7 @@ namespace jKnepel.UnitySync.SceneSync
 			_lastCameraPosition = camera.position;
 			_lastCameraRotation = camera.eulerAngles;
 			camera.hasChanged = false;
-			_cameraUpdateDelay = 0;
+			_clientVisualizerDelay = 0;
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
