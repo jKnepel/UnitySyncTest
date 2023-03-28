@@ -20,10 +20,10 @@ MonoBehaviour:
     rgba: 4280758225
   HeartbeatDelay: 1000
   ClientTimeoutDelay: 3000
-  EditorUpdatesDelay: 500
-  ClientVisualizerUpdateDelay: 50
+  ClientVisualiserDelay: 50
+  GLTFHierarchyDelay: 500
   ResendReliablePacketsDelay: 250
   MaxNumberResendReliablePackets: 5
   Port: 26822
-  ClientVisualizer: {fileID: 7080547937376749528, guid: 50aa1bbdf9c3eac459c8e97ce858b662, type: 3}
+  ClientVisualiser: {fileID: 7080547937376749528, guid: 50aa1bbdf9c3eac459c8e97ce858b662, type: 3}
   HighlightMaterial: {fileID: 2100000, guid: 34734aadb01022e4c858284cc356e1b4, type: 2}
