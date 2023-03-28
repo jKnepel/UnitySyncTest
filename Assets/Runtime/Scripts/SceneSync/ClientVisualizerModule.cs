@@ -33,6 +33,14 @@ namespace jKnepel.UnitySync.SceneSync
 		public override void Dispose()
 		{
 			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
+			foreach (SyncClientVisualizer visualizer in _visualizers.Values)
+			{
+#if UNITY_EDITOR
+				GameObject.DestroyImmediate(visualizer.gameObject);
+#else
+				GameObject.Destroy(visualizer.gameObject);
+#endif
+			}
 			base.Dispose();
 		}
 

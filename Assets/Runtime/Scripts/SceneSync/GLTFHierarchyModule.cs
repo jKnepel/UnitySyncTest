@@ -32,7 +32,7 @@ namespace jKnepel.UnitySync
 		public override void Update()
 		{
 			_gltfHierarchyDelay++;
-			if (_gltfHierarchyDelay >= _settings.GLTFHierarchyDelay)
+			if (_gltfHierarchyDelay >= _settings.GLTFHierarchyDelay && _bufferedHierarchies.Count > 0)
 			{
 				// TODO : order of send is random, consider using different collection?
 				BufferedHierarchy hier =  _bufferedHierarchies.ElementAt(0).Value;

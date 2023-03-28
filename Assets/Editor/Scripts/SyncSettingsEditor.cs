@@ -24,6 +24,8 @@ namespace jKnepel.UnitySync
 		{
 			// user settings
 			_settings.KeepSyncScene = EditorGUILayout.Toggle("Keep ImportScene:", _settings.KeepSyncScene);
+			SceneSyncManager.VisualizeClients = EditorGUILayout.Toggle(new GUIContent("Visualize Clients:"), SceneSyncManager.VisualizeClients);
+			SceneSyncManager.SyncSceneAutomatically = EditorGUILayout.Toggle(new GUIContent("Sync Scene Automatically:"), SceneSyncManager.SyncSceneAutomatically);
 			_settings.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", _settings.ImportSceneName);
 			_settings.Username = EditorGUILayout.TextField("Username:", _settings.Username);
 			_settings.Color = EditorGUILayout.ColorField("Color:", _settings.Color);

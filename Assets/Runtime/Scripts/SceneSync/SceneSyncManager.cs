@@ -17,6 +17,34 @@ namespace jKnepel.UnitySync.SceneSync
 
 		public static bool IsSceneSyncManagerConnected { get; private set; }
 
+		private static bool _visualizeClients = true;
+		public static bool VisualizeClients
+		{
+			get => _visualizeClients;
+			set
+			{
+				if (value == _visualizeClients)
+					return;
+
+				_visualizeClients = value;
+				if (!value && _clientVisualizerModule != null)
+				{
+					_clientVisualizerModule.Dispose();
+					_clientVisualizerModule = null;
+				}
+				else if (value && _clientVisualizerModule == null)
+				{
+					if (_settings.SyncParentContainer == null)
+					{
+						_settings.SyncParentContainer = new GameObject().transform;
+						_settings.SyncParentContainer.name = "SceneSync Visualizer Parent";
+						_settings.SyncParentContainer.gameObject.hideFlags = HideFlags.HideInHierarchy;
+					}
+					_clientVisualizerModule = new(_settings.SyncParentContainer);
+				}
+			}
+		}
+
 #if UNITY_EDITOR
 		private static bool _syncSceneAutomatically;
 		public static bool SyncSceneAutomatically 
@@ -24,14 +52,17 @@ namespace jKnepel.UnitySync.SceneSync
 			get => _syncSceneAutomatically;
 			set
 			{
-				if (value == _syncSceneAutomatically || !IsSceneSyncManagerConnected)
+				if (value == _syncSceneAutomatically)
 					return;
 
 				_syncSceneAutomatically = value;
-				if (value)
-					ObjectChangeEvents.changesPublished += ChangesPublished;
-				else 
-					ObjectChangeEvents.changesPublished -= ChangesPublished;
+				if (IsSceneSyncManagerConnected)
+				{
+					if (value)
+						ObjectChangeEvents.changesPublished += ChangesPublished;
+					else 
+						ObjectChangeEvents.changesPublished -= ChangesPublished;
+				}
 			}
 		}
 #endif
@@ -119,14 +150,16 @@ namespace jKnepel.UnitySync.SceneSync
 			_settings.SyncParentContainer.name = "SceneSync Visualizer Parent";
 			_settings.SyncParentContainer.gameObject.hideFlags = HideFlags.HideInHierarchy;
 
-			_clientVisualizerModule = new(_settings.SyncParentContainer);
+			if (_visualizeClients)
+				_clientVisualizerModule = new(_settings.SyncParentContainer);
 			_gLTFHierarchyModule = new();
 
 			IsSceneSyncManagerConnected = true;
 
 #if UNITY_EDITOR
 			//Selection.selectionChanged += SelectionChanged;
-			ObjectChangeEvents.changesPublished += ChangesPublished;
+			if (SyncSceneAutomatically)
+				ObjectChangeEvents.changesPublished += ChangesPublished;
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			return true;
@@ -139,7 +172,8 @@ namespace jKnepel.UnitySync.SceneSync
 
 #if UNITY_EDITOR
 			//Selection.selectionChanged -= SelectionChanged;
-			ObjectChangeEvents.changesPublished -= ChangesPublished;
+			if (SyncSceneAutomatically)
+				ObjectChangeEvents.changesPublished -= ChangesPublished;
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 
@@ -152,19 +186,25 @@ namespace jKnepel.UnitySync.SceneSync
 #endif
 			}
 
-			_clientVisualizerModule.Dispose();
-			_clientVisualizerModule = null;
+			if (_visualizeClients)
+			{
+				_clientVisualizerModule.Dispose();
+				_clientVisualizerModule = null;
+			}
 			_gLTFHierarchyModule.Dispose();
 			_gLTFHierarchyModule = null;
 
 			IsSceneSyncManagerConnected = false;
 
+			if (_settings.SyncParentContainer != null)
+			{
 #if UNITY_EDITOR
-			GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
+				GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
 #else
-			GameObject.Destroy(_settings.SyncParentContainer.gameObject);
+				GameObject.Destroy(_settings.SyncParentContainer.gameObject);
 #endif
-			_settings.SyncParentContainer = null;
+				_settings.SyncParentContainer = null;
+			}
 
 			SyncManager.DisconnectFromRoom();
 		}
