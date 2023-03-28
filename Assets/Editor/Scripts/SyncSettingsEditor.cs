@@ -24,7 +24,7 @@ namespace jKnepel.UnitySync
 		{
 			// user settings
 			_settings.KeepSyncScene = EditorGUILayout.Toggle("Keep ImportScene:", _settings.KeepSyncScene);
-			SceneSyncManager.VisualizeClients = EditorGUILayout.Toggle(new GUIContent("Visualize Clients:"), SceneSyncManager.VisualizeClients);
+			SceneSyncManager.VisualiseClients = EditorGUILayout.Toggle(new GUIContent("Visualise Clients:"), SceneSyncManager.VisualiseClients);
 			SceneSyncManager.SyncSceneAutomatically = EditorGUILayout.Toggle(new GUIContent("Sync Scene Automatically:"), SceneSyncManager.SyncSceneAutomatically);
 			_settings.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", _settings.ImportSceneName);
 			_settings.Username = EditorGUILayout.TextField("Username:", _settings.Username);
@@ -37,7 +37,7 @@ namespace jKnepel.UnitySync
 				EditorGUI.indentLevel++;
 				_settings.HeartbeatDelay = EditorGUILayout.IntField("Heartbeat Delay:", _settings.HeartbeatDelay);
 				_settings.ClientTimeoutDelay = EditorGUILayout.IntField("Client Timeout Delay:", _settings.ClientTimeoutDelay);
-				_settings.ClientVisualizerDelay = EditorGUILayout.IntField("Client Visualizer Delay:", _settings.ClientVisualizerDelay);
+				_settings.ClientVisualiserDelay = EditorGUILayout.IntField("Client Visualiser Delay:", _settings.ClientVisualiserDelay);
 				_settings.GLTFHierarchyDelay = EditorGUILayout.IntField("GLTF Hierarchy Delay:", _settings.GLTFHierarchyDelay);
 				_settings.ResendReliablePacketsDelay = EditorGUILayout.IntField("Resend Reliable Packets Delay: ", _settings.ResendReliablePacketsDelay);
 				_settings.MaxNumberResendReliablePackets = EditorGUILayout.IntField("Number of Resends of Reliable Packets: ", _settings.MaxNumberResendReliablePackets);
@@ -48,7 +48,7 @@ namespace jKnepel.UnitySync
 			if (_additionalSettingsIsVisible)
 			{
 				EditorGUI.indentLevel++;
-				_settings.ClientVisualizer = (SyncClientVisualizer)EditorGUILayout.ObjectField("Client Visualizer Prefab:", _settings.ClientVisualizer, typeof(SyncClientVisualizer), false);
+				_settings.ClientVisualiser = (SyncClientVisualiser)EditorGUILayout.ObjectField("Client Visualiser Prefab:", _settings.ClientVisualiser, typeof(SyncClientVisualiser), false);
 				_settings.HighlightMaterial = (Material)EditorGUILayout.ObjectField("Highlight Material:", _settings.HighlightMaterial, typeof(Material), false);
 				EditorGUI.indentLevel--;
 			}

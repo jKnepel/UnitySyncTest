@@ -3,13 +3,13 @@ using UnityEngine;
 namespace jKnepel.UnitySync.SceneSync
 {
     [System.Serializable]
-    public class SyncClientVisualizer : MonoBehaviour
+    public class SyncClientVisualiser : MonoBehaviour
     {
         [SerializeField] private new Renderer renderer;
         [SerializeField] private TMPro.TMP_Text usernameObject;
         [SerializeField] private Material material;
 
-        public void UpdateVisualizer(string sender, string username, Color color)
+        public void UpdateVisualiser(string sender, string username, Color color)
 	    {
             name = $"{username}@{sender}";
             usernameObject.text = username;

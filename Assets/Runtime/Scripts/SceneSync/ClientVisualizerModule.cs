@@ -9,36 +9,36 @@ using UnityEditor;
 
 namespace jKnepel.UnitySync.SceneSync
 {
-    public class ClientVisualizerModule : SyncUnreliableModule
+    public class ClientVisualiserModule : SyncUnreliableModule
     {
 		private static readonly SyncSettings _settings = SyncManager.GetSyncSettings();
 
-		private readonly Dictionary<SyncConnectedClient, SyncClientVisualizer> _visualizers = new();
+		private readonly Dictionary<SyncConnectedClient, SyncClientVisualiser> _visualisers = new();
 
 		private Vector3 _lastCameraPosition;
 		private Vector3 _lastCameraRotation;
-		private int _clientVisualizerDelay = _settings.ClientVisualizerDelay;
+		private int _clientVisualiserDelay = _settings.ClientVisualiserDelay;
 
-		private Transform _visualizerParent;
+		private Transform _visualiserParent;
 
 		#region lifecycle
 
-		public ClientVisualizerModule(Transform parent) : base()
+		public ClientVisualiserModule(Transform parent) : base()
 		{
 			SyncManager.OnClientDisconnected += RemoveConnectedClient;
 
-			_visualizerParent = parent;
+			_visualiserParent = parent;
 		}
 
 		public override void Dispose()
 		{
 			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
-			foreach (SyncClientVisualizer visualizer in _visualizers.Values)
+			foreach (SyncClientVisualiser visualiser in _visualisers.Values)
 			{
 #if UNITY_EDITOR
-				GameObject.DestroyImmediate(visualizer.gameObject);
+				GameObject.DestroyImmediate(visualiser.gameObject);
 #else
-				GameObject.Destroy(visualizer.gameObject);
+				GameObject.Destroy(visualiser.gameObject);
 #endif
 			}
 			base.Dispose();
@@ -46,7 +46,7 @@ namespace jKnepel.UnitySync.SceneSync
 
 		public override void Update()
 		{
-			_clientVisualizerDelay++;
+			_clientVisualiserDelay++;
 #if UNITY_EDITOR
 			if (SceneView.lastActiveSceneView.camera.transform.hasChanged)
 				CurrentCameraMoved(SceneView.lastActiveSceneView.camera.transform);
@@ -62,11 +62,11 @@ namespace jKnepel.UnitySync.SceneSync
 
 		public void RemoveConnectedClient(IPAddress ip)
 		{
-			foreach (KeyValuePair<SyncConnectedClient, SyncClientVisualizer> client in _visualizers)
+			foreach (KeyValuePair<SyncConnectedClient, SyncClientVisualiser> client in _visualisers)
 			{
 				if (client.Key.IP.Equals(ip))
 				{
-					_visualizers.Remove(client.Key);
+					_visualisers.Remove(client.Key);
 #if UNITY_EDITOR
 					GameObject.DestroyImmediate(client.Value.gameObject);
 #else
@@ -91,22 +91,22 @@ namespace jKnepel.UnitySync.SceneSync
 			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
 
 			sender.LastHeartbeat = DateTime.Now;
-			if (!_visualizers.TryGetValue(sender, out SyncClientVisualizer visualizer))
+			if (!_visualisers.TryGetValue(sender, out SyncClientVisualiser visualiser))
 			{
-				GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _visualizerParent);
-				visualizer = obj.GetComponent<SyncClientVisualizer>();
-				visualizer.UpdateVisualizer(sender.IPString, sender.Username, sender.Color);
-				_visualizers.Add(sender, visualizer);
+				GameObject obj = GameObject.Instantiate(_settings.ClientVisualiser.gameObject, _visualiserParent);
+				visualiser = obj.GetComponent<SyncClientVisualiser>();
+				visualiser.UpdateVisualiser(sender.IPString, sender.Username, sender.Color);
+				_visualisers.Add(sender, visualiser);
 			}
 
-			visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),
+			visualiser.transform.position = new Vector3(BitConverter.ToSingle(positionX),
 				BitConverter.ToSingle(positionY),
 				BitConverter.ToSingle(positionZ));
-			visualizer.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
+			visualiser.transform.eulerAngles = new Vector3(BitConverter.ToSingle(rotationX),
 				BitConverter.ToSingle(rotationY),
 				BitConverter.ToSingle(rotationZ));
-			if (!visualizer.gameObject.activeSelf)
-				visualizer.gameObject.SetActive(true);
+			if (!visualiser.gameObject.activeSelf)
+				visualiser.gameObject.SetActive(true);
 		}
 
 		#endregion
@@ -116,7 +116,7 @@ namespace jKnepel.UnitySync.SceneSync
 		private void CurrentCameraMoved(Transform camera)
 		{
 			// limit camera syncs
-			if (_clientVisualizerDelay < _settings.ClientVisualizerDelay)
+			if (_clientVisualiserDelay < _settings.ClientVisualiserDelay)
 			{
 				camera.hasChanged = false;
 				return;
@@ -144,7 +144,7 @@ namespace jKnepel.UnitySync.SceneSync
 			_lastCameraPosition = camera.position;
 			_lastCameraRotation = camera.eulerAngles;
 			camera.hasChanged = false;
-			_clientVisualizerDelay = 0;
+			_clientVisualiserDelay = 0;
 		}
 
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)

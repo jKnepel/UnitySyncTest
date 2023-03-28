@@ -131,6 +131,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   renderer: {fileID: 2007285820377922990}
   usernameObject: {fileID: 2007285820905503156}
+  material: {fileID: 2100000, guid: 56f3aee5cde1de147a2c8eeadb2a2867, type: 2}
 --- !u!1 &2007285820905503146
 GameObject:
   m_ObjectHideFlags: 0

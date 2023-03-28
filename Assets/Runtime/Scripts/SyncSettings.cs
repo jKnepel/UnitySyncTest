@@ -64,7 +64,7 @@ namespace jKnepel.UnitySync
         // packet frequency settings
         public int HeartbeatDelay = 1000;
         public int ClientTimeoutDelay = 3000;
-        public int ClientVisualizerDelay = 50;
+        public int ClientVisualiserDelay = 50;
         public int GLTFHierarchyDelay = 500;
 
 		public int ResendReliablePacketsDelay = 250;
@@ -74,7 +74,7 @@ namespace jKnepel.UnitySync
 		public int Port = 26822;
 
         // prefabs
-        public SyncClientVisualizer ClientVisualizer;
+        public SyncClientVisualiser ClientVisualiser;
 		public Material HighlightMaterial;
 
 		internal Scene SyncScene;

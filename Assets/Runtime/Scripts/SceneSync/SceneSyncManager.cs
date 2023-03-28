@@ -12,35 +12,35 @@ namespace jKnepel.UnitySync.SceneSync
 	{
 		private readonly static SyncSettings _settings = SyncManager.GetSyncSettings();
 
-		private static ClientVisualizerModule _clientVisualizerModule;
+		private static ClientVisualiserModule _clientVisualiserModule;
 		private static GLTFHierarchyModule _gLTFHierarchyModule;
 
 		public static bool IsSceneSyncManagerConnected { get; private set; }
 
-		private static bool _visualizeClients = true;
-		public static bool VisualizeClients
+		private static bool _visualiseClients = true;
+		public static bool VisualiseClients
 		{
-			get => _visualizeClients;
+			get => _visualiseClients;
 			set
 			{
-				if (value == _visualizeClients)
+				if (value == _visualiseClients)
 					return;
 
-				_visualizeClients = value;
-				if (!value && _clientVisualizerModule != null)
+				_visualiseClients = value;
+				if (!value && _clientVisualiserModule != null)
 				{
-					_clientVisualizerModule.Dispose();
-					_clientVisualizerModule = null;
+					_clientVisualiserModule.Dispose();
+					_clientVisualiserModule = null;
 				}
-				else if (value && _clientVisualizerModule == null)
+				else if (value && _clientVisualiserModule == null)
 				{
 					if (_settings.SyncParentContainer == null)
 					{
 						_settings.SyncParentContainer = new GameObject().transform;
-						_settings.SyncParentContainer.name = "SceneSync Visualizer Parent";
+						_settings.SyncParentContainer.name = "SceneSync Visualiser Parent";
 						_settings.SyncParentContainer.gameObject.hideFlags = HideFlags.HideInHierarchy;
 					}
-					_clientVisualizerModule = new(_settings.SyncParentContainer);
+					_clientVisualiserModule = new(_settings.SyncParentContainer);
 				}
 			}
 		}
@@ -147,11 +147,11 @@ namespace jKnepel.UnitySync.SceneSync
 			}
 
 			_settings.SyncParentContainer = new GameObject().transform;
-			_settings.SyncParentContainer.name = "SceneSync Visualizer Parent";
+			_settings.SyncParentContainer.name = "SceneSync Visualiser Parent";
 			_settings.SyncParentContainer.gameObject.hideFlags = HideFlags.HideInHierarchy;
 
-			if (_visualizeClients)
-				_clientVisualizerModule = new(_settings.SyncParentContainer);
+			if (_visualiseClients)
+				_clientVisualiserModule = new(_settings.SyncParentContainer);
 			_gLTFHierarchyModule = new();
 
 			IsSceneSyncManagerConnected = true;
@@ -186,10 +186,10 @@ namespace jKnepel.UnitySync.SceneSync
 #endif
 			}
 
-			if (_visualizeClients)
+			if (_visualiseClients)
 			{
-				_clientVisualizerModule.Dispose();
-				_clientVisualizerModule = null;
+				_clientVisualiserModule.Dispose();
+				_clientVisualiserModule = null;
 			}
 			_gLTFHierarchyModule.Dispose();
 			_gLTFHierarchyModule = null;
