@@ -131,23 +131,26 @@ namespace jKnepel.UnitySync.Networking
 
 							client.ReliableRemoteSequence = sequence;
 							SyncManager.DataReceived?.Invoke(moduleHash, client, data);
+						}
+					}
 
-							// apply all packets in buffer that are now next in line and complete
-							while (client.ReceivedPacketsBuffer.Count > 0)
-							{
-								sequence++;
-								if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
-									break;
+					if (IsReliableData(packetType))
+					{
+						// apply all packets in buffer that are now next in line and complete
+						while (client.ReceivedPacketsBuffer.Count > 0)
+						{
+							sequence++;
+							if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
+								break;
 
-								// TODO : unlock gameobjects if packets reference unity objects
-								// only consume chunked packet if it is complete
-								if (packet.IsChunked && !packet.ConcatenateChunkedPacket())
-									break;
+							// TODO : unlock gameobjects if packets reference unity objects
+							// only consume chunked packet if it is complete
+							if (packet.IsChunked && !packet.ConcatenateChunkedPacket())
+								break;
 
-								client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
-								client.ReliableRemoteSequence = sequence;
-								SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
-							}
+							client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
+							client.ReliableRemoteSequence = sequence;
+							SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
 						}
 					}
 				}

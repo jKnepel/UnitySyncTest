@@ -31,18 +31,12 @@ namespace jKnepel.UnitySync.SceneSync
 			_visualizerParent = parent;
 		}
 
-		~ClientVisualizerModule()
-		{
-			Dispose();
-		}
-
-		public void Dispose()
+		public override void Dispose()
 		{
 			SyncManager.OnUpdate -= Update;
 			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
 
-			if (IsModuleRegistered)
-				UnregisterModule();
+			base.Dispose();
 		}
 
 		public void Update()
@@ -78,10 +72,10 @@ namespace jKnepel.UnitySync.SceneSync
 			}
 		}
 
-		public override void OnReceiveData(SyncConnectedClient client, byte[] data)
+		public override void OnReceiveData(SyncConnectedClient sender, byte[] data)
 		{
 			if (SyncManager.IsDebug)
-				Debug.Log($"Received Camera Update from {client.IP}");
+				Debug.Log($"Received Camera Update from {sender.IP}");
 
 			int size = sizeof(float);
 			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
@@ -91,13 +85,13 @@ namespace jKnepel.UnitySync.SceneSync
 			byte[] rotationY = GetBytesFromArray(data, 4 * size, size);
 			byte[] rotationZ = GetBytesFromArray(data, 5 * size, size);
 
-			client.LastHeartbeat = DateTime.Now;
-			if (!_visualizers.TryGetValue(client, out SyncClientVisualizer visualizer))
+			sender.LastHeartbeat = DateTime.Now;
+			if (!_visualizers.TryGetValue(sender, out SyncClientVisualizer visualizer))
 			{
 				GameObject obj = GameObject.Instantiate(_settings.ClientVisualizer.gameObject, _visualizerParent);
 				visualizer = obj.GetComponent<SyncClientVisualizer>();
-				visualizer.UpdateVisualizer(client.IPString, client.Username, client.Color);
-				_visualizers.Add(client, visualizer);
+				visualizer.UpdateVisualizer(sender.IPString, sender.Username, sender.Color);
+				_visualizers.Add(sender, visualizer);
 			}
 
 			visualizer.transform.position = new Vector3(BitConverter.ToSingle(positionX),

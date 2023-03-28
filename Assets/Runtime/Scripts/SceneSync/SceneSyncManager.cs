@@ -1,3 +1,5 @@
+using System;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 #if UNITY_EDITOR
@@ -7,11 +9,33 @@ using UnityEditor.SceneManagement;
 
 namespace jKnepel.UnitySync.SceneSync
 {
-    public static class SceneSyncManager
-    {
+	public static class SceneSyncManager
+	{
 		private readonly static SyncSettings _settings = SyncManager.GetSyncSettings();
 
-        private static ClientVisualizerModule _clientVisualizerModule;
+		private static ClientVisualizerModule _clientVisualizerModule;
+		private static GLTFHierarchyModule _gLTFHierarchyModule;
+
+		public static bool IsSceneSyncManagerConnected { get; private set; }
+
+#if UNITY_EDITOR
+		private static bool _syncSceneAutomatically;
+		public static bool SyncSceneAutomatically 
+		{
+			get => _syncSceneAutomatically;
+			set
+			{
+				if (value == _syncSceneAutomatically || !IsSceneSyncManagerConnected)
+					return;
+
+				_syncSceneAutomatically = value;
+				if (value)
+					ObjectChangeEvents.changesPublished += ChangesPublished;
+				else 
+					ObjectChangeEvents.changesPublished -= ChangesPublished;
+			}
+		}
+#endif
 
 		#region lifecycle
 
@@ -22,7 +46,7 @@ namespace jKnepel.UnitySync.SceneSync
 #if UNITY_EDITOR
 				GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
 #else
-			GameObject.Destroy(_settings.SyncParentContainer.gameObject);
+				GameObject.Destroy(_settings.SyncParentContainer.gameObject);
 #endif
 				_settings.SyncParentContainer = null;
 			}
@@ -38,14 +62,14 @@ namespace jKnepel.UnitySync.SceneSync
 		{
 			if (SyncManager.IsConnectedToRoom)
 			{
-				Debug.LogWarning($"The client is already connected!");
+				Debug.LogError($"The client is already connected!");
 				return false;
 			}
 
 #if UNITY_EDITOR
 			if (EditorApplication.isPlaying)
 			{
-				Debug.LogWarning($"Can't connect to a Room while the Editor is in Playmode!");
+				Debug.LogError($"Can't connect to a Room while the Editor is in Playmode!");
 				return false;
 			}
 #endif
@@ -56,7 +80,7 @@ namespace jKnepel.UnitySync.SceneSync
 			{
 				if (!scene.IsValid() && !scene.isLoaded)
 				{
-					Debug.LogWarning($"The Scene {scenename} is not valid!");
+					Debug.LogError($"The Scene {scenename} is not valid!");
 					return false;
 				}
 				_settings.SyncScene = scene;
@@ -65,7 +89,7 @@ namespace jKnepel.UnitySync.SceneSync
 			{
 				if (scene.IsValid() || scene.isLoaded)
 				{
-					Debug.LogWarning($"The Scene {scenename} already exists!");
+					Debug.LogError($"The Scene {scenename} already exists!");
 					return false;
 				}
 
@@ -94,11 +118,16 @@ namespace jKnepel.UnitySync.SceneSync
 
 			_settings.SyncParentContainer = new GameObject().transform;
 			_settings.SyncParentContainer.name = "SceneSync Visualizer Parent";
+			_settings.SyncParentContainer.gameObject.hideFlags = HideFlags.HideInHierarchy;
+
 			_clientVisualizerModule = new(_settings.SyncParentContainer);
+			_gLTFHierarchyModule = new();
+
+			IsSceneSyncManagerConnected = true;
 
 #if UNITY_EDITOR
 			//Selection.selectionChanged += SelectionChanged;
-			//ObjectChangeEvents.changesPublished += ChangesPublished;
+			ObjectChangeEvents.changesPublished += ChangesPublished;
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 			return true;
@@ -106,9 +135,14 @@ namespace jKnepel.UnitySync.SceneSync
 
         public static void DisconnectFromRoom()
 		{
+			if (!SyncManager.IsConnectedToRoom)
+			{
+				return;
+			}
+
 #if UNITY_EDITOR
 			//Selection.selectionChanged -= SelectionChanged;
-			//ObjectChangeEvents.changesPublished -= ChangesPublished;
+			ObjectChangeEvents.changesPublished -= ChangesPublished;
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 
@@ -123,6 +157,10 @@ namespace jKnepel.UnitySync.SceneSync
 
 			_clientVisualizerModule.Dispose();
 			_clientVisualizerModule = null;
+			_gLTFHierarchyModule.Dispose();
+			_gLTFHierarchyModule = null;
+
+			IsSceneSyncManagerConnected = false;
 
 #if UNITY_EDITOR
 			GameObject.DestroyImmediate(_settings.SyncParentContainer.gameObject);
@@ -132,10 +170,55 @@ namespace jKnepel.UnitySync.SceneSync
 			_settings.SyncParentContainer = null;
 
 			SyncManager.DisconnectFromRoom();
-			return;
 		}
 
+		public static Task<bool> SyncHierarchy(GameObject go)
+		{
+			return _gLTFHierarchyModule.SyncHierarchy(go);
+		}
+
+		// TODO : add delete hierarchy
+
+		// TODO : add sync gameobject
+
+		// TODO : add delete gameobject
+
+		// TODO : add sync component
+
+		// TODO : add delete component
+
 		#endregion
+
+		#region private methods
+
+#if UNITY_EDITOR
+		private static void ChangesPublished(ref ObjectChangeEventStream stream)
+		{
+			if (!IsSceneSyncManagerConnected)
+				return;
+
+			ChangeGameObjectOrComponentPropertiesEventArgs obj;
+			stream.GetChangeGameObjectOrComponentPropertiesEvent(0, out obj);
+			if (obj.scene == _settings.SyncScene)
+			{
+				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
+				GameObject go;
+				try { go = ((Component)o).gameObject; }
+				catch (InvalidCastException) { go = (GameObject)o; }
+				_ = SyncHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
+
+				// Limit hierarchy syncs
+				ObjectChangeEvents.changesPublished -= ChangesPublished;
+				Task.Delay(_settings.EditorUpdatesDelay)
+					.ContinueWith(t => ObjectChangeEvents.changesPublished += ChangesPublished);
+			}
+
+			// TODO : add functionality for sending hierarchy only on hierarchy changes
+			// TODO : support all kinds of changesPublished
+		}
+#endif
+
+#endregion
 
 		#region helper methods
 

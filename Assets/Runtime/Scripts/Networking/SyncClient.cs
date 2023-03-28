@@ -209,19 +209,19 @@ namespace jKnepel.UnitySync.Networking
 		{
 			if (IsConnectedToRoom)
 			{
-				Debug.LogWarning($"The client is already connected!");
+				Debug.LogError($"The client is already connected!");
 				return false;
 			}
 
 			if (roomname.Length > 100 || _settings.Username.Length > 100)
 			{
-				Debug.LogWarning($"The Roomname and Username must be shorter than 100 Characters!");
+				Debug.LogError($"The Roomname and Username must be shorter than 100 Characters!");
 				return false;
 			}
 
 			if (!IsASCIIString(roomname) || !IsASCIIString(_settings.Username))
 			{
-				Debug.LogWarning($"The Roomname or Username contains a non-ASCII Character!");
+				Debug.LogError($"The Roomname or Username contains a non-ASCII Character!");
 				return false;
 			}
 
@@ -230,7 +230,7 @@ namespace jKnepel.UnitySync.Networking
 			{
 				if (OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
 				{
-					Debug.LogWarning($"The Room {roomname} already exists!");
+					Debug.LogError($"The Room {roomname} already exists!");
 					return false;
 				}
 				CurrentRoom = new(roomname);
@@ -241,7 +241,7 @@ namespace jKnepel.UnitySync.Networking
 			{
 				if (!OpenRooms.TryGetValue(roomname, out SyncOpenRoom room))
 				{
-					Debug.LogWarning($"The Room {roomname} doesn't exist yet!");
+					Debug.LogError($"The Room {roomname} doesn't exist yet!");
 					return false;
 				}
 

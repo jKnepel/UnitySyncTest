@@ -18,8 +18,20 @@ namespace jKnepel.UnitySync
 
 		~SyncModule()
 		{
-			if (IsModuleRegistered)
+			Dispose(false);
+		}
+
+		public virtual void Dispose()
+		{
+			Dispose(true);
+		}
+
+		private void Dispose(bool isDisposing)
+		{
+			if (isDisposing || IsModuleRegistered)
+			{
 				UnregisterModule();
+			}
 		}
 
 		public void UnregisterModule()
@@ -27,7 +39,7 @@ namespace jKnepel.UnitySync
 			SyncManager.UnregisterModule(ModuleHash);
 		}
 
-        public abstract void OnReceiveData(SyncConnectedClient client, byte[] data);
+        public abstract void OnReceiveData(SyncConnectedClient sender, byte[] data);
 
         public abstract void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null);
     }
