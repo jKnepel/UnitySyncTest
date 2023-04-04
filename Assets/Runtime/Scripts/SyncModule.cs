@@ -5,15 +5,20 @@ namespace jKnepel.UnitySync
 {
     public abstract class SyncModule
     {
-		protected readonly uint ModuleHash;
-		protected bool IsModuleRegistered
+		protected uint ModuleHash
+		{
+			get => ModuleHash;
+			private set => ModuleHash = value;
+		}
+
+		public bool IsModuleRegistered
 		{
 			get => SyncManager.IsModuleRegistered(ModuleHash);
 		}
 
         public SyncModule()
 		{
-            ModuleHash = SyncManager.RegisterModule(this);
+			RegisterModule();
 			SyncManager.OnAwake += Awake;
 			SyncManager.OnStart += Start;
 			SyncManager.OnUpdate += Update;
@@ -36,15 +41,20 @@ namespace jKnepel.UnitySync
 				SyncManager.OnAwake -= Awake;
 				SyncManager.OnStart -= Start;
 				SyncManager.OnUpdate -= Update;
-
-				if (IsModuleRegistered)
-					UnregisterModule();
+				UnregisterModule();
 			}
 		}
 
 		public void UnregisterModule()
 		{
-			SyncManager.UnregisterModule(ModuleHash);
+			if (IsModuleRegistered)
+				SyncManager.UnregisterModule(ModuleHash);
+		}
+
+		public void RegisterModule()
+		{
+			if (!IsModuleRegistered)
+				ModuleHash = SyncManager.RegisterModule(this);
 		}
 
 		public virtual void Awake() { }
