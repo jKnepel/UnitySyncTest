@@ -85,8 +85,7 @@ namespace jKnepel.UnitySync
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
@@ -102,8 +101,7 @@ namespace jKnepel.UnitySync
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
@@ -115,14 +113,13 @@ namespace jKnepel.UnitySync
 	{
 		/// <summary>
 		/// Sends Data over Unreliable UDP. 
-		/// This ensure arrival of Packets in the correct Order but does not guarantee that all Packets actually arrive.
+		/// This ensures that old Packets don't overwrite new Updates, but it doesn't guarantee that all Packets actually arrive.
 		/// The size of the Data array must be below 1200.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
@@ -133,13 +130,14 @@ namespace jKnepel.UnitySync
 	public abstract class SyncUnreliableUnorderedModule : SyncModule
 	{
 		/// <summary>
-		/// Sends Data over Unreliable UDP. The size of the Data array must be below 1200.
+		/// Sends Data over Unreliable UDP. 
+		/// This ignores the Order that Packets were send in and doesn't guarantee that all Packets actually arrive.
+		/// The size of the Data array must be below 1200.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null,
-		/// all Clients receive the Packet.
+		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{

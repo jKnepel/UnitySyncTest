@@ -1,7 +1,10 @@
 using System;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
+using System.Runtime.ExceptionServices;
 using UnityEngine;
 
 namespace jKnepel.UnitySync.Networking
@@ -12,150 +15,170 @@ namespace jKnepel.UnitySync.Networking
 
 		private void ListenerThread()
 		{
-			while (_disposeCount == 0)
+			try
 			{
-				try
+				while (_disposeCount == 0)
 				{
-					// check if packet comes from other client
-					IPEndPoint receiveEndpoint = new(IPAddress.Any, _settings.Port);
-					byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
-					IPAddress sender = receiveEndpoint.Address;
-					if (sender.Equals(_ip))
-						continue;
-
-					// get bytes used for crc32 check
-					byte[] checksumBytes = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
-					byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH);
-
-					// get relevant header bytes
-					byte[] sequenceBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
-					ushort sequence = BitConverter.ToUInt16(sequenceBytes);
-					bool isChunked = (receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH] & (1 << 7)) != 0;
-					SyncPacketType packetType = GetOriginalType(receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH]);
-
-					if (packetType == SyncPacketType.Heartbeat)
+					try
 					{
-						UpdateHeartbeat(sender, checksumBytes, remainder);
-						continue;
-					}
+						//----- Handle valid/relevant Internal Packets -----
 
-					if (!IsConnectedToRoom)
-						continue;
-
-					if (!CheckPacketCRC32(checksumBytes, remainder, CurrentRoom.RoomnameBytes))
-						continue;
-
-					if (!CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
-						continue;
-
-					if (packetType == SyncPacketType.ACK)
-					{   // remove ACK'd packets from buffer
-						if (isChunked)
-						{
-							byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH);
-							ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
-							client.SendSlicesBuffer.TryRemove((sequence, sliceNumber), out _);
-						}
-						else
-						{
-							client.SendPacketsBuffer.TryRemove(sequence, out _);
-						}
-						continue;
-					}
-
-					//----- Handle Data Packets -----
-
-					byte[] moduleHashBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH);
-					uint moduleHash = BitConverter.ToUInt32(moduleHashBytes);
-					byte[] data = isChunked
-						? GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER)
-						: GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH);
-
-					if (isChunked)
-					{	// handle chunked packet by checking sequence and only consuming once its complete and relevant
-						byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
-						ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
-
-						SendACK(client, sequence, sliceNumber);
-						
-						if (!IsNewPacket(sequence, client.ReliableRemoteSequence)
-							&& packetType != SyncPacketType.ReliableUnorderedData)
+						// get packet ip headers
+						IPEndPoint receiveEndpoint = new(IPAddress.Any, _settings.Port);
+						byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
+						IPAddress sender = receiveEndpoint.Address;
+						if (sender.Equals(_ip) && false)
 							continue;
 
-						if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
-						{	// create chunked packet if it doesn't exist yet
-							byte[] numberOfSlicesBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, NUMBER_OF_SLICES);
-							ushort numberOfSlices = BitConverter.ToUInt16(numberOfSlicesBytes);
-							packet = new(packetType, moduleHash, client, numberOfSlices);
-							client.ReceivedPacketsBuffer.TryAdd(sequence, packet);
-						}
-						packet.Slices.TryAdd(sliceNumber, data);
+						// get bytes used for crc32 check
+						byte[] checksumBytes = GetBytesFromArray(receivedBytes, 0, CRC32_LENGTH);
+						byte[] remainder = GetBytesFromArray(receivedBytes, CRC32_LENGTH);
 
-						// if packet is not complete or a packet is missing in the sequence keep it in buffer
-						if (!packet.IsPacketComplete() || (!IsNextPacket(sequence, client.ReliableRemoteSequence)
-							&& packetType != SyncPacketType.ReliableUnorderedData))
+						// get relevant header bytes
+						byte[] sequenceBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+						ushort sequence = BitConverter.ToUInt16(sequenceBytes);
+						bool isChunked = (receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH] & (1 << 7)) != 0;
+						SyncPacketType packetType = GetOriginalType(receivedBytes[CRC32_LENGTH + SEQUENCE_ID_LENGTH]);
+
+						if (packetType == SyncPacketType.Heartbeat)
+						{
+							UpdateHeartbeat(sender, checksumBytes, remainder);
+							continue;
+						}
+
+						if (!IsConnectedToRoom)
 							continue;
 
-						client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
-						client.ReliableRemoteSequence = sequence;
-						packet.ConcatenateChunkedPacket();
-						SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
-					}
-					else
-					{   // handle packet by checking sequence and consume packet if it is relevant
-						if (IsUnreliableData(packetType))
-						{   // unreliable packet sequences
-							if (!IsNewPacket(sequence, client.UnreliableRemoteSequence)
-								&& packetType != SyncPacketType.UnreliableUnorderedData)
-								continue;
+						if (!CheckPacketCRC32(checksumBytes, remainder, CurrentRoom.RoomnameBytes))
+							continue;
 
-							client.UnreliableRemoteSequence = sequence;
-							SyncManager.DataReceived?.Invoke(moduleHash, client, data);
-						}
-						else if (IsReliableData(packetType))
-						{   // reliable packet sequences
-							SendACK(client, sequence);
+						if (!CurrentRoom.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
+							continue;
 
-							if (!IsNewPacket(sequence, client.ReliableRemoteSequence) 
-								&& packetType != SyncPacketType.ReliableUnorderedData)
-								continue;
-
-							if (!IsNextPacket(sequence, client.ReliableRemoteSequence)
-								&& packetType != SyncPacketType.ReliableUnorderedData)
-							{   // if the packet is new but a packet is missing in-between
-								client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, moduleHash, data, client));
-								// TODO : if not received within RTTx1.25 timeframe timeout client
-								// TODO : lock gameobject if packets reference unity objects
-								continue;
+						if (packetType == SyncPacketType.ACK)
+						{   // remove ACK'd packets from buffer
+							if (isChunked)
+							{
+								byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH);
+								ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
+								client.SendSlicesBuffer.TryRemove((sequence, sliceNumber), out _);
 							}
-
-							client.ReliableRemoteSequence = sequence;
-							SyncManager.DataReceived?.Invoke(moduleHash, client, data);
+							else
+							{
+								client.SendPacketsBuffer.TryRemove(sequence, out _);
+							}
+							continue;
 						}
-					}
 
-					if (IsReliableData(packetType))
-					{
-						// apply all packets in buffer that are now next in line and complete
-						while (client.ReceivedPacketsBuffer.Count > 0)
-						{
-							sequence++;
+						//----- Handle Data Packets -----
+
+						byte[] moduleHashBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH);
+						uint moduleHash = BitConverter.ToUInt32(moduleHashBytes);
+						byte[] data = isChunked
+							? GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER)
+							: GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH);
+
+						if (isChunked)
+						{   // handle chunked packet by checking sequence and only consuming once its complete and relevant
+							byte[] sliceNumberBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
+							ushort sliceNumber = BitConverter.ToUInt16(sliceNumberBytes);
+
+							SendACK(client, sequence, sliceNumber);
+
+							// ignore old packets unless they are unordered
+							if (!IsNewPacket(sequence, client.ReliableRemoteSequence)
+								&& packetType != SyncPacketType.ReliableUnorderedData)
+								continue;
+
 							if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
-								break;
+							{   // create chunked packet if it doesn't exist yet
+								byte[] numberOfSlicesBytes = GetBytesFromArray(receivedBytes, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, NUMBER_OF_SLICES);
+								ushort numberOfSlices = BitConverter.ToUInt16(numberOfSlicesBytes);
+								packet = new(packetType, moduleHash, client, numberOfSlices);
+								client.ReceivedPacketsBuffer.TryAdd(sequence, packet);
+							}
+							packet.Slices.TryAdd(sliceNumber, data);
 
-							// TODO : unlock gameobjects if packets reference unity objects
-							// only consume chunked packet if it is complete
-							if (packet.IsChunked && !packet.ConcatenateChunkedPacket())
-								break;
+							// if packet is not complete or a packet is missing in the sequence keep it in the buffer
+							if (!packet.IsPacketComplete() || (!IsNextPacket(sequence, client.ReliableRemoteSequence)
+								&& packetType != SyncPacketType.ReliableUnorderedData))
+								continue;
 
 							client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
 							client.ReliableRemoteSequence = sequence;
+							packet.ConcatenateChunkedPacket();
 							SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
 						}
+						else
+						{   // handle packet by checking sequence and consume packet if it is relevant
+							if (IsUnreliableData(packetType))
+							{   // unreliable packet sequences
+								if (!IsNewPacket(sequence, client.UnreliableRemoteSequence)
+									&& packetType != SyncPacketType.UnreliableUnorderedData)
+									continue;
+
+								client.UnreliableRemoteSequence = sequence;
+								SyncManager.DataReceived?.Invoke(moduleHash, client, data);
+							}
+							else if (IsReliableData(packetType))
+							{   // reliable packet sequences
+								SendACK(client, sequence);
+
+								// ignore old packets unless they are unordered
+								if (!IsNewPacket(sequence, client.ReliableRemoteSequence)
+									&& packetType != SyncPacketType.ReliableUnorderedData)
+									continue;
+
+								if (!IsNextPacket(sequence, client.ReliableRemoteSequence)
+									&& packetType != SyncPacketType.ReliableUnorderedData)
+								{   // if a packet is missing in the sequence keep it in the buffer
+									client.ReceivedPacketsBuffer.TryAdd(sequence, new(packetType, moduleHash, data, client));
+									// TODO : if not received within RTTx1.25 timeframe timeout client
+									continue;
+								}
+
+								client.ReliableRemoteSequence = sequence;
+								SyncManager.DataReceived?.Invoke(moduleHash, client, data);
+							}
+						}
+
+						if (IsReliableData(packetType))
+						{   // apply all packets in buffer that are now next in line and complete
+							while (client.ReceivedPacketsBuffer.Count > 0)
+							{
+								sequence++;
+								if (!client.ReceivedPacketsBuffer.TryGetValue(sequence, out SyncReceiverPacket packet))
+									break;
+
+								// only consume chunked packet if it is complete
+								if (packet.IsChunked && !packet.ConcatenateChunkedPacket())
+									break;
+
+								client.ReceivedPacketsBuffer.TryRemove(sequence, out _);
+								client.ReliableRemoteSequence = sequence;
+								SyncManager.DataReceived?.Invoke(packet.ModuleHash, packet.Client, packet.Data);
+							}
+						}
 					}
+					catch (OverflowException) { continue; }
 				}
-				catch (OverflowException) { continue; }
-				// TODO : handle other exceptions and set IsClientActive = false
+			}
+			catch (Exception ex)
+			{
+				switch (ex)
+				{
+					case ThreadAbortException:
+						break;
+					case SocketException:
+					case ObjectDisposedException:
+						Debug.LogError(ex.ToString());
+						_mainThreadActions.Enqueue(() => IsClientActive = false);
+						break;
+					default:
+						_mainThreadActions.Enqueue(() => IsClientActive = false);
+						ExceptionDispatchInfo.Capture(ex).Throw();
+						throw;
+				}
 			}
 		}
 
@@ -205,6 +228,12 @@ namespace jKnepel.UnitySync.Networking
 			client.LastHeartbeat = DateTime.Now;
 		}
 
+		/// <summary>
+		/// Check if a Client has been inactive for longer than the maximum timeout delay.
+		/// </summary>
+		/// <param name="client"></param>
+		/// <param name="room"></param>
+		/// <returns></returns>
 		private async Task TimeoutClient(SyncConnectedClient client, SyncOpenRoom room)
 		{
 			while (_disposeCount == 0)
@@ -224,8 +253,13 @@ namespace jKnepel.UnitySync.Networking
 
 		#endregion
 
-		#region helper
+		#region helper methods
 
+		/// <summary>
+		/// Resets the most significant bit (IsChunked-Bit) in the Packet Type Header to 0.
+		/// </summary>
+		/// <param name="typeBytes"></param>
+		/// <returns></returns>
 		private static SyncPacketType GetOriginalType(byte typeBytes)
 		{
 			byte mask = 1 << 7;
@@ -233,9 +267,15 @@ namespace jKnepel.UnitySync.Networking
 			return (SyncPacketType)typeBytes;
 		}
 
+		/// <summary>
+		/// Check a Packets CRC32 Checksum against a newly calulcated one using the Packet Bytes and a Roomname.
+		/// </summary>
+		/// <param name="checksum"></param>
+		/// <param name="packet"></param>
+		/// <param name="roomname"></param>
+		/// <returns></returns>
 		private static bool CheckPacketCRC32(byte[] checksum, byte[] packet, byte[] roomname)
-		{
-			// calculate crc32 checksum from protocol id, roomname and packet
+		{  
 			byte[] bytes = new byte[PROTOCOL_ID_LENGTH + roomname.Length + packet.Length];
 			Array.Copy(BitConverter.GetBytes(PROTOCOL_ID), 0, bytes, 0, PROTOCOL_ID_LENGTH);
 			Array.Copy(roomname, 0, bytes, PROTOCOL_ID_LENGTH, roomname.Length);

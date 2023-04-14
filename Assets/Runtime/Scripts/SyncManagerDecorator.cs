@@ -17,9 +17,6 @@ namespace jKnepel.UnitySync
 			SyncManager.OnDisconnectedFromRoom += DisconnectedFromRoom;
 			SyncManager.OnClientConnected += ClientConnected;
 			SyncManager.OnClientDisconnected += ClientDisconnected;
-
-			if (SyncManager.IsConnectedToRoom)
-				ConnectedToRoom();
 		}
 
 		~SyncManagerDecorator()

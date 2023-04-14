@@ -17,7 +17,7 @@ namespace jKnepel.UnitySync
 {
 	public static class SyncManager
 	{
-		#region public members
+		#region public properties
 
 		public static bool IsDebug = false;
 		public static string IP = GetLocalIPAddress();
@@ -109,22 +109,20 @@ namespace jKnepel.UnitySync
 		/// </summary>
 		public static bool IsRoomOwner 
 		{
-			get => IsClientActive
-				? _client.IsRoomOwner
-				: false;
+			get => IsClientActive && _client.IsRoomOwner;
 		}
 
 		public static readonly List<SyncMessage> SyncMessages = new();
 
 		#endregion
 
-		#region internal members
+		#region internal fields
 
-		public static Action<uint, SyncConnectedClient, byte[]> DataReceived;
+		internal static Action<uint, SyncConnectedClient, byte[]> DataReceived;
 
 		#endregion
 
-		#region private members
+		#region private fields
 
 		private static SyncClient _client;
 
@@ -372,6 +370,7 @@ namespace jKnepel.UnitySync
 				_client = new();
 				return;
 			}
+
 			_client.DisconnectFromRoom();
 		}
 
