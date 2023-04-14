@@ -1,14 +1,16 @@
 using jKnepel.UnitySync.Networking;
 using System;
+using UnityEngine;
 
 namespace jKnepel.UnitySync
 {
     public abstract class SyncModule
     {
+		private uint _moduleHash;
 		protected uint ModuleHash
 		{
-			get => ModuleHash;
-			private set => ModuleHash = value;
+			get => _moduleHash;
+			private set => _moduleHash = value;
 		}
 
 		public bool IsModuleRegistered
@@ -18,7 +20,12 @@ namespace jKnepel.UnitySync
 
         public SyncModule()
 		{
-			RegisterModule();
+			if (!RegisterModule())
+			{
+				Debug.LogError("The Module couldn't be registered!");
+				return;
+			}
+
 			SyncManager.OnAwake += Awake;
 			SyncManager.OnStart += Start;
 			SyncManager.OnUpdate += Update;
@@ -51,10 +58,14 @@ namespace jKnepel.UnitySync
 				SyncManager.UnregisterModule(ModuleHash);
 		}
 
-		public void RegisterModule()
+		public bool RegisterModule()
 		{
 			if (!IsModuleRegistered)
+			{
 				ModuleHash = SyncManager.RegisterModule(this);
+				return ModuleHash != 0;
+			}
+			return false;
 		}
 
 		public virtual void Awake() { }

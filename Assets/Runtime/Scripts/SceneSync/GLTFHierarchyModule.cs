@@ -18,10 +18,17 @@ namespace jKnepel.UnitySync
 	{
 		private static readonly SyncSettings _settings = SyncManager.GetSyncSettings();
 
-		private static readonly ConcurrentDictionary<int, BufferedHierarchy> _bufferedHierarchies = new();
-		private static int _gltfHierarchyDelay = _settings.GLTFHierarchyDelay;
+		private readonly ConcurrentDictionary<int, BufferedHierarchy> _bufferedHierarchies = new();
+		private int _gltfHierarchyDelay = _settings.GLTFHierarchyDelay;
+
+		private Scene _syncScene;
 
 		#region lifecycle
+
+		public GLTFHierarchyModule(Scene syncScene)
+		{
+			_syncScene = syncScene;
+		}
 
 		public override void Dispose()
 		{
@@ -58,14 +65,14 @@ namespace jKnepel.UnitySync
 				{
 					return;
 				}
-				SceneManager.MoveGameObjectToScene(createdObject, _settings.SyncScene);
+				SceneManager.MoveGameObjectToScene(createdObject, _syncScene);
 
 				SyncManager.AddSyncMessage(new($"GameObject '{createdObject.name}' imported."));
 			};
 
 			using MemoryStream memoryStream = new();
 			await memoryStream.WriteAsync(hierarchy);
-			await DeserializeGameObject(_settings.SyncScene, new ImportOptions(), memoryStream, onLoadComplete);
+			await DeserializeGameObject(_syncScene, new ImportOptions(), memoryStream, onLoadComplete);
 
 			Debug.Log($"imported:\n{new GLTFParser().ParseToReadableText(hierarchy)}");
 
@@ -86,14 +93,22 @@ namespace jKnepel.UnitySync
 
 		public void SyncHierarchy(GameObject go, Action<bool> onDataSend)
 		{
-			if (_bufferedHierarchies.TryGetValue(go.GetInstanceID(), out BufferedHierarchy hierarchy))
+			GameObject root = go.GetRootParent();
+			int instanceID = root.GetInstanceID();
+
+			if (go.scene != _syncScene)
+			{
+				Debug.LogError($"The Hierarchy {root.name} ({instanceID}) is not part of the synced Scene!");
+				onDataSend?.Invoke(false);
+				return;
+			}
+
+			if (_bufferedHierarchies.TryGetValue(instanceID, out BufferedHierarchy hierarchy))
 			{
 				hierarchy.OnDataSend = (Action<bool>)Delegate.Combine(hierarchy.OnDataSend, onDataSend);
 			}
 			else
 			{
-				GameObject root = go.GetRootParent();
-				int instanceID = root.GetInstanceID();
 				_bufferedHierarchies.TryAdd(instanceID, new(instanceID, root, onDataSend));
 			}
 		}

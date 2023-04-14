@@ -60,6 +60,9 @@ namespace jKnepel.UnitySync.Networking
 			get => _isClientActive;
 			private set 
 			{
+				if (value == _isClientActive)
+					return;
+
 				_isClientActive = value;
 				if (value)
 					SyncManager.OnLocalClientConnected?.Invoke();
@@ -77,6 +80,9 @@ namespace jKnepel.UnitySync.Networking
 			get => _isConnectedToRoom;
 			private set
 			{
+				if (value == _isConnectedToRoom)
+					return;
+
 				_isConnectedToRoom = value;
 				if (value)
 					SyncManager.OnConnectedToRoom?.Invoke();
@@ -119,7 +125,6 @@ namespace jKnepel.UnitySync.Networking
 			}
 			catch (Exception ex)
 			{
-				IsClientActive = false;
 				switch (ex)
 				{
 					case SocketException:
@@ -141,10 +146,12 @@ namespace jKnepel.UnitySync.Networking
 					case OutOfMemoryException:
 						Debug.LogError("Not enough memory available to start the Threads!");
 						break;
-					default: 
+					default:
+						Dispose();
 						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
+				Dispose();
 			}
 		}
 

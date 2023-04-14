@@ -225,19 +225,13 @@ namespace jKnepel.UnitySync
 			foreach (var f in module.GetType().GetMembers(flags))
 			{
 				if (f.MemberType == MemberTypes.Field || (f.MemberType & MemberTypes.Property) != 0)
-				{
 					moduleValues += f.Name;
-				}
 
 				if (f is FieldInfo fi)
-				{
 					moduleValues += fi.FieldType.Name;
-				}
 
 				if (f.MemberType == MemberTypes.Method)
-				{
 					moduleValues += f.Name;
-				}
 			}
 			uint hash = SyncCRC32.CRC32Bytes(Encoding.ASCII.GetBytes(moduleValues));
 
@@ -347,6 +341,7 @@ namespace jKnepel.UnitySync
 			{
 				_client.Dispose();
 			}
+
 			_client = new();
 			return IsClientActive;
 		}
@@ -363,6 +358,7 @@ namespace jKnepel.UnitySync
 			{
 				_client = new();
 			}
+
 			return _client.ConnectToRoom(roomname, createroom);
 		}
 

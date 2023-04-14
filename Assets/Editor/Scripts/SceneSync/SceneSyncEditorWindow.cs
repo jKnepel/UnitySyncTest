@@ -13,15 +13,28 @@ namespace jKnepel.UnitySync.SceneSync
         private static SyncSettings _settings;
         private Editor _syncSettingsEditor;
 
+        private static SceneSyncDecorator _sceneSync;
+
         private Vector2 _roomsViewPos;
         private Vector2 _clientsViewPos;
         private Vector2 _messagesViewPos;
         private Color[] _scrollViewColors = new Color[] { new(0.25f, 0.25f, 0.25f), new(0.23f, 0.23f, 0.23f) };
         
+        private bool _isAutoscroll = false;
         private bool _newRoomOptionsIsVisible = true;
         private string _newRoomName = "New Room";
         private int _newRoomDropdownIndex = 0;
-        private bool _isAutoscroll = false;
+        private int NewRoomDropdownIndex
+		{
+            get => _newRoomDropdownIndex;
+            set
+            {
+                _newRoomDropdownIndex = value;
+                _sceneSync.ExportSceneName = value < EditorSceneManager.sceneCount
+                    ? EditorSceneManager.GetSceneAt(value).name
+                    : "";
+			}
+		}
 
         private Texture2D _texture;
         private GUIStyle _style = new();
@@ -41,8 +54,8 @@ namespace jKnepel.UnitySync.SceneSync
             _texture = new(1, 1);
             _settings = SyncSettings.GetOrCreateSettings();
             _syncSettingsEditor = Editor.CreateEditor(_settings);
+            _sceneSync = new();
             SyncManager.OnSyncMessageAdded += AddSyncMessage;
-            SceneSyncManager.Init();
 		}
 
 		public void CreateGUI()
@@ -62,6 +75,10 @@ namespace jKnepel.UnitySync.SceneSync
                 GUILayout.Label("UnitySync", EditorStyles.largeLabel);
 
                 // user settings
+                _sceneSync.KeepSyncScene = EditorGUILayout.Toggle("Keep ImportScene:", _sceneSync.KeepSyncScene);
+                _sceneSync.VisualiseClients = EditorGUILayout.Toggle(new GUIContent("Visualise Clients:"), _sceneSync.VisualiseClients);
+                _sceneSync.SyncSceneAutomatically = EditorGUILayout.Toggle(new GUIContent("Sync Scene Automatically:"), _sceneSync.SyncSceneAutomatically);
+                _sceneSync.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", _sceneSync.ImportSceneName);
                 _syncSettingsEditor.OnInspectorGUI();
                 EditorGUILayout.Space();
                 EditorGUILayout.Space();
@@ -107,7 +124,7 @@ namespace jKnepel.UnitySync.SceneSync
                                     GUILayout.Label(room.Roomname);
                                     GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
                                     if (GUILayout.Button(new GUIContent("Connect To Room"), GUILayout.ExpandWidth(false)))
-                                        SceneSyncManager.ConnectToRoom(room.Roomname, _settings.ImportSceneName, false);
+                                        SyncManager.ConnectToRoom(room.Roomname, false);
                                 }
                                 EditorGUILayout.EndHorizontal();
                             }
@@ -125,9 +142,9 @@ namespace jKnepel.UnitySync.SceneSync
                             {
                                 GUILayout.Label("Create a New Room", EditorStyles.boldLabel);
                                 _newRoomName = EditorGUILayout.TextField("Roomname:", _newRoomName);
-                                _newRoomDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", _newRoomDropdownIndex, sceneNames);
+                                NewRoomDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", NewRoomDropdownIndex, sceneNames);
                                 if (GUILayout.Button(new GUIContent("Create")))
-                                    SceneSyncManager.ConnectToRoom(_newRoomName, sceneNames[_newRoomDropdownIndex], true);
+                                    SyncManager.ConnectToRoom(_newRoomName, true);
                             }
                             EditorGUILayout.EndVertical();
                         }
@@ -159,7 +176,7 @@ namespace jKnepel.UnitySync.SceneSync
                         EditorGUILayout.EndScrollView();
 
                         if (GUILayout.Button(new GUIContent("Leave Room")))
-                            SceneSyncManager.DisconnectFromRoom();
+                            SyncManager.DisconnectFromRoom();
                     }
                 }
                 EditorGUILayout.Space();

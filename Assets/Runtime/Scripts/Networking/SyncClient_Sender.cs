@@ -54,17 +54,16 @@ namespace jKnepel.UnitySync.Networking
 			{
 				switch (ex)
 				{
+					case ThreadAbortException:
+						break;
 					case SocketException:
-						Debug.LogError(ex.ToString());
-						break;
 					case ObjectDisposedException:
-						Debug.LogError(ex.ToString());
-						break;
 					default:
+						Debug.LogError(ex.ToString());
+						_mainThreadActions.Enqueue(() => IsClientActive = false);
 						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
-				IsClientActive = false;
 			}
 		}
 
