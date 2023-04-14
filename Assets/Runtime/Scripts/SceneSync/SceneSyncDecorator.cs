@@ -212,8 +212,8 @@ namespace jKnepel.UnitySync.SceneSync
 		/// <summary>
 		/// Deep Syncs all the Child Objects of the given GameObjects Root Object.
 		/// </summary>
-		/// <param name="go">The GameObject of which its Root GameObject's Hierarchy should be synced.</param>
-		/// <param name="onDataSend">Callback invoked upon un-/successful syncing of the hierarchy.</param>
+		/// <param name="go">The GameObject of which its Root GameObject's Hierarchy should be synced</param>
+		/// <param name="onDataSend">Callback invoked upon un-/successful syncing of the hierarchy</param>
 		public void SyncHierarchy(GameObject go, Action<bool> onDataSend = null)
 		{
 			_gLTFHierarchyModule.SyncHierarchy(go, onDataSend);

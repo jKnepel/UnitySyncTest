@@ -79,7 +79,7 @@ namespace jKnepel.UnitySync.Networking
 
 					if (packet.IsChunked && IsUnreliableData(packet.Type))
 					{
-						Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
+						Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
 						packet.OnDataSend?.Invoke(false);
 						_packetsToSend.TryDequeue(out _);
 						continue;
