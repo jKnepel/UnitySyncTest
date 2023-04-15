@@ -57,6 +57,7 @@ namespace jKnepel.UnitySync
 				SyncManager.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."), SyncManager.IsDebug);
 				SyncManager.IP = EditorGUILayout.TextField("Local IP:", SyncManager.IP);
 				_settings.Port = EditorGUILayout.IntField("Port:", _settings.Port);
+				_settings.DiscoveryPort = EditorGUILayout.IntField("Server Discovery Port:", _settings.DiscoveryPort);
 				EditorGUI.indentLevel--;
 			}
 

@@ -85,7 +85,7 @@ namespace jKnepel.UnitySync
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
+		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
@@ -101,7 +101,7 @@ namespace jKnepel.UnitySync
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
+		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
@@ -119,7 +119,7 @@ namespace jKnepel.UnitySync
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
+		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
@@ -137,7 +137,7 @@ namespace jKnepel.UnitySync
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
 		/// <param name="receiver">
-		/// A Client in the same Room that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
+		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
 		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{

@@ -11,10 +11,10 @@ namespace jKnepel.UnitySync
 			SyncManager.OnUpdate += Update;
 
 			SyncManager.OnSyncMessageAdded += SyncMessageAdded;
-			SyncManager.OnLocalClientConnected += LocalClientConnected;
-			SyncManager.OnLocalClientDisconnected += LocalClientDisconnected;
-			SyncManager.OnConnectedToRoom += ConnectedToRoom;
-			SyncManager.OnDisconnectedFromRoom += DisconnectedFromRoom;
+			SyncManager.OnServerDiscoveryActivated += ServerDiscoveryActivated;
+			SyncManager.OnServerDiscoveryDeactivated += ServerDiscoveryDeactivated;
+			SyncManager.OnLocalClientConnected += ConnectedToServer;
+			SyncManager.OnLocalClientDisconnected += DisconnectedFromServer;
 			SyncManager.OnClientConnected += ClientConnected;
 			SyncManager.OnClientDisconnected += ClientDisconnected;
 		}
@@ -38,10 +38,10 @@ namespace jKnepel.UnitySync
 				SyncManager.OnUpdate -= Update;
 
 				SyncManager.OnSyncMessageAdded -= SyncMessageAdded;
-				SyncManager.OnLocalClientConnected -= LocalClientConnected;
-				SyncManager.OnLocalClientDisconnected -= LocalClientDisconnected;
-				SyncManager.OnConnectedToRoom -= ConnectedToRoom;
-				SyncManager.OnDisconnectedFromRoom -= DisconnectedFromRoom;
+				SyncManager.OnServerDiscoveryActivated -= ServerDiscoveryActivated;
+				SyncManager.OnServerDiscoveryDeactivated -= ServerDiscoveryDeactivated;
+				SyncManager.OnLocalClientConnected -= ConnectedToServer;
+				SyncManager.OnLocalClientDisconnected -= DisconnectedFromServer;
 				SyncManager.OnClientConnected -= ClientConnected;
 				SyncManager.OnClientDisconnected -= ClientDisconnected;
 			}
@@ -52,10 +52,10 @@ namespace jKnepel.UnitySync
 		protected virtual void Update() { }
 
 		protected virtual void SyncMessageAdded() { }
-		protected virtual void LocalClientConnected() { }
-		protected virtual void LocalClientDisconnected() { }
-		protected virtual void ConnectedToRoom() { }
-		protected virtual void DisconnectedFromRoom() { }
+		protected virtual void ServerDiscoveryActivated() { }
+		protected virtual void ServerDiscoveryDeactivated() { }
+		protected virtual void ConnectedToServer() { }
+		protected virtual void DisconnectedFromServer() { }
 		protected virtual void ClientConnected(IPAddress ip) { }
 		protected virtual void ClientDisconnected(IPAddress ip) { }
 	}

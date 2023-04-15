@@ -6,6 +6,9 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Reflection;
 using UnityEngine;
@@ -29,87 +32,87 @@ namespace jKnepel.UnitySync
 		public static Action OnSyncMessageAdded;
 
 		/// <summary>
-		/// Action for when the local Client successfully connected to the Network and is able to discover and join Rooms.
+		/// Action for when the Server Discovery was activated.
+		/// </summary>
+		public static Action OnServerDiscoveryActivated;
+
+		/// <summary>
+		/// Action for when the Server Discovery was deactivated.
+		/// </summary>
+		public static Action OnServerDiscoveryDeactivated;
+
+		/// <summary>
+		/// Action for when the local Client successfully connected to or created a Server.
 		/// </summary>
 		public static Action OnLocalClientConnected;
 
 		/// <summary>
-		/// Action for when the local Client was disconnected from the Network and is now unable to discover and join Rooms.
+		/// Action for when the local Client disconnected from or closed the Server.
 		/// </summary>
 		public static Action OnLocalClientDisconnected;
 
 		/// <summary>
-		/// Action for when the local Client connected to a Room and can now send Messages.
-		/// </summary>
-		public static Action OnConnectedToRoom;
-
-		/// <summary>
-		/// Action for when the local Client disconnected from a Room and can no longer send any Messages.
-		/// </summary>
-		public static Action OnDisconnectedFromRoom;
-
-		/// <summary>
-		/// Action for when a Client connected to the current Room and can now receive Messages.
+		/// Action for when a Client connected to the current Server and can now receive Messages.
 		/// </summary>
 		public static Action<IPAddress> OnClientConnected;
 
 		/// <summary>
-		/// Action for when a Client disconnected from the current Room and can no longer receive any Messages.
+		/// Action for when a Client disconnected from the current Server and can no longer receive any Messages.
 		/// </summary>
 		public static Action<IPAddress> OnClientDisconnected;
 
 		/// <summary>
-		/// If the Client is connected to the Network and able to discover Rooms.
+		/// If the Client is connected to the Network and able to discover Servers.
 		/// </summary>
-		public static bool IsClientActive 
-		{ 
-			get => _client != null && _client.IsClientActive; 
+		public static bool IsServerDiscoveryActive
+		{
+			get => _isServerDiscoveryActive; private set => _isServerDiscoveryActive = value;
 		}
 		
 		/// <summary>
-		/// If the Client is connected to a Room and able to send Messages.
+		/// If the Client is connected to a Server or is a Server.
 		/// </summary>
-		public static bool IsConnectedToRoom 
+		public static bool IsConnected
 		{ 
-			get => _client != null && _client.IsConnectedToRoom; 
+			get => _socket != null && _socket.IsConnected; 
 		}
 		
 		/// <summary>
-		/// A List of all available Rooms.
+		/// A List of all available Servers.
 		/// </summary>
-		public static List<SyncOpenRoom> OpenRooms 
+		public static List<SyncServerInformation> OpenServers
 		{ 
-			get => IsClientActive 
-				? _client.OpenRooms.Values.ToList() 
+			get => IsServerDiscoveryActive
+				? _openServers.Values.ToList() 
 				: null; 
 		}
 		
 		/// <summary>
-		/// The Room to which the Client is currently connected to.
+		/// The Server to which the Client is currently connected to.
 		/// </summary>
-		public static SyncOpenRoom CurrentRoom 
+		public static SyncServerInformation CurrentServer 
 		{ 
-			get => IsClientActive 
-				? _client.CurrentRoom 
+			get => IsConnected
+				? _socket.ServerInformation
 				: null; 
 		}
 
 		/// <summary>
-		/// A List of remote Clients connected to the same Room as the local Client.
+		/// A List of remote Clients connected to the same Server as the local Client.
 		/// </summary>
 		public static List<SyncConnectedClient> ConnectedClients 
 		{
-			get => IsClientActive 
-				? _client.CurrentRoom.ConnectedClients.Values.ToList()
+			get => IsConnected
+				? _socket.ServerInformation.ConnectedClients.Values.ToList()
 				: null;
 		}
 
 		/// <summary>
-		/// If the Client created the Room that they are currently connected to.
+		/// If the Client created the Server that they are currently connected to.
 		/// </summary>
-		public static bool IsRoomOwner 
+		public static bool IsServer
 		{
-			get => IsClientActive && _client.IsRoomOwner;
+			get => IsConnected && _socket.IsServer;
 		}
 
 		public static readonly List<SyncMessage> SyncMessages = new();
@@ -124,11 +127,22 @@ namespace jKnepel.UnitySync
 
 		#region private fields
 
-		private static SyncClient _client;
+		private readonly static SyncSettings _settings = SyncSettings.GetOrCreateSettings();
+		
+		private readonly static Dictionary<string, SyncServerInformation> _openServers = new();
 
 		private readonly static Dictionary<uint, SyncModule> _registeredModules = new();
 
-		private static readonly ConcurrentQueue<Action> _mainThreadActions = new();
+		private readonly static ConcurrentQueue<Action> _mainThreadActions = new();
+
+		private static IPAddress _ip;
+		private static int		 _port;
+		private static UdpClient _udpClient;
+
+		private static Thread _discoveryThread;
+
+		private static SyncSocket _socket;
+		private static bool _isServerDiscoveryActive;
 
 		#endregion
 
@@ -147,7 +161,8 @@ namespace jKnepel.UnitySync
 #endif
 
 			DataReceived += OnDataReceived;
-			_client = new();
+
+			ResetClient();
 		}
 
 		public static void Init() { }
@@ -204,6 +219,53 @@ namespace jKnepel.UnitySync
 			return ipAddress;
 		}
 
+		private static void DiscoveryThread()
+		{
+			try
+			{
+				while (true)
+				{
+					try
+					{
+						// get packet ip headers
+						IPEndPoint receiveEndpoint = new(IPAddress.Any, 0);
+						byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
+						IPAddress sender = receiveEndpoint.Address;
+						if (sender.Equals(_ip))
+							continue;
+
+						// get relevant header bytes
+						uint checksum = SyncPacketHelper.GetCRC32(receivedBytes);
+						byte[] remainder = SyncPacketHelper.GetRemainder(receivedBytes);
+						SyncPacketType packetType = SyncPacketHelper.GetPacketType(receivedBytes);
+
+						if (packetType != SyncPacketType.Heartbeat)
+							continue;
+
+						// check for bitswitches using crc32 checksum
+						byte[] compChecksum = new byte[SyncSettings.PROTOCOL_ID_LENGTH + remainder.Length];
+						Array.Copy(BitConverter.GetBytes(SyncSettings.PROTOCOL_ID), 0, compChecksum, 0, SyncSettings.PROTOCOL_ID_LENGTH);
+						Array.Copy(remainder, 0, compChecksum, SyncSettings.PROTOCOL_ID_LENGTH, remainder.Length);
+						if (checksum != SyncCRC32.CRC32Bytes(compChecksum))
+							continue;
+
+						// data from hearbeat
+						byte servernameLength = remainder[0];
+						byte[] servernameBytes = SyncPacketHelper.GetBytesFromArray(remainder, 1, servernameLength);
+						string servername = Encoding.ASCII.GetString(servernameBytes);
+
+						if (!_openServers.TryGetValue(servername, out SyncServerInformation server))
+							server = new SyncServerInformation(sender, servername);
+
+						// TODO : update server values
+						// TODO : timeout server
+					}
+					catch (OverflowException) { continue; }
+				}
+			}
+			catch (ThreadAbortException) { }
+		}
+
 		private static void OnDataReceived(uint moduleHash, SyncConnectedClient client, byte[] data)
 		{
 			if (_registeredModules.TryGetValue(moduleHash, out SyncModule module))
@@ -256,64 +318,34 @@ namespace jKnepel.UnitySync
 
 		internal static void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
-				onDataSend?.Invoke(false);
+			if (!IsEligibleForSending(onDataSend))
 				return;
-			}
 
-			_client.SendDataReliable(moduleHash, data, onDataSend, receiver);
+			_socket.SendDataReliable(moduleHash, data, onDataSend, receiver);
 		}
 
 		internal static void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
-				onDataSend?.Invoke(false);
+			if (!IsEligibleForSending(onDataSend))
 				return;
-			}
 
-			_client.SendDataReliableUnordered(moduleHash, data, onDataSend, receiver);
+			_socket.SendDataReliableUnordered(moduleHash, data, onDataSend, receiver);
 		}
 
 		internal static void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
-				onDataSend?.Invoke(false);
+			if (!IsEligibleForSending(onDataSend))
 				return;
-			}
 
-			if (data.Length > 1200)
-			{
-				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataUnreliable(moduleHash, data, onDataSend, receiver);
+			_socket.SendDataUnreliable(moduleHash, data, onDataSend, receiver);
 		}
 
 		internal static void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsClientActive || !IsConnectedToRoom)
-			{
-				Debug.LogError("The Client must be active and connected to a Room before Data can be send!");
-				onDataSend?.Invoke(false);
+			if (!IsEligibleForSending(onDataSend))
 				return;
-			}
 
-			if (data.Length > 1200)
-			{
-				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return;
-			}
-
-			_client.SendDataUnreliableUnordered(moduleHash, data, onDataSend, receiver);
+			_socket.SendDataUnreliableUnordered(moduleHash, data, onDataSend, receiver);
 		}
 
 		#endregion
@@ -335,43 +367,117 @@ namespace jKnepel.UnitySync
 		/// <returns><see langword="true"/> if the Client is Active after the Reset</returns>
 		public static bool ResetClient()
 		{
-			if (_client != null)
+			if (_udpClient != null)
 			{
-				_client.Dispose();
+				_udpClient.Close();
+				_udpClient.Dispose();
+			}
+			if (_discoveryThread != null)
+			{
+				_discoveryThread.Abort();
+				_discoveryThread.Join();
 			}
 
-			_client = new();
-			return IsClientActive;
+			try
+			{
+				_ip = IPAddress.Parse(IP);
+				_port = _settings.DiscoveryPort;
+
+				IPEndPoint localport = new(IPAddress.Any, _port);
+				_udpClient = new();
+				_udpClient.ExclusiveAddressUse = false;
+				_udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+				_udpClient.EnableBroadcast = true;
+				_udpClient.Client.Bind(localport);
+
+				_discoveryThread = new(() => DiscoveryThread()) { IsBackground = true };
+				_discoveryThread.Start();
+			}
+			catch (Exception ex)
+			{
+				switch (ex)
+				{
+					case SocketException:
+						Debug.LogError("An Error ocurred when accessing the socket. "
+							+ "Make sure the port is not occupied by another process!");
+						break;
+					case ArgumentOutOfRangeException:
+						Debug.LogError("The Given Port is outside the possible Range!");
+						break;
+					case ArgumentNullException:
+						Debug.LogError("The local IP can't be null!");
+						break;
+					case FormatException:
+						Debug.LogError("The local IP is not a valid IP Address!");
+						break;
+					case ThreadStartException:
+						Debug.LogError("An Error ocurred when starting the Threads. Please try again later!");
+						break;
+					case OutOfMemoryException:
+						Debug.LogError("Not enough memory available to start the Threads!");
+						break;
+					default:
+						ExceptionDispatchInfo.Capture(ex).Throw();
+						throw;
+				}
+				IsServerDiscoveryActive = false;
+				return false;
+			}
+
+			IsServerDiscoveryActive = true;
+			return IsServerDiscoveryActive;
 		}
 
 		/// <summary>
-		/// Connect to a Room or create a new one. Membership in a Room is required before Data can be send.
+		/// Connect to a Server or create a new one. Membership in a Server is required before Data can be send.
 		/// </summary>
-		/// <param name="roomname">Name of the Room</param>
-		/// <param name="createroom">Wether an existing Room should be joined or a new Room should be created.</param>
-		/// <returns><see langword="true"/> if the Client successfully connected to the Room</returns>
-		public static bool ConnectToRoom(string roomname, bool createroom = false)
+		/// <param name="servername">Name of the Server</param>
+		/// <param name="createserver">Wether an existing Server should be joined or a new Server should be created.</param>
+		/// <returns><see langword="true"/> if the Client successfully connected to the Server</returns>
+		public static bool ConnectToServer(string servername, bool createserver = false)
 		{
-			if (_client == null)
+			if (IsConnected)
 			{
-				_client = new();
+				Debug.LogWarning("The local Client is already connected to a Server!");
+				return false;
 			}
 
-			return _client.ConnectToRoom(roomname, createroom);
+			if (createserver)
+			{
+				if (_openServers.TryGetValue(servername, out _))
+				{
+					Debug.LogError("A Server with this Name already exists!");
+					return false;
+				}
+
+				_socket = new SyncServer(servername);
+			}
+			else
+			{
+				if (!_openServers.TryGetValue(servername, out _))
+				{
+					Debug.LogError("No Server with this Name exists!");
+					return false;
+				}
+
+				//_socket = new SyncClient(servername);
+			}
+
+			return IsConnected;
 		}
 
 		/// <summary>
-		/// Disconnects the Client from the Room
+		/// Disconnects the Client from the Server
 		/// </summary>
-		public static void DisconnectFromRoom()
+		public static void DisconnectFromServer()
 		{
-			if (_client == null)
+			if (_socket == null)
 			{
-				_client = new();
+				Debug.LogWarning("The local Client is not currently connected to a Server!");
 				return;
 			}
 
-			_client.DisconnectFromRoom();
+			_socket.DisconnectFromServer();
 		}
 
 		public static void AddSyncMessage(SyncMessage message)
@@ -380,6 +486,21 @@ namespace jKnepel.UnitySync
 				SyncMessages.Add(message);
 				OnSyncMessageAdded?.Invoke();
 			});
+		}
+
+		#endregion
+
+		#region helper methods
+
+		private static bool IsEligibleForSending(Action<bool> onDataSend)
+		{
+			if (!IsConnected)
+			{
+				Debug.LogError("The local Client is currently not connected to a Server!");
+				onDataSend?.Invoke(false);
+				return false;
+			}
+			return true;
 		}
 
 		#endregion

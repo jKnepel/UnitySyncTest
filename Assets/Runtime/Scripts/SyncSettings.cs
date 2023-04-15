@@ -67,10 +67,23 @@ namespace jKnepel.UnitySync
 
 		// debug settings
 		public int Port = 26822;
+		public int DiscoveryPort = 26823;
+
+
+		// packet constants
+		internal const uint PROTOCOL_ID = 876237842;
+		internal const int PROTOCOL_ID_LENGTH = 4;          // length of the protocol id which is calculated from the package version
+		internal const int CRC32_LENGTH = 4;                // checksum and contains protocol and server id
+		internal const int PACKET_TYPE_LENGTH = 1;          // id of the packet type
+		internal const int SEQUENCE_ID_LENGTH = 2;          // sequence id for preventing old updates to be consumed
+		internal const int MODULE_HASH_LENGTH = 4;          // flag containing the hash of the used module
+		internal const int NUMBER_OF_SLICES = 2;            // flag showing the number of packets the chunk consists of
+		internal const int SLICE_NUMBER = NUMBER_OF_SLICES; // number of the current slice
+		internal const int DATA_FLAG_LENGTH = 1;			// byte flag containing the length of the following byte data
 
 		// scene sync variables
 		// TODO : move these to seperate settings asset?
-        public int ClientVisualiserDelay = 50;
+		public int ClientVisualiserDelay = 50;
         public int GLTFHierarchyDelay = 500;
         public SyncClientVisualiser ClientVisualiser;
 		public Material HighlightMaterial;

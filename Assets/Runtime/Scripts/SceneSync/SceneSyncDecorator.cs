@@ -16,7 +16,7 @@ namespace jKnepel.UnitySync.SceneSync
 		private GLTFHierarchyModule _gLTFHierarchyModule;
 
 		private Scene _syncScene;
-		private bool _wasRoomOwner;
+		private bool _wasServer;
 
 		private string _importSceneName = "SyncImportScene";
 		private string _exportSceneName;
@@ -31,12 +31,12 @@ namespace jKnepel.UnitySync.SceneSync
 		#region properties
 
 		/// <summary>
-		/// The Scene Name that will be used for the synced Scene once a Room is joined.
+		/// The Scene Name that will be used for the synced Scene once a Server is joined.
 		/// </summary>
 		public string ImportSceneName { get => _importSceneName; set => _importSceneName = value; }
 
 		/// <summary>
-		/// The Scene Name that will be used for the synced Scene once a Room is created.
+		/// The Scene Name that will be used for the synced Scene once a Server is created.
 		/// </summary>
 		public string ExportSceneName { get => _exportSceneName; set => _exportSceneName = value; }
 
@@ -46,8 +46,8 @@ namespace jKnepel.UnitySync.SceneSync
 		public bool IsSceneSyncManagerConnected { get; private set; }
 
 		/// <summary>
-		/// Wether or not to keep the sync Scene in the Hierarchy upon leaving the Room.
-		/// The Scene will always be kept if the local Client was the Room Owner.
+		/// Wether or not to keep the sync Scene in the Hierarchy upon leaving the Server.
+		/// The Scene will always be kept if the local Client was the Server Owner.
 		/// </summary>
 		public bool KeepSyncScene { get; set; }
 
@@ -105,32 +105,32 @@ namespace jKnepel.UnitySync.SceneSync
 		public override void Dispose()
 		{
 			base.Dispose();
-			DisconnectedFromRoom();
+			DisconnectedFromServer();
 		}
 
 		#endregion
 
 		#region protected methods
 
-		protected override void ConnectedToRoom()
+		protected override void ConnectedToServer()
 		{
 #if UNITY_EDITOR
 			if (EditorApplication.isPlaying)
 			{
-				Debug.LogError($"Can't connect to a Room while the Editor is in Playmode!");
-				SyncManager.DisconnectFromRoom();
+				Debug.LogError($"Can't connect to a Server while the Editor is in Playmode!");
+				SyncManager.DisconnectFromServer();
 				return;
 			}
 #endif
 
-			// create/save scene if room is joined/created
-			if (SyncManager.IsRoomOwner)
+			// create/save scene if server is joined/created
+			if (SyncManager.IsServer)
 			{
 				Scene scene = SceneManager.GetSceneByName(ExportSceneName);
 				if (!scene.IsValid() && !scene.isLoaded)
 				{
 					Debug.LogError($"The Scene {ImportSceneName} is not valid!");
-					SyncManager.DisconnectFromRoom();
+					SyncManager.DisconnectFromServer();
 					return;
 				}
 				_syncScene = scene;
@@ -141,7 +141,7 @@ namespace jKnepel.UnitySync.SceneSync
 				if (scene.IsValid() || scene.isLoaded)
 				{
 					Debug.LogError($"The Scene {ImportSceneName} already exists!");
-					SyncManager.DisconnectFromRoom();
+					SyncManager.DisconnectFromServer();
 					return;
 				}
 
@@ -167,11 +167,11 @@ namespace jKnepel.UnitySync.SceneSync
 			EditorApplication.playModeStateChanged += PreventPlayMode;
 #endif
 
-			_wasRoomOwner = SyncManager.IsRoomOwner;
+			_wasServer = SyncManager.IsServer;
 			IsSceneSyncManagerConnected = true;
 		}
 
-		protected override void DisconnectedFromRoom()
+		protected override void DisconnectedFromServer()
 		{
 			IsSceneSyncManagerConnected = false;
 
@@ -195,7 +195,7 @@ namespace jKnepel.UnitySync.SceneSync
 			EditorApplication.playModeStateChanged -= PreventPlayMode;
 #endif
 
-			if (!_wasRoomOwner && !KeepSyncScene && _syncScene.IsValid())
+			if (!_wasServer && !KeepSyncScene && _syncScene.IsValid())
 			{
 #if UNITY_EDITOR
 				EditorSceneManager.UnloadSceneAsync(_syncScene);

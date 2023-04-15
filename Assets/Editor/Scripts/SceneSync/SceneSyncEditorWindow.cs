@@ -15,21 +15,21 @@ namespace jKnepel.UnitySync.SceneSync
 
         private static SceneSyncDecorator _sceneSync;
 
-        private Vector2 _roomsViewPos;
+        private Vector2 _serversViewPos;
         private Vector2 _clientsViewPos;
         private Vector2 _messagesViewPos;
         private Color[] _scrollViewColors = new Color[] { new(0.25f, 0.25f, 0.25f), new(0.23f, 0.23f, 0.23f) };
         
         private bool _isAutoscroll = false;
-        private bool _newRoomOptionsIsVisible = true;
-        private string _newRoomName = "New Room";
-        private int _newRoomDropdownIndex = 0;
-        private int NewRoomDropdownIndex
+        private bool _newServerOptionsIsVisible = true;
+        private string _newServerName = "New Server";
+        private int _newServerDropdownIndex = 0;
+        private int NewServerDropdownIndex
 		{
-            get => _newRoomDropdownIndex;
+            get => _newServerDropdownIndex;
             set
             {
-                _newRoomDropdownIndex = value;
+                _newServerDropdownIndex = value;
                 _sceneSync.ExportSceneName = value < EditorSceneManager.sceneCount
                     ? EditorSceneManager.GetSceneAt(value).name
                     : "";
@@ -83,7 +83,7 @@ namespace jKnepel.UnitySync.SceneSync
                 EditorGUILayout.Space();
                 EditorGUILayout.Space();
 
-                if (!SyncManager.IsClientActive)
+                if (!SyncManager.IsServerDiscoveryActive)
 				{
                     GUILayout.Label($"Client has stopped working!");
                     if (GUILayout.Button(new GUIContent("Reset Client"), GUILayout.ExpandWidth(false)))
@@ -92,92 +92,90 @@ namespace jKnepel.UnitySync.SceneSync
                         Repaint();
 					}
 				}
+
+                if (GUILayout.Button("Reset Client"))
+                {
+                    SyncManager.ResetClient();
+                    Repaint();
+                }
+
+                if (!SyncManager.IsConnected)
+                {
+                    // open servers list
+                    EditorGUILayout.BeginHorizontal();
+                    GUILayout.Label($"Open Servers: {SyncManager.OpenServers?.Count}");
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button(new GUIContent(_newServerOptionsIsVisible ? "-" : "+", "Create a New Server"),
+                        GUILayout.Width(20), GUILayout.Height(20)))
+                        _newServerOptionsIsVisible = !_newServerOptionsIsVisible;
+                    EditorGUILayout.EndHorizontal();
+                    _serversViewPos = EditorGUILayout.BeginScrollView(_serversViewPos,
+                        EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
+                    {
+                        if (SyncManager.OpenServers?.Count == 0)
+                            GUILayout.Label($"No Servers found!");
+
+                        for (int i = 0; i < SyncManager.OpenServers?.Count; i++)
+                        {
+                            SyncServerInformation server = SyncManager.OpenServers[i];
+                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
+                            {
+                                GUILayout.Label(server.Servername);
+                                GUILayout.Label($"#{server.NumberConnectedClients}");
+                                if (GUILayout.Button(new GUIContent("Connect To Server"), GUILayout.ExpandWidth(false)))
+                                    SyncManager.ConnectToServer(server.Servername, false);
+                            }
+                            EditorGUILayout.EndHorizontal();
+                        }
+                    }
+                    EditorGUILayout.EndScrollView();
+
+                    // new server options
+                    if (_newServerOptionsIsVisible)
+                    {
+                        int sceneCount = EditorSceneManager.sceneCount;
+                        string[] sceneNames = new string[sceneCount];
+                        for (int i = 0; i < sceneCount; i++)
+                            sceneNames[i] = EditorSceneManager.GetSceneAt(i).name;
+                        EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                        {
+                            GUILayout.Label("Create a New Server", EditorStyles.boldLabel);
+                            _newServerName = EditorGUILayout.TextField("Servername:", _newServerName);
+                            NewServerDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", NewServerDropdownIndex, sceneNames);
+                            if (GUILayout.Button(new GUIContent("Create")))
+                                SyncManager.ConnectToServer(_newServerName, true);
+                        }
+                        EditorGUILayout.EndVertical();
+                    }
+                }
                 else
-				{
-                    if (GUILayout.Button("Reset Client"))
-					{
-                        SyncManager.ResetClient();
-                        Repaint();
-					}
-
-                    if (!SyncManager.IsConnectedToRoom)
+                {
+                    // server client list
+                    GUILayout.Label($"Current Server: {SyncManager.CurrentServer.Servername}");
+                    _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos,
+                        EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
                     {
-                        // open rooms list
-                        EditorGUILayout.BeginHorizontal();
-                        GUILayout.Label($"Open Rooms: {SyncManager.OpenRooms?.Count}");
-                        GUILayout.FlexibleSpace();
-                        if (GUILayout.Button(new GUIContent(_newRoomOptionsIsVisible ? "-" : "+", "Create a New Room"),
-                            GUILayout.Width(20), GUILayout.Height(20)))
-                            _newRoomOptionsIsVisible = !_newRoomOptionsIsVisible;
-                        EditorGUILayout.EndHorizontal();
-                        _roomsViewPos = EditorGUILayout.BeginScrollView(_roomsViewPos,
-                            EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
-                        {
-                            if (SyncManager.OpenRooms?.Count == 0)
-                                GUILayout.Label($"No Rooms found!");
+                        if (SyncManager.CurrentServer.ConnectedClients.Count == 0)
+                            GUILayout.Label($"There are no Clients in this server!");
 
-                            for (int i = 0; i < SyncManager.OpenRooms?.Count; i++)
-                            {
-                                SyncOpenRoom room = SyncManager.OpenRooms[i];
-                                EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
-                                {
-                                    GUILayout.Label(room.Roomname);
-                                    GUILayout.Label($"#{room.ConnectedClients.Values.Count}");
-                                    if (GUILayout.Button(new GUIContent("Connect To Room"), GUILayout.ExpandWidth(false)))
-                                        SyncManager.ConnectToRoom(room.Roomname, false);
-                                }
-                                EditorGUILayout.EndHorizontal();
-                            }
-                        }
-                        EditorGUILayout.EndScrollView();
-
-                        // new room options
-                        if (_newRoomOptionsIsVisible)
+                        Color defaultColor = _style.normal.textColor;
+                        _style.alignment = TextAnchor.MiddleLeft;
+                        for (int i = 0; i < SyncManager.CurrentServer.NumberConnectedClients; i++)
                         {
-                            int sceneCount = EditorSceneManager.sceneCount;
-                            string[] sceneNames = new string[sceneCount];
-                            for (int i = 0; i < sceneCount; i++)
-                                sceneNames[i] = EditorSceneManager.GetSceneAt(i).name;
-                            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                            SyncConnectedClient client = SyncManager.CurrentServer.ConnectedClients.ElementAt(i).Value;
+                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                             {
-                                GUILayout.Label("Create a New Room", EditorStyles.boldLabel);
-                                _newRoomName = EditorGUILayout.TextField("Roomname:", _newRoomName);
-                                NewRoomDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", NewRoomDropdownIndex, sceneNames);
-                                if (GUILayout.Button(new GUIContent("Create")))
-                                    SyncManager.ConnectToRoom(_newRoomName, true);
+                                _style.normal.textColor = client.Color;
+                                GUILayout.Label(client.Username, _style);
                             }
-                            EditorGUILayout.EndVertical();
+                            EditorGUILayout.EndHorizontal();
                         }
+                        _style.normal.textColor = defaultColor;
                     }
-                    else
-                    {
-                        // room client list
-                        GUILayout.Label($"Current Room: {SyncManager.CurrentRoom.Roomname}");
-                        _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos,
-                            EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
-                        {
-                            if (SyncManager.CurrentRoom.ConnectedClients.Count == 0)
-                                GUILayout.Label($"There are no Clients in this room!");
+                    EditorGUILayout.EndScrollView();
 
-                            Color defaultColor = _style.normal.textColor;
-                            _style.alignment = TextAnchor.MiddleLeft;
-                            for (int i = 0; i < SyncManager.CurrentRoom.ConnectedClients.Count; i++)
-                            {
-                                SyncConnectedClient client = SyncManager.CurrentRoom.ConnectedClients.ElementAt(i).Value;
-                                EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
-                                {
-                                    _style.normal.textColor = client.Color;
-                                    GUILayout.Label(client.Username, _style);
-                                }
-                                EditorGUILayout.EndHorizontal();
-                            }
-                            _style.normal.textColor = defaultColor;
-                        }
-                        EditorGUILayout.EndScrollView();
-
-                        if (GUILayout.Button(new GUIContent("Leave Room")))
-                            SyncManager.DisconnectFromRoom();
-                    }
+                    if (GUILayout.Button(new GUIContent("Leave Server")))
+                        SyncManager.DisconnectFromServer();
                 }
                 EditorGUILayout.Space();
                 EditorGUILayout.Space();
