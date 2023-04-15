@@ -113,6 +113,8 @@ namespace jKnepel.UnitySync.Networking
 						{   // handle packet by checking sequence and consume packet if it is relevant
 							if (IsUnreliableData(packetType))
 							{   // unreliable packet sequences
+
+								// ignore old packets unless they are unordered
 								if (!IsNewPacket(sequence, client.UnreliableRemoteSequence)
 									&& packetType != SyncPacketType.UnreliableUnorderedData)
 									continue;
@@ -188,7 +190,7 @@ namespace jKnepel.UnitySync.Networking
 
 		private void UpdateHeartbeat(IPAddress sender, byte[] checksum, byte[] data)
 		{
-			// read roomname and check for bitswitches
+			// read roomname and control crc32 checksum
 			int currentPosition = SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH;
 			int roomnameLength = data[currentPosition];
 			currentPosition += ROOMNAME_FLAG_LENGTH;
@@ -256,7 +258,7 @@ namespace jKnepel.UnitySync.Networking
 		#region helper methods
 
 		/// <summary>
-		/// Resets the most significant bit (IsChunked-Bit) in the Packet Type Header to 0.
+		/// Resets the most significant Bit (IsChunked-Bit) in the Packet Type Header to 0.
 		/// </summary>
 		/// <param name="typeBytes"></param>
 		/// <returns></returns>
@@ -268,7 +270,7 @@ namespace jKnepel.UnitySync.Networking
 		}
 
 		/// <summary>
-		/// Check a Packets CRC32 Checksum against a newly calulcated one using the Packet Bytes and a Roomname.
+		/// Check a Packets CRC32 Checksum against a newly calculated one using the Packet Bytes and a Roomname.
 		/// </summary>
 		/// <param name="checksum"></param>
 		/// <param name="packet"></param>
