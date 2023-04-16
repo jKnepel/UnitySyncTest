@@ -19,7 +19,7 @@ namespace jKnepel.UnitySync.Networking
 
 		protected static readonly SyncSettings _settings = SyncSettings.GetOrCreateSettings();
 
-		protected IPAddress _ip;
+		protected IPAddress _localIP;
 		protected int _port;
 		protected UdpClient _udpClient;
 
@@ -81,6 +81,7 @@ namespace jKnepel.UnitySync.Networking
 		#endregion
 
 		#region public methods
+
 		public abstract void DisconnectFromServer();
 
 		public void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)

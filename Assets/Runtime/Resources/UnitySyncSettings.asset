@@ -21,6 +21,7 @@ MonoBehaviour:
   ResendReliablePacketsDelay: 250
   MaxNumberResendReliablePackets: 5
   Port: 26822
+  DiscoveryPort: 26823
   ClientVisualiserDelay: 50
   GLTFHierarchyDelay: 500
   ClientVisualiser: {fileID: 7080547937376749528, guid: 50aa1bbdf9c3eac459c8e97ce858b662, type: 3}

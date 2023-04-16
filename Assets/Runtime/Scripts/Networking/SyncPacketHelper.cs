@@ -1,4 +1,6 @@
 using System;
+using System.Text;
+using UnityEngine;
 
 namespace jKnepel.UnitySync.Networking
 {
@@ -67,6 +69,27 @@ namespace jKnepel.UnitySync.Networking
 					? GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER)
 					: GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH);
 		}
+
+		public static uint GetChallenge(byte[] packet)
+		{
+			byte[] challengeBytes = GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH, SyncSettings.CHALLENGE_LENGTH);
+			return BitConverter.ToUInt32(challengeBytes);
+		}
+
+		public static string GetChallengeUsername(byte[] packet)
+		{
+			byte usernameLength = packet[SyncSettings.CRC32_LENGTH];
+			byte[] usernameBytes = GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.DATA_FLAG_LENGTH, usernameLength);
+			return Encoding.ASCII.GetString(usernameBytes);
+		}
+
+		public static Color32 GetChallengeColor(byte[] packet)
+		{
+			byte usernameLength = packet[SyncSettings.CRC32_LENGTH];
+			int colorPosition = SyncSettings.CRC32_LENGTH + SyncSettings.DATA_FLAG_LENGTH + usernameLength;
+			return new(packet[colorPosition], packet[colorPosition + 1], packet[colorPosition + 2], 255);
+		}
+
 
 		#endregion
 
@@ -150,41 +173,56 @@ namespace jKnepel.UnitySync.Networking
 			return type == SyncPacketType.UnreliableData || type == SyncPacketType.UnreliableUnorderedData;
 		}
 
+		public static bool IsConnectedPacket(SyncPacketType type)
+		{
+			return type == SyncPacketType.Heartbeat || type == SyncPacketType.ConnectionRequest
+				|| type == SyncPacketType.ConnectionChallenge || type == SyncPacketType.ConnectionDenied
+				|| type == SyncPacketType.ChallengeAnswer;
+		}
+
 		public static bool IsDataPacket(SyncPacketType type)
 		{
 			return IsReliableData(type) || IsUnreliableData(type);
 		}
 
 		/// <summary>
-		/// Check a Packets CRC32 Checksum against a newly calculated one using the Packet Bytes and a Servername.
+		/// Check a Packets CRC32 Checksum against a newly calculated one using the Packet Bytes.
+		/// Also includes the Servername as a magic Header if the Sender is connected to the same Server.
 		/// </summary>
 		/// <param name="checksum"></param>
 		/// <param name="packet"></param>
 		/// <param name="servername"></param>
 		/// <returns></returns>
-		public static bool CheckPacketCRC32(uint checksum, byte[] packet, byte[] servername)
+		public static bool CheckPacketCRC32(uint checksum, byte[] packet, byte[] servername = null)
 		{
-			byte[] bytes = new byte[SyncSettings.PROTOCOL_ID_LENGTH + servername.Length + packet.Length];
+			int servernameLength = servername == null ? 0 : servername.Length;
+
+			byte[] bytes = new byte[SyncSettings.PROTOCOL_ID_LENGTH + servernameLength + packet.Length];
 			Array.Copy(BitConverter.GetBytes(SyncSettings.PROTOCOL_ID), 0, bytes, 0, SyncSettings.PROTOCOL_ID_LENGTH);
-			Array.Copy(servername, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH, servername.Length);
-			Array.Copy(packet, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH + servername.Length, packet.Length);
+			if (servername != null)
+				Array.Copy(servername, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH, servername.Length);
+			Array.Copy(packet, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH + servernameLength, packet.Length);
 			return checksum == SyncCRC32.CRC32Bytes(bytes);
 		}
 
 		/// <summary>
-		/// Add CRC32 Checksum to packet header, calculated using Protocol ID and current Servername
+		/// Add CRC32 Checksum to packet header, calculated using Protocol ID and, if connected, current Servername.
 		/// </summary>
 		/// <param name="packet"></param>
-		public static void CalculateAndAddChecksum(byte[] packet, byte[] servername)
+		public static void CalculateAndAddChecksum(byte[] packet, byte[] servername = null)
 		{
 			// get packet without CRC32 bytes
 			byte[] packetData = GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH);
 
+			// only use servername when it's present
+			int servernameLength = servername == null ? 0 : servername.Length;
+
 			// calculate CRC32 checksum from protocol id, servername and packet
-			byte[] bytes = new byte[SyncSettings.PROTOCOL_ID_LENGTH + servername.Length + packetData.Length];
+			byte[] bytes = new byte[SyncSettings.PROTOCOL_ID_LENGTH + servernameLength + packetData.Length];
 			Array.Copy(BitConverter.GetBytes(SyncSettings.PROTOCOL_ID), 0, bytes, 0, SyncSettings.PROTOCOL_ID_LENGTH);
-			Array.Copy(servername, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH, servername.Length);
-			Array.Copy(packetData, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH + servername.Length, packetData.Length);
+			if (servername != null)
+				Array.Copy(servername, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH, servername.Length);
+			Array.Copy(packetData, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH + servernameLength, packetData.Length);
 
 			// and add it to packet
 			byte[] checksumBytes = BitConverter.GetBytes(SyncCRC32.CRC32Bytes(bytes));
@@ -214,6 +252,14 @@ namespace jKnepel.UnitySync.Networking
 		{
 			return (packetSequence == (ushort)(remoteSequence + 1))
 				|| (packetSequence == 0 && remoteSequence == 65535);
+		}
+
+		public static uint GenerateUIntChallenge()
+		{
+			System.Random random = new();
+			uint thirtyBits = (uint)random.Next(1 << 30);
+			uint twoBits = (uint)random.Next(1 << 2);
+			return (thirtyBits << 2) | twoBits;
 		}
 
 		#endregion

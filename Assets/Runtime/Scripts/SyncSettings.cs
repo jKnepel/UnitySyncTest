@@ -79,7 +79,8 @@ namespace jKnepel.UnitySync
 		internal const int MODULE_HASH_LENGTH = 4;          // flag containing the hash of the used module
 		internal const int NUMBER_OF_SLICES = 2;            // flag showing the number of packets the chunk consists of
 		internal const int SLICE_NUMBER = NUMBER_OF_SLICES; // number of the current slice
-		internal const int DATA_FLAG_LENGTH = 1;			// byte flag containing the length of the following byte data
+		internal const int DATA_FLAG_LENGTH = 1;            // byte flag containing the length of the following byte data
+		internal const int CHALLENGE_LENGTH = 4;			// length of the challenge values send to the connecting client
 
 		// scene sync variables
 		// TODO : move these to seperate settings asset?

@@ -108,7 +108,7 @@ namespace jKnepel.UnitySync
 		}
 
 		/// <summary>
-		/// If the Client created the Server that they are currently connected to.
+		/// If the local Client acts as a Server that remote Clients can connect to.
 		/// </summary>
 		public static bool IsServer
 		{
@@ -250,7 +250,8 @@ namespace jKnepel.UnitySync
 							continue;
 
 						// data from hearbeat
-						byte servernameLength = remainder[0];
+						// TODO : handle number of clients
+						byte servernameLength = remainder[SyncSettings.DATA_FLAG_LENGTH];
 						byte[] servernameBytes = SyncPacketHelper.GetBytesFromArray(remainder, 1, servernameLength);
 						string servername = Encoding.ASCII.GetString(servernameBytes);
 

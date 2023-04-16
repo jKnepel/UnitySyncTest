@@ -8,6 +8,11 @@ namespace jKnepel.UnitySync.Networking
     {
         ACK,
         Heartbeat,
+        ConnectionRequest,
+        ConnectionChallenge,
+        ConnectionDenied,
+        ChallengeAnswer,
+        ConnectionClosed,
         ReliableData,
         ReliableUnorderedData,
         UnreliableData,
