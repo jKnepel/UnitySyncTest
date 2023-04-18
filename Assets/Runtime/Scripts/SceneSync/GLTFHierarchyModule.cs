@@ -55,9 +55,10 @@ namespace jKnepel.UnitySync
 
 		public override void OnReceiveData(SyncConnectedClient sender, byte[] data)
 		{
-			ImportHierarchy(data);
+			Toph.GLTFSerializer.GLTFImporter.ImportHierarchy(data, _syncScene, new ImportOptions(), (t, e) => { });
 		}
 
+		/*
 		private async void ImportHierarchy(byte[] hierarchy)
 		{
 			Action<GameObject, ExceptionDispatchInfo> onLoadComplete = (createdObject, e) =>
@@ -87,6 +88,7 @@ namespace jKnepel.UnitySync
 			GLTFSceneImporterExtended importer = new(gLTFRoot, stream, importOptions);
 			await importer.UpdateOrCreateSceneAsync(GLTFSceneHelper.GetSceneRootComponents(importScene), SyncManager.IsDebug, -1, true, onLoadComplete);
 		}
+		*/
 
 		#endregion
 
@@ -117,7 +119,7 @@ namespace jKnepel.UnitySync
 		private async void SyncHierarchy(BufferedHierarchy hier)
 		{
 			GLTFRootGameObject root = hier.GameObject.GetOrAddComponent<GLTFRootGameObject>();
-			byte[] data = await root.SerializeGameObject(new ExportOptions());
+			byte[] data = await root.ExportHierarchy(new ExportOptions());
 			SendData(data, wasSend => hier.OnDataSend?.Invoke(wasSend));
 		}
 

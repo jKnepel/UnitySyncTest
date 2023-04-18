@@ -14,6 +14,7 @@ namespace jKnepel.UnitySync.SceneSync
 
 		private ClientVisualiserModule _clientVisualiserModule;
 		private GLTFHierarchyModule _gLTFHierarchyModule;
+		private GLTFComponentModule _gltfComponentModule;
 
 		private Scene _syncScene;
 		private bool _wasRoomOwner;
@@ -157,6 +158,7 @@ namespace jKnepel.UnitySync.SceneSync
 			if (_visualiseClients)
 				_clientVisualiserModule = new();
 			_gLTFHierarchyModule = new(_syncScene);
+			_gltfComponentModule = new(_syncScene);
 
 
 			//Selection.selectionChanged += SelectionChanged;
@@ -185,6 +187,12 @@ namespace jKnepel.UnitySync.SceneSync
 			{
 				_gLTFHierarchyModule.Dispose();
 				_gLTFHierarchyModule = null;
+			}
+
+			if (_gltfComponentModule != null)
+			{
+				_gltfComponentModule.Dispose();
+				_gltfComponentModule = null;
 			}
 
 			//Selection.selectionChanged -= SelectionChanged;
@@ -244,10 +252,14 @@ namespace jKnepel.UnitySync.SceneSync
 			if (obj.scene == _syncScene)
 			{
 				UnityEngine.Object o = EditorUtility.InstanceIDToObject(obj.instanceId);
-				GameObject go;
-				try { go = ((Component)o).gameObject; }
-				catch (InvalidCastException) { go = (GameObject)o; }
-				SyncHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
+				try { 
+					Component co = ((Component)o); 
+					_gltfComponentModule.SyncHierarchy(co, (a) => { });
+				}
+				catch (InvalidCastException) { 
+					GameObject go = (GameObject)o; 
+					SyncHierarchy(go); // TODO : replace with functionality for only sending gameobject/component
+				}
 			}
 
 			// TODO : add functionality for sending hierarchy only on hierarchy changes
