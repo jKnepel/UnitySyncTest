@@ -42,7 +42,8 @@ namespace jKnepel.UnitySync
 			if (_gltfHierarchyDelay >= _settings.GLTFHierarchyDelay && _bufferedHierarchies.Count > 0)
 			{
 				// TODO : order of send is random, consider using different collection?
-				BufferedHierarchy hier =  _bufferedHierarchies.ElementAt(0).Value;
+				int key = _bufferedHierarchies.ElementAt(0).Key;
+				_bufferedHierarchies.TryRemove(key, out BufferedHierarchy hier);
 				SyncHierarchy(hier);
 				_gltfHierarchyDelay = 0;
 			}
