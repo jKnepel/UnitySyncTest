@@ -13,8 +13,8 @@ namespace jKnepel.UnitySync
 			SyncManager.OnSyncMessageAdded += SyncMessageAdded;
 			SyncManager.OnServerDiscoveryActivated += ServerDiscoveryActivated;
 			SyncManager.OnServerDiscoveryDeactivated += ServerDiscoveryDeactivated;
-			SyncManager.OnLocalClientConnected += ConnectedToServer;
-			SyncManager.OnLocalClientDisconnected += DisconnectedFromServer;
+			SyncManager.OnConnected += Connected;
+			SyncManager.OnDisconnected += Disconnected;
 			SyncManager.OnClientConnected += ClientConnected;
 			SyncManager.OnClientDisconnected += ClientDisconnected;
 		}
@@ -40,8 +40,8 @@ namespace jKnepel.UnitySync
 				SyncManager.OnSyncMessageAdded -= SyncMessageAdded;
 				SyncManager.OnServerDiscoveryActivated -= ServerDiscoveryActivated;
 				SyncManager.OnServerDiscoveryDeactivated -= ServerDiscoveryDeactivated;
-				SyncManager.OnLocalClientConnected -= ConnectedToServer;
-				SyncManager.OnLocalClientDisconnected -= DisconnectedFromServer;
+				SyncManager.OnConnected -= Connected;
+				SyncManager.OnDisconnected -= Disconnected;
 				SyncManager.OnClientConnected -= ClientConnected;
 				SyncManager.OnClientDisconnected -= ClientDisconnected;
 			}
@@ -54,9 +54,9 @@ namespace jKnepel.UnitySync
 		protected virtual void SyncMessageAdded() { }
 		protected virtual void ServerDiscoveryActivated() { }
 		protected virtual void ServerDiscoveryDeactivated() { }
-		protected virtual void ConnectedToServer() { }
-		protected virtual void DisconnectedFromServer() { }
-		protected virtual void ClientConnected(IPAddress ip) { }
-		protected virtual void ClientDisconnected(IPAddress ip) { }
+		protected virtual void Connected() { }
+		protected virtual void Disconnected() { }
+		protected virtual void ClientConnected(uint id) { }
+		protected virtual void ClientDisconnected(uint id) { }
 	}
 }

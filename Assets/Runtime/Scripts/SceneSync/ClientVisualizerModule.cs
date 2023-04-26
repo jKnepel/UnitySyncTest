@@ -29,8 +29,6 @@ namespace jKnepel.UnitySync.SceneSync
 
 			_visualiserParent = new GameObject().transform;
 			_visualiserParent.name = "SceneSync Visualiser Parent";
-			// TODO : cant hide the object if it's not automatically deleted, cuz a user won't be able to delete it neither
-			//_visualiserParent.gameObject.hideFlags = HideFlags.HideInHierarchy;
 		}
 
 		public override void Dispose()
@@ -60,11 +58,11 @@ namespace jKnepel.UnitySync.SceneSync
 
 		#region receive data
 
-		public void RemoveConnectedClient(IPAddress ip)
+		public void RemoveConnectedClient(uint id)
 		{
 			foreach (KeyValuePair<SyncConnectedClient, SyncClientVisualiser> client in _visualisers)
 			{
-				if (client.Key.IP.Equals(ip))
+				if (client.Key.ID.Equals(id))
 				{
 					_visualisers.Remove(client.Key);
 #if UNITY_EDITOR
@@ -80,7 +78,7 @@ namespace jKnepel.UnitySync.SceneSync
 		public override void OnReceiveData(SyncConnectedClient sender, byte[] data)
 		{
 			if (SyncManager.IsDebug)
-				Debug.Log($"Received Camera Update from {sender.IP}");
+				Debug.Log($"Received Camera Update from {sender.ID}");
 
 			int size = sizeof(float);
 			byte[] positionX = GetBytesFromArray(data, 0 * size, size);
@@ -95,7 +93,7 @@ namespace jKnepel.UnitySync.SceneSync
 			{
 				GameObject obj = GameObject.Instantiate(_settings.ClientVisualiser.gameObject, _visualiserParent);
 				visualiser = obj.GetComponent<SyncClientVisualiser>();
-				visualiser.UpdateVisualiser(sender.IPString, sender.Username, sender.Color);
+				visualiser.UpdateVisualiser(sender.ID, sender.Username, sender.Color);
 				_visualisers.Add(sender, visualiser);
 			}
 

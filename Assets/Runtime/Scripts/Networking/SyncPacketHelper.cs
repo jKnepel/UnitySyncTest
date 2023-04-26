@@ -57,23 +57,38 @@ namespace jKnepel.UnitySync.Networking
 			return BitConverter.ToUInt16(sliceNumberBytes);
 		}
 
-		public static uint GetModuleHash(byte[] packet)
+		public static uint GetClientID(byte[] packet, bool isChunked)
 		{
-			byte[] moduleHashBytes = GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH);
+			byte[] clientIdBytes = isChunked
+				? GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER, SyncSettings.CLIENT_ID_LENGTH)
+				: GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
+			return BitConverter.ToUInt32(clientIdBytes);
+		}
+
+		public static uint GetModuleHash(byte[] packet, bool isChunked)
+		{
+			byte[] moduleHashBytes = isChunked
+				? GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH, SyncSettings.MODULE_HASH_LENGTH)
+				: GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.CLIENT_ID_LENGTH, SyncSettings.MODULE_HASH_LENGTH);
 			return BitConverter.ToUInt32(moduleHashBytes);
 		}
 
 		public static byte[] GetDataPacketData(byte[] packet, bool isChunked)
 		{
 			return isChunked
-					? GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER)
-					: GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH);
+					? GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH)
+					: GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH);
 		}
 
-		public static uint GetChallenge(byte[] packet)
+		public static ulong GetChallenge(byte[] packet)
 		{
 			byte[] challengeBytes = GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH, SyncSettings.CHALLENGE_LENGTH);
-			return BitConverter.ToUInt32(challengeBytes);
+			return BitConverter.ToUInt64(challengeBytes);
+		}
+
+		public static byte[] GetChallengeAnswer(byte[] packet)
+		{
+			return GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH, SyncSettings.CHALLENGE_ANSWER_LENGTH);
 		}
 
 		public static string GetChallengeUsername(byte[] packet)
@@ -173,16 +188,15 @@ namespace jKnepel.UnitySync.Networking
 			return type == SyncPacketType.UnreliableData || type == SyncPacketType.UnreliableUnorderedData;
 		}
 
-		public static bool IsConnectedPacket(SyncPacketType type)
-		{
-			return type == SyncPacketType.Heartbeat || type == SyncPacketType.ConnectionRequest
-				|| type == SyncPacketType.ConnectionChallenge || type == SyncPacketType.ConnectionDenied
-				|| type == SyncPacketType.ChallengeAnswer;
-		}
-
 		public static bool IsDataPacket(SyncPacketType type)
 		{
 			return IsReliableData(type) || IsUnreliableData(type);
+		}
+
+		public static bool IsConnectionRequired(SyncPacketType type)
+		{
+			return IsDataPacket(type) || type == SyncPacketType.ACK
+				|| type == SyncPacketType.ConnectionClosed;
 		}
 
 		/// <summary>
@@ -238,8 +252,8 @@ namespace jKnepel.UnitySync.Networking
 		/// <returns>if the packet is new</returns>
 		public static bool IsNewPacket(ushort packetSequence, ushort remoteSequence)
 		{
-			return ((packetSequence > remoteSequence) && (packetSequence - remoteSequence <= 32768))
-				|| ((packetSequence < remoteSequence) && (remoteSequence - packetSequence > 32768));
+			return ((packetSequence > remoteSequence) && (packetSequence - remoteSequence <= (ushort.MaxValue / 2)))
+				|| ((packetSequence < remoteSequence) && (remoteSequence - packetSequence > (ushort.MaxValue / 2)));
 		}
 
 		/// <summary>
@@ -251,15 +265,13 @@ namespace jKnepel.UnitySync.Networking
 		public static bool IsNextPacket(ushort packetSequence, ushort remoteSequence)
 		{
 			return (packetSequence == (ushort)(remoteSequence + 1))
-				|| (packetSequence == 0 && remoteSequence == 65535);
+				|| (packetSequence == 0 && remoteSequence == ushort.MaxValue);
 		}
 
-		public static uint GenerateUIntChallenge()
+		public static ulong GenerateChallengeNonce()
 		{
-			System.Random random = new();
-			uint thirtyBits = (uint)random.Next(1 << 30);
-			uint twoBits = (uint)random.Next(1 << 2);
-			return (thirtyBits << 2) | twoBits;
+			System.Random rnd = new();
+			return (ulong)(rnd.NextDouble() * ulong.MaxValue);
 		}
 
 		#endregion

@@ -46,11 +46,11 @@ namespace jKnepel.UnitySync.Networking
 
 				_isConnected = value;
 				if (value)
-					SyncManager.OnLocalClientConnected?.Invoke();
+					SyncManager.OnConnected?.Invoke();
 				else
 				{
 					Dispose();
-					SyncManager.OnLocalClientDisconnected?.Invoke();
+					SyncManager.OnDisconnected?.Invoke();
 				}
 			}
 		}
@@ -58,9 +58,11 @@ namespace jKnepel.UnitySync.Networking
 		public abstract bool IsServer { get; }
 
 		/// <summary>
-		/// Information about the Local Server/the Server the local Client is connected to.
+		/// Information about the Local Server/the Server that you are connected to.
 		/// </summary>
 		public SyncServerInformation ServerInformation { get; protected set; }
+
+		public abstract List<SyncConnectedClient> ConnectedClients { get; }
 
 		#endregion
 
@@ -84,33 +86,33 @@ namespace jKnepel.UnitySync.Networking
 
 		public abstract void DisconnectFromServer();
 
-		public void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
 		{
-			if (!CheckIfEligibleForSending(data, onDataSend, receiver))
+			if (!CheckIfEligibleForSending(true, data, onDataSend, receiver))
 				return;
 
-			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, moduleHash, data, onDataSend, receiver));
+			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, moduleHash, data, onDataSend, receiver)); 
 		}
 
-		public void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
 		{
-			if (!CheckIfEligibleForSending(data, onDataSend, receiver))
+			if (!CheckIfEligibleForSending(true, data, onDataSend, receiver))
 				return;
 
 			_packetsToSend.Enqueue(new(SyncPacketType.ReliableUnorderedData, moduleHash, data, onDataSend, receiver));
 		}
 
-		public void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
 		{
-			if (!CheckIfEligibleForSending(data, onDataSend, receiver))
+			if (!CheckIfEligibleForSending(false, data, onDataSend, receiver))
 				return;
 
 			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, moduleHash, data, onDataSend, receiver));
 		}
 
-		public void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
 		{
-			if (!CheckIfEligibleForSending(data, onDataSend, receiver))
+			if (!CheckIfEligibleForSending(false, data, onDataSend, receiver))
 				return;
 
 			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableUnorderedData, moduleHash, data, onDataSend, receiver));
@@ -150,24 +152,7 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="onDataSend"></param>
 		/// <param name="receiver"></param>
 		/// <returns></returns>
-		private bool CheckIfEligibleForSending(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
-		{
-			if (receiver != null && !ServerInformation.ConnectedClients.TryGetValue(receiver.IP, out _))
-			{
-				Debug.LogError("The given Receiver does not exist in the Server!");
-				onDataSend?.Invoke(false);
-				return false;
-			}
-
-			if (data.Length > 1200)
-			{
-				Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
-				onDataSend?.Invoke(false);
-				return false;
-			}
-
-			return true;
-		}
+		protected abstract bool CheckIfEligibleForSending(bool isReliable, byte[] data, Action<bool> dataCallback, uint receiver = 0);
 
 		/// <summary>
 		/// Checks if string is ascii conform

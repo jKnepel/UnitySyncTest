@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Net;
+using UnityEngine;
 
 namespace jKnepel.UnitySync.Networking
 {
@@ -16,127 +18,143 @@ namespace jKnepel.UnitySync.Networking
         ReliableData,
         ReliableUnorderedData,
         UnreliableData,
-        UnreliableUnorderedData
+        UnreliableUnorderedData,
+        ClientInfo
     }
 
     internal abstract class SyncPacket
+	{
+        // TODO : replace fields with properties restricting write
+        public IPAddress        ClientIP;
+        public uint             ClientID;
+        public SyncPacketType   Type;
+        public Action<bool>     Callback;
+        public uint             CRC32;
+        public byte[]           Bytes;
+	}
+
+    internal abstract class SyncSequencedPacket : SyncPacket
+	{
+        public ushort  Sequence;
+	}
+
+    internal class SyncDataPacket : SyncSequencedPacket
     {
-        // TODO : replace the const length with calculated MTU
-        protected const int MAX_SLICE_LENGTH = 1200;
+        private readonly int MTU = SyncSettings.GetOrCreateSettings().MTU;
 
-        public SyncPacketType Type { get; protected set; }
-        public uint ModuleHash { get; protected set; }
-        public SyncConnectedClient Client { get; protected set; }
-        public byte[] Data { get; protected set; }
-    }
+        public readonly ConcurrentDictionary<ushort, byte[]> ReceivedSlices;
 
-    internal class SyncReceiverPacket : SyncPacket
-    {
-        public bool IsChunked { get; private set; }
-        public ushort NumberOfSlices { get; private set; }
-        public ConcurrentDictionary<ushort, byte[]> Slices { get; private set; }
+        public readonly uint    Target;
+        public readonly bool    IsChunked;
+        public readonly ushort  NumberOfSlices;
+        public readonly ushort  SliceNumber;
+        public readonly uint    ModuleHash;
+        public readonly byte[]  Data;
 
-        /// <summary>
-        /// Creates a Packet that was sent by another Client.
-        /// </summary>
-        /// <param name="type"></param>
-        /// <param name="data"></param>
-        /// <param name="client"></param>
-        public SyncReceiverPacket(SyncPacketType type, uint moduleHash, byte[] data, SyncConnectedClient client)
-        {
+
+        public SyncDataPacket(SyncPacketType type, Action<bool> callback, uint moduleHash, byte[] data, uint receiver = 0)
+		{
             Type = type;
+            ClientID = receiver;
+            Callback = callback;
             ModuleHash = moduleHash;
-            Client = client;
             Data = data;
-            IsChunked = false;
-            Slices = null;
+
+            // define mtu reliant values
+            IsChunked = data.Length > MTU;
+            NumberOfSlices = (ushort)(data.Length % MTU == 0
+                ? data.Length / MTU
+                : data.Length / MTU + 1);
+            SliceNumber = 0;
+
+            // define length of packet bytes depending on if the packet has to be chunked or not
+            int chunkedHeaderLength = IsChunked ? SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER : 0;
+            int dataLength = IsChunked ? MTU : data.Length;
+            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH +
+                chunkedHeaderLength + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH + dataLength];
+
+            // fill in values that don't need to be adjusted per receiver
+            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength, SyncSettings.CLIENT_ID_LENGTH);
+            Array.Copy(BitConverter.GetBytes(moduleHash), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + SyncSettings.CLIENT_ID_LENGTH, SyncSettings.MODULE_HASH_LENGTH);
+            Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
+            if (IsChunked)
+			{   // set bit for marking chunked packets and add number of slices
+                Bytes[SyncSettings.CRC32_LENGTH] |= 1 << 7;
+                Array.Copy(BitConverter.GetBytes(NumberOfSlices), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH, SyncSettings.NUMBER_OF_SLICES);
+			} 
+            else
+			{   // add complete data
+                Array.Copy(data, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH, data.Length);
+			}
         }
 
-        /// <summary>
-        /// Creates a chunked Packet that was sent by another Client.
-        /// </summary>
-        /// <param name="type"></param>
-        /// <param name="client"></param>
-        /// <param name="numberOfSlices"></param>
-        public SyncReceiverPacket(SyncPacketType type, uint moduleHash, SyncConnectedClient client, ushort numberOfSlices)
-        {
+        public SyncDataPacket(IPAddress sender, SyncPacketType type, byte[] packet)
+		{
             Type = type;
-            ModuleHash = moduleHash;
-            Client = client;
-            Data = null;
-            IsChunked = true;
-            NumberOfSlices = numberOfSlices;
-            Slices = new();
+            ClientIP = sender;
+            Bytes = packet;
+
+            CRC32 = SyncPacketHelper.GetCRC32(packet);
+            Sequence = SyncPacketHelper.GetSequenceBytes(packet);
+
+            IsChunked = SyncPacketHelper.GetIsChunked(packet);
+            if (IsChunked)
+			{
+                NumberOfSlices = SyncPacketHelper.GetNumberOfSlices(packet);
+                SliceNumber = SyncPacketHelper.GetSliceNumber(packet);
+			}
+
+            ClientID = SyncPacketHelper.GetClientID(packet, IsChunked);
+            ModuleHash = SyncPacketHelper.GetModuleHash(packet, IsChunked);
+            Data = SyncPacketHelper.GetDataPacketData(packet, IsChunked);
         }
 
-        public bool IsPacketComplete()
-        {
-            return !IsChunked || Slices.Count == NumberOfSlices;
-        }
-
-        public bool ConcatenateChunkedPacket()
-        {
-            if (!IsPacketComplete())
-                return false;
-
-            List<byte> dataBytes = new();
-            for (ushort i = 1; i <= NumberOfSlices; i++)
-            {
-                Slices.TryGetValue(i, out byte[] sliceData);
-                dataBytes.AddRange(sliceData);
-            }
-            Data = dataBytes.ToArray();
-            IsChunked = false;
-            NumberOfSlices = 0;
-            return true;
-        }
-    }
-
-    internal class SyncSenderPacket : SyncPacket
-    {
-        public Action<bool> OnDataSend { get; private set; }
-        public bool IsChunked { get; private set; }
-        public ushort NumberOfSlices { get; private set; }
-        public ushort CurrentSliceNumber { get; private set; }
-
-        /// <summary>
-        /// Creates packet that has yet to be sent to clients.
-        /// </summary>
-        /// <param name="type"></param>
-        /// <param name="data"></param>
-        /// <param name="onDataSend"></param>
-        /// <param name="client"></param>
-        public SyncSenderPacket(SyncPacketType type, uint moduleHash, byte[] data,
-            Action<bool> onDataSend, SyncConnectedClient client = null)
-        {
-            Type = type;
-            ModuleHash = moduleHash;
-            Client = client;
-            Data = data;
-            OnDataSend = onDataSend;
-            IsChunked = data.Length > 1200;
-            NumberOfSlices = (ushort)(data.Length % MAX_SLICE_LENGTH == 0
-                ? data.Length / MAX_SLICE_LENGTH
-                : data.Length / MAX_SLICE_LENGTH + 1);
-            CurrentSliceNumber = 0;
-        }
-
-        public byte[] GetNextSlice()
-        {
-            if (!IsChunked)
-                return Data;
-
-            if (CurrentSliceNumber >= NumberOfSlices)
+        public byte[] PrepareBytesForReceiver(uint receiver, ushort sequence, byte[] servernameBytes)
+		{
+            if (IsChunked)
+			{
+                Debug.LogError("This Method is exclusively meant for non-chunked packets!");
                 return null;
+			}
 
-            int sliceSize = CurrentSliceNumber < NumberOfSlices - 1
-                ? MAX_SLICE_LENGTH
-                : Data.Length % MAX_SLICE_LENGTH;
-            byte[] data = new byte[sliceSize];
-            Array.Copy(Data, CurrentSliceNumber * MAX_SLICE_LENGTH, data, 0, sliceSize);
+            Array.Copy(BitConverter.GetBytes(sequence), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.SEQUENCE_ID_LENGTH);
+            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
+            SyncPacketHelper.CalculateAndAddChecksum(Bytes, servernameBytes);
+            return Bytes;
+		}
 
-            CurrentSliceNumber++;
-            return data;
+        public byte[] PrepareSliceBytesForReceiver(uint receiver, ushort sequence, int sliceNumber, byte[] servernameBytes)
+		{
+            if (!IsChunked)
+            {
+                Debug.LogError("This Method is exclusively meant for chunked packets!");
+                return null;
+            }
+
+            Array.Copy(BitConverter.GetBytes(sequence), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.SEQUENCE_ID_LENGTH);
+            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER, SyncSettings.CLIENT_ID_LENGTH);
+
+            int sliceSize = sliceNumber < NumberOfSlices - 1 ? MTU : Data.Length % MTU;
+            Array.Copy(Data, sliceNumber * MTU, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH, sliceSize);
+
+            SyncPacketHelper.CalculateAndAddChecksum(Bytes, servernameBytes);
+            return Bytes;
         }
     }
+
+    internal class SyncClientInfoPacket : SyncSequencedPacket
+	{
+        public string   Username;
+        public Color32  Color;
+
+        public SyncClientInfoPacket(uint clientId, string username, Color32 color)
+		{
+            Type = SyncPacketType.ClientInfo;
+            ClientID = clientId;
+            Username = username;
+            Color = color;
+
+            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH];
+		}
+	}
 }

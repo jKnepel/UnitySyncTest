@@ -58,6 +58,7 @@ namespace jKnepel.UnitySync
 				SyncManager.IP = EditorGUILayout.TextField("Local IP:", SyncManager.IP);
 				_settings.Port = EditorGUILayout.IntField("Port:", _settings.Port);
 				_settings.DiscoveryPort = EditorGUILayout.IntField("Server Discovery Port:", _settings.DiscoveryPort);
+				_settings.MTU = EditorGUILayout.IntField("MTU:", _settings.MTU);
 				EditorGUI.indentLevel--;
 			}
 

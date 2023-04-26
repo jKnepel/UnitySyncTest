@@ -48,8 +48,9 @@ namespace jKnepel.UnitySync
 				SyncManager.OnAwake -= Awake;
 				SyncManager.OnStart -= Start;
 				SyncManager.OnUpdate -= Update;
-				UnregisterModule();
 			}
+
+			UnregisterModule();
 		}
 
 		public void UnregisterModule()
@@ -61,11 +62,8 @@ namespace jKnepel.UnitySync
 		public bool RegisterModule()
 		{
 			if (!IsModuleRegistered)
-			{
 				ModuleHash = SyncManager.RegisterModule(this);
-				return ModuleHash != 0;
-			}
-			return false;
+			return ModuleHash != 0;
 		}
 
 		public virtual void Awake() { }
@@ -114,7 +112,7 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Sends Data over Unreliable UDP. 
 		/// This ensures that old Packets don't overwrite new Updates, but it doesn't guarantee that all Packets actually arrive.
-		/// The size of the Data array must be below 1200.
+		/// The size of the Data array must be below the MTU.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>
@@ -132,7 +130,7 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Sends Data over Unreliable UDP. 
 		/// This ignores the Order that Packets were send in and doesn't guarantee that all Packets actually arrive.
-		/// The size of the Data array must be below 1200.
+		/// The size of the Data array must be below the MTU.
 		/// </summary>
 		/// <param name="data">The serialized Data that should be send.</param>
 		/// <param name="onDataSend">This Action will be invoked once the Data failed to-/or was successfully send.</param>

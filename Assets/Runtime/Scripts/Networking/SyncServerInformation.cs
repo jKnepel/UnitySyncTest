@@ -9,15 +9,14 @@ namespace jKnepel.UnitySync.Networking
         public IPAddress IP { get; private set; }
         public string Servername { get; private set; }
         public byte[] ServernameBytes { get; private set; }
-        public ConcurrentDictionary<IPAddress, SyncConnectedClient> ConnectedClients { get; private set; }
-        public int NumberConnectedClients { get => ConnectedClients.Values.Count; }
+        public int NumberConnectedClients { get; set; }
 
         public SyncServerInformation(IPAddress ip, string servername)
         {
             IP = ip;
             Servername = servername;
             ServernameBytes = Encoding.ASCII.GetBytes(servername);
-            ConnectedClients = new();
+            NumberConnectedClients = 0;
         }
 
         public override bool Equals(object obj)

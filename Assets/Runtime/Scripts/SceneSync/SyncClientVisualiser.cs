@@ -9,9 +9,9 @@ namespace jKnepel.UnitySync.SceneSync
         [SerializeField] private TMPro.TMP_Text usernameObject;
         [SerializeField] private Material material;
 
-        public void UpdateVisualiser(string sender, string username, Color color)
+        public void UpdateVisualiser(uint id, string username, Color color)
 	    {
-            name = $"{username}@{sender}";
+            name = $"{username}@{id}";
             usernameObject.text = username;
             usernameObject.color = color;
             if (material == null)

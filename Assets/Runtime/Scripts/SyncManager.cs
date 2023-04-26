@@ -42,24 +42,24 @@ namespace jKnepel.UnitySync
 		public static Action OnServerDiscoveryDeactivated;
 
 		/// <summary>
-		/// Action for when the local Client successfully connected to or created a Server.
+		/// Action for when successfully connecting to or creating a Server.
 		/// </summary>
-		public static Action OnLocalClientConnected;
+		public static Action OnConnected;
 
 		/// <summary>
-		/// Action for when the local Client disconnected from or closed the Server.
+		/// Action for when disconnecting from or closing the Server.
 		/// </summary>
-		public static Action OnLocalClientDisconnected;
+		public static Action OnDisconnected;
 
 		/// <summary>
 		/// Action for when a Client connected to the current Server and can now receive Messages.
 		/// </summary>
-		public static Action<IPAddress> OnClientConnected;
+		public static Action<uint> OnClientConnected;
 
 		/// <summary>
 		/// Action for when a Client disconnected from the current Server and can no longer receive any Messages.
 		/// </summary>
-		public static Action<IPAddress> OnClientDisconnected;
+		public static Action<uint> OnClientDisconnected;
 
 		/// <summary>
 		/// If the Client is connected to the Network and able to discover Servers.
@@ -103,7 +103,7 @@ namespace jKnepel.UnitySync
 		public static List<SyncConnectedClient> ConnectedClients 
 		{
 			get => IsConnected
-				? _socket.ServerInformation.ConnectedClients.Values.ToList()
+				? _socket.ConnectedClients
 				: null;
 		}
 

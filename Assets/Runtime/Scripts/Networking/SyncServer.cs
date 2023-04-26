@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,14 +20,16 @@ namespace jKnepel.UnitySync.Networking
 
 		private readonly Thread _heartbeatThread;
 
-		// TODO : replace value with information struct
-		private readonly ConcurrentDictionary<IPAddress, uint> _pendingConnections = new();
+		private readonly ConcurrentDictionary<IPAddress, byte[]> _pendingConnections = new();
+		private readonly ConcurrentDictionary<IPAddress, SyncConnectedClientDetail> _connectedClients = new();
+		private readonly ConcurrentDictionary<uint, IPAddress> _ipHashTable = new();
 
 		#endregion
 
 		#region public properties
 
-		public override bool IsServer { get => true; }
+		public override bool IsServer => true;
+		public override List<SyncConnectedClient> ConnectedClients => _connectedClients.Values.Cast<SyncConnectedClient>().ToList();
 
 		#endregion
 
@@ -68,7 +71,7 @@ namespace jKnepel.UnitySync.Networking
 
 				SyncManager.OnUpdate += Update;
 
-				SyncManager.AddSyncMessage(new("Client connected to Server!"));
+				SyncManager.AddSyncMessage(new("Server has been opened!"));
 				IsConnected = true;
 			}
 			catch (Exception ex)
@@ -154,7 +157,26 @@ namespace jKnepel.UnitySync.Networking
 				return;
 
 			Dispose();
-			SyncManager.AddSyncMessage(new("Client Disconnected from Server!"));
+			SyncManager.AddSyncMessage(new("Disconnected from Server!"));
+		}
+
+		protected override bool CheckIfEligibleForSending(bool isReliable, byte[] data, Action<bool> dataCallback, uint receiver = 0)
+		{
+			if (!_ipHashTable.TryGetValue(receiver, out IPAddress ip) || !_connectedClients.TryGetValue(ip, out _))
+			{
+				Debug.LogError("The given Receiver does not exist in the Server!");
+				dataCallback?.Invoke(false);
+				return false;
+			}
+
+			if (!isReliable && data.Length > _settings.MTU)
+			{
+				Debug.LogError($"Only reliable Packets can be larger than {_settings.MTU} Bytes!");
+				dataCallback?.Invoke(false);
+				return false;
+			}
+
+			return true;
 		}
 
 		#endregion
@@ -179,14 +201,14 @@ namespace jKnepel.UnitySync.Networking
 						SyncPacketType packetType = SyncPacketHelper.GetPacketType(receivedBytes);
 
 						// if packet type doesn't require an active connection
-						if (!SyncPacketHelper.IsConnectedPacket(packetType))
+						if (!SyncPacketHelper.IsConnectionRequired(packetType))
 						{
 							HandleInternalPacket(sender, packetType, receivedBytes);
 							continue;
 						}
 
 						// if packet type does require an active connection
-						if (!ServerInformation.ConnectedClients.TryGetValue(sender, out SyncConnectedClient client))
+						if (!_connectedClients.TryGetValue(sender, out SyncConnectedClientDetail client))
 							continue;
 
 						// check if the crc32 is correct with the servername as magic header
@@ -198,12 +220,12 @@ namespace jKnepel.UnitySync.Networking
 
 						client.LastHeartbeat = DateTime.Now;
 
-						if (!SyncPacketHelper.IsDataPacket(packetType))
+					 	if (!SyncPacketHelper.IsDataPacket(packetType))
 						{	// if packet type is internal
 							HandleConnectedInternalPacket(client, packetType, receivedBytes);
 						}
 						else
-						{	// packet type is a data packet holding module data
+						{	// if packet type is a data packet holding module data
 							HandleDataPacket(client, packetType, receivedBytes);
 						}
 					}
@@ -237,35 +259,45 @@ namespace jKnepel.UnitySync.Networking
 				SyncPacketHelper.GetRemainder(packet)))
 				return;
 
-			if (packetType == SyncPacketType.ConnectionRequest)
-			{   // accept connection request if it's not already pending and there's space left
-				if (!_pendingConnections.TryGetValue(sender, out _)
-					&& ServerInformation.NumberConnectedClients < byte.MaxValue)
-				{
-					uint challenge = SyncPacketHelper.GenerateUIntChallenge();
-					SendConnectionChallenge(sender, challenge);
-					_pendingConnections.TryAdd(sender, challenge);
-				}
-				return;
-			}
+			switch (packetType)
+			{
+				case SyncPacketType.ConnectionRequest:
+					// accept connection request if there's space left
+					if (ServerInformation.NumberConnectedClients < byte.MaxValue)
+					{
+						ulong challenge = SyncPacketHelper.GenerateChallengeNonce();
+						SendConnectionChallenge(sender, challenge);
+						using (SHA256 h = SHA256.Create())
+						{
+							byte[] hashedChallenge = h.ComputeHash(BitConverter.GetBytes(challenge));
+							_pendingConnections.AddOrUpdate(sender, hashedChallenge, (key, oldValue) => oldValue = hashedChallenge);
+						}
 
-			if (packetType == SyncPacketType.ChallengeAnswer)
-			{   // accept connection if challenge answer equals previously send challenge
-				if (_pendingConnections.TryGetValue(sender, out uint value)
-					&& value == SyncPacketHelper.GetChallenge(packet)
-					&& ServerInformation.NumberConnectedClients < byte.MaxValue)
-				{
-					string username = SyncPacketHelper.GetChallengeUsername(packet);
-					Color32 color = SyncPacketHelper.GetChallengeColor(packet);
-					ServerInformation.ConnectedClients.TryAdd(sender, new(sender, username, color));
-					_pendingConnections.TryRemove(sender, out _);
-					_mainThreadActions.Enqueue(() => SyncManager.OnClientConnected?.Invoke(sender));
-				}
-				return;
+						// TODO : also send connection accepted if already connected
+					}
+					// TODO : send connection denied
+					break;
+				case SyncPacketType.ChallengeAnswer:
+					// accept connection if challenge answer equals previously send challenge
+					if (_pendingConnections.TryGetValue(sender, out byte[] value)
+						&& CompareByteArrays(value, SyncPacketHelper.GetChallengeAnswer(packet))
+						&& ServerInformation.NumberConnectedClients < byte.MaxValue)
+					{
+						uint clientID = SyncCRC32.CRC32Bytes(Encoding.ASCII.GetBytes(sender.ToString()));
+						_ipHashTable.TryAdd(clientID, sender);
+						string username = SyncPacketHelper.GetChallengeUsername(packet);
+						Color32 color = SyncPacketHelper.GetChallengeColor(packet);
+						_connectedClients.TryAdd(sender, new(clientID, sender, username, color));
+						_pendingConnections.TryRemove(sender, out _);
+						_mainThreadActions.Enqueue(() => SyncManager.OnClientConnected?.Invoke(clientID));
+						SendConnectionAccepted(sender, clientID);
+					}
+					// TODO : send connection denied
+					break;
 			}
 		}
 
-		private void HandleConnectedInternalPacket(SyncConnectedClient client, SyncPacketType packetType, byte[] packet)
+		private void HandleConnectedInternalPacket(SyncConnectedClientDetail client, SyncPacketType packetType, byte[] packet)
 		{ 
 			bool isChunked = SyncPacketHelper.GetIsChunked(packet);
 			ushort sequence = SyncPacketHelper.GetSequenceBytes(packet);
@@ -280,12 +312,12 @@ namespace jKnepel.UnitySync.Networking
 			}
 		}
 
-		// TODO : handle packets that were mean for other clients or hand out data to all other clients
-		private void HandleDataPacket(SyncConnectedClient client, SyncPacketType packetType, byte[] packet)
+		// TODO : handle packets that were meant for other clients or hand out data to all other clients
+		private void HandleDataPacket(SyncConnectedClientDetail client, SyncPacketType packetType, byte[] packet)
 		{
 			bool isChunked = SyncPacketHelper.GetIsChunked(packet);
 			ushort sequence = SyncPacketHelper.GetSequenceBytes(packet);
-			uint moduleHash = SyncPacketHelper.GetModuleHash(packet);
+			uint moduleHash = SyncPacketHelper.GetModuleHash(packet, isChunked);
 			byte[] data = SyncPacketHelper.GetDataPacketData(packet, isChunked);
 
 			// unreliable packet sequences
@@ -379,7 +411,6 @@ namespace jKnepel.UnitySync.Networking
 			data[SyncSettings.PACKET_TYPE_LENGTH] = (byte)ServerInformation.NumberConnectedClients;
 			data[SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH] = (byte)ServerInformation.ServernameBytes.Length;
 			Array.Copy(ServerInformation.ServernameBytes, 0, data, SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + SyncSettings.DATA_FLAG_LENGTH, ServerInformation.ServernameBytes.Length);
-			// TODO : add number of users
 
 			// and checksum
 			byte[] packet = new byte[SyncSettings.CRC32_LENGTH + data.Length];
@@ -453,16 +484,15 @@ namespace jKnepel.UnitySync.Networking
 						data = SyncPacketHelper.CreateDataPacket(packet.ModuleHash, packet.Type, packet.Data);
 					}
 
-
 					// define receivers of the packet
-					List<SyncConnectedClient> clients = new();
+					List<SyncConnectedClientDetail> clients = new();
 					if (packet.Client == null)
-						clients = ServerInformation.ConnectedClients.Values.ToList();
+						clients = _connectedClients.Values.ToList();
 					else
 						clients.Add(packet.Client);
 
 					// add sequence number and checksum for each client and send packet to them
-					foreach (SyncConnectedClient client in clients)
+					foreach (SyncConnectedClientDetail client in clients)
 					{
 						if (SyncPacketHelper.IsUnreliableData(packet.Type))
 						{   // handle unreliable packets
@@ -523,7 +553,7 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="sequence"></param>
 		/// <param name="retries"></param>
 		/// <returns></returns>
-		private async Task ResendSliceData(SyncConnectedClient client, (ushort, ushort) sequence, int retries = 0)
+		private async Task ResendSliceData(SyncConnectedClientDetail client, (ushort, ushort) sequence, int retries = 0)
 		{
 			// TODO : use RTTx1.25 instead of constant delay
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
@@ -545,7 +575,7 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="sequence"></param>
 		/// <param name="retries"></param>
 		/// <returns></returns>
-		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries = 0)
+		private async Task ResendPacketData(SyncConnectedClientDetail client, ushort sequence, int retries = 0)
 		{
 			// TODO : use RTTx1.25 instead of constant delay
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
@@ -564,7 +594,7 @@ namespace jKnepel.UnitySync.Networking
 		/// </summary>
 		/// <param name="client"></param>
 		/// <param name="sequence"></param>
-		private void SendACK(SyncConnectedClient client, ushort sequence)
+		private void SendACK(SyncConnectedClientDetail client, ushort sequence)
 		{
 			byte[] data = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH];
 			data[SyncSettings.CRC32_LENGTH] = (byte)SyncPacketType.ACK;
@@ -579,7 +609,7 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="client"></param>
 		/// <param name="sequence"></param>
 		/// <param name="sliceNumber"></param>
-		private void SendACK(SyncConnectedClient client, ushort sequence, ushort sliceNumber)
+		private void SendACK(SyncConnectedClientDetail client, ushort sequence, ushort sliceNumber)
 		{
 			byte[] data = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.SLICE_NUMBER];
 			data[SyncSettings.CRC32_LENGTH] = (byte)SyncPacketType.ACK;
@@ -590,12 +620,29 @@ namespace jKnepel.UnitySync.Networking
 			_udpClient.Send(data, data.Length, new(client.IP, _port));
 		}
 
-		private void SendConnectionChallenge(IPAddress address, uint challenge)
+		private void SendConnectionChallenge(IPAddress address, ulong challenge)
 		{
 			byte[] data = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.CHALLENGE_LENGTH];
 			Array.Copy(BitConverter.GetBytes(challenge), 0, data, SyncSettings.CRC32_LENGTH, SyncSettings.CHALLENGE_LENGTH);
 			SyncPacketHelper.CalculateAndAddChecksum(data, ServerInformation.ServernameBytes);
 			_udpClient.Send(data, data.Length, new(address, _port));
+		}
+
+		private void SendConnectionAccepted(IPAddress address, uint hash)
+		{
+			byte[] data = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.CLIENT_ID_LENGTH];
+			Array.Copy(BitConverter.GetBytes(hash), 0, data, SyncSettings.CRC32_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
+			SyncPacketHelper.CalculateAndAddChecksum(data, ServerInformation.ServernameBytes);
+			_udpClient.Send(data, data.Length, new(address, _port));
+		}
+
+		#endregion
+
+		#region helper methods
+
+		private static bool CompareByteArrays(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)
+		{
+			return a.SequenceEqual(b);
 		}
 
 		#endregion

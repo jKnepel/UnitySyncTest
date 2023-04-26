@@ -68,6 +68,21 @@ namespace jKnepel.UnitySync
 		// debug settings
 		public int Port = 26822;
 		public int DiscoveryPort = 26823;
+		private int _mtu = 1200;
+		public int MTU
+		{
+			get => _mtu;
+			set
+			{
+				if (SyncManager.IsConnected)
+				{
+					Debug.LogWarning("The MTU should not be changed while connected to a Server!");
+					return;
+				}
+
+				_mtu = value;
+			}
+		}
 
 
 		// packet constants
@@ -80,7 +95,9 @@ namespace jKnepel.UnitySync
 		internal const int NUMBER_OF_SLICES = 2;            // flag showing the number of packets the chunk consists of
 		internal const int SLICE_NUMBER = NUMBER_OF_SLICES; // number of the current slice
 		internal const int DATA_FLAG_LENGTH = 1;            // byte flag containing the length of the following byte data
-		internal const int CHALLENGE_LENGTH = 4;			// length of the challenge values send to the connecting client
+		internal const int CHALLENGE_LENGTH = 8;            // length of the challenge values send to the connecting client
+		internal const int CHALLENGE_ANSWER_LENGTH = 32;	// length of the challenge values send to the connecting client
+		internal const int CLIENT_ID_LENGTH = 4;			// length of the hash used to identify the connected client
 
 		// scene sync variables
 		// TODO : move these to seperate settings asset?

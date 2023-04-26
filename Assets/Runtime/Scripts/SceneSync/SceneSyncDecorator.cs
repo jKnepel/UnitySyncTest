@@ -105,14 +105,14 @@ namespace jKnepel.UnitySync.SceneSync
 		public override void Dispose()
 		{
 			base.Dispose();
-			DisconnectedFromServer();
+			Disconnected();
 		}
 
 		#endregion
 
 		#region protected methods
 
-		protected override void ConnectedToServer()
+		protected override void Connected()
 		{
 #if UNITY_EDITOR
 			if (EditorApplication.isPlaying)
@@ -171,7 +171,7 @@ namespace jKnepel.UnitySync.SceneSync
 			IsSceneSyncManagerConnected = true;
 		}
 
-		protected override void DisconnectedFromServer()
+		protected override void Disconnected()
 		{
 			IsSceneSyncManagerConnected = false;
 
