@@ -23,24 +23,24 @@ namespace jKnepel.UnitySync.SceneSync
 
 		#region lifecycle
 
-		public ClientVisualiserModule(Transform parent) : base()
+		public ClientVisualiserModule()
 		{
 			SyncManager.OnClientDisconnected += RemoveConnectedClient;
 
-			_visualiserParent = parent;
+			_visualiserParent = new GameObject().transform;
+			_visualiserParent.name = "SceneSync Visualiser Parent";
+			// TODO : cant hide the object if it's not automatically deleted, cuz a user won't be able to delete it neither
+			//_visualiserParent.gameObject.hideFlags = HideFlags.HideInHierarchy;
 		}
 
 		public override void Dispose()
 		{
 			SyncManager.OnClientDisconnected -= RemoveConnectedClient;
-			foreach (SyncClientVisualiser visualiser in _visualisers.Values)
-			{
 #if UNITY_EDITOR
-				GameObject.DestroyImmediate(visualiser.gameObject);
+			GameObject.DestroyImmediate(_visualiserParent.gameObject);
 #else
-				GameObject.Destroy(visualiser.gameObject);
+			GameObject.Destroy(_visualiserParent.gameObject);
 #endif
-			}
 			base.Dispose();
 		}
 

@@ -54,116 +54,144 @@ namespace jKnepel.UnitySync.Networking
 			{
 				switch (ex)
 				{
-					case SocketException:
-						Debug.LogError(ex.ToString());
+					case ThreadAbortException:
 						break;
+					case SocketException:
 					case ObjectDisposedException:
 						Debug.LogError(ex.ToString());
+						_mainThreadActions.Enqueue(() => IsClientActive = false);
 						break;
 					default:
 						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
-				IsClientActive = false;
 			}
 		}
 
 		private void SenderThread()
 		{
-			while (_disposeCount == 0)
+			try
 			{
-				if (_packetsToSend.Count == 0 || !_packetsToSend.TryPeek(out SyncSenderPacket packet))
-					continue;
-
-				if (packet.IsChunked 
-					&& (packet.Type == SyncPacketType.UnreliableData || packet.Type == SyncPacketType.UnreliableUnorderedData))
+				while (_disposeCount == 0)
 				{
-					Debug.LogWarning("Only reliable Packets can be larger than 1200 Bytes!");
-					packet.OnDataSend?.Invoke(false);
-				}
+					if (_packetsToSend.Count == 0 || !_packetsToSend.TryPeek(out SyncSenderPacket packet))
+						continue;
 
-				byte[] packetData = packet.GetNextSlice();
-				if (!packet.IsChunked)
-				{	// remove packet from sender queue since it only needs to be send once
-					_packetsToSend.TryDequeue(out _);
-				}
-				else if (packetData == null)
-				{	// remove packet from sender queue once all slices were send
-					_packetsToSend.TryDequeue(out _);
-					continue;
-				}
-
-				byte[] data;
-				if (packet.IsChunked)
-				{   // add packet type, slice numbers, current slice number and data to the packet
-					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH
-						+ NUMBER_OF_SLICES + SLICE_NUMBER + packetData.Length];
-					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
-					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
-					Array.Copy(BitConverter.GetBytes(packet.ModuleHash), 0, data, 
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, MODULE_HASH_LENGTH);
-					Array.Copy(BitConverter.GetBytes(packet.NumberOfSlices), 0, data,
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, NUMBER_OF_SLICES);
-					Array.Copy(BitConverter.GetBytes(packet.CurrentSliceNumber), 0, data,
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
-					Array.Copy(packetData, 0, data,
-						CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER, packetData.Length);
-				}
-				else
-				{	// add packet type and data to the packet
-					data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + packetData.Length];
-					data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
-					Array.Copy(BitConverter.GetBytes(packet.ModuleHash), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, MODULE_HASH_LENGTH);
-					Array.Copy(packetData, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, packetData.Length);
-				}
-
-
-				// define receivers of the packet
-				List<SyncConnectedClient> clients = new();
-				if (packet.Client == null)
-					clients = CurrentRoom.ConnectedClients.Values.ToList();
-				else
-					clients.Add(packet.Client);
-
-				// add sequence number and checksum for each client and send packet to them
-				foreach (SyncConnectedClient client in clients)
-				{
-					if (IsUnreliableData(packet.Type))
-					{   // handle unreliable packets
-						if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
-							client.UnreliableLocalSequence++;
-						Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
-					}
-					else if (IsReliableData(packet.Type))
-					{   // handle reliable packets
-						if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
-							client.ReliableLocalSequence++;
-						Array.Copy(BitConverter.GetBytes(client.ReliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+					if (packet.IsChunked && IsUnreliableData(packet.Type))
+					{
+						Debug.LogError("Only reliable Packets can be larger than 1200 Bytes!");
+						packet.OnDataSend?.Invoke(false);
+						_packetsToSend.TryDequeue(out _);
+						continue;
 					}
 
-					CalculateAndAddChecksum(data);
+					if (!packet.IsChunked)
+					{   // remove packet from sender queue since it only needs to be send once
+						_packetsToSend.TryDequeue(out _);
+					}
 
-					_udpClient.Send(data, data.Length, new(client.IP, _port));
-					if (packet.OnDataSend != null)
-						packet.OnDataSend?.Invoke(true);
+					byte[] packetData = packet.GetNextSlice();
+					if (packetData == null || packetData.Length == 0)
+					{   // remove invalid or already completed packets from sender queue
+						_packetsToSend.TryDequeue(out _);
+						continue;
+					}
 
+					byte[] data;
 					if (packet.IsChunked)
-					{	// save slices in buffer in case of resends
-						client.SendSlicesBuffer.TryAdd((client.ReliableLocalSequence, packet.CurrentSliceNumber), data);
-						_ = ResendSliceData(client, (client.ReliableLocalSequence, packet.CurrentSliceNumber), 0);
+					{   // add packet type, slice numbers, current slice number and data to the packet
+						data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH
+							+ NUMBER_OF_SLICES + SLICE_NUMBER + packetData.Length];
+						data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
+						data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] |= 1 << 7;
+						Array.Copy(BitConverter.GetBytes(packet.ModuleHash), 0, data,
+							CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, MODULE_HASH_LENGTH);
+						Array.Copy(BitConverter.GetBytes(packet.NumberOfSlices), 0, data,
+							CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, NUMBER_OF_SLICES);
+						Array.Copy(BitConverter.GetBytes(packet.CurrentSliceNumber), 0, data,
+							CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES, SLICE_NUMBER);
+						Array.Copy(packetData, 0, data,
+							CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + NUMBER_OF_SLICES + SLICE_NUMBER, packetData.Length);
 					}
-					else if (IsReliableData(packet.Type))
-					{   // save reliable packets in buffer in case of resends
-						client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
-						_ = ResendPacketData(client, client.ReliableLocalSequence, 0);
+					else
+					{   // add packet type and data to the packet
+						data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH + packetData.Length];
+						data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)packet.Type;
+						Array.Copy(BitConverter.GetBytes(packet.ModuleHash), 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH, MODULE_HASH_LENGTH);
+						Array.Copy(packetData, 0, data, CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + MODULE_HASH_LENGTH, packetData.Length);
 					}
+
+
+					// define receivers of the packet
+					List<SyncConnectedClient> clients = new();
+					if (packet.Client == null)
+						clients = CurrentRoom.ConnectedClients.Values.ToList();
+					else
+						clients.Add(packet.Client);
+
+					// add sequence number and checksum for each client and send packet to them
+					foreach (SyncConnectedClient client in clients)
+					{
+						if (IsUnreliableData(packet.Type))
+						{   // handle unreliable packets
+							if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
+								client.UnreliableLocalSequence++;
+							Array.Copy(BitConverter.GetBytes(client.UnreliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+						}
+						else if (IsReliableData(packet.Type))
+						{   // handle reliable packets
+							if (!packet.IsChunked || packet.CurrentSliceNumber == 1)
+								client.ReliableLocalSequence++;
+							Array.Copy(BitConverter.GetBytes(client.ReliableLocalSequence), 0, data, CRC32_LENGTH, SEQUENCE_ID_LENGTH);
+						}
+
+						CalculateAndAddChecksum(data);
+
+						_udpClient.Send(data, data.Length, new(client.IP, _port));
+						if (packet.OnDataSend != null)
+							packet.OnDataSend?.Invoke(true);
+
+						if (packet.IsChunked)
+						{   // save slices in buffer in case of resends
+							client.SendSlicesBuffer.TryAdd((client.ReliableLocalSequence, packet.CurrentSliceNumber), data);
+							_ = ResendSliceData(client, (client.ReliableLocalSequence, packet.CurrentSliceNumber));
+						}
+						else if (IsReliableData(packet.Type))
+						{   // save reliable packets in buffer in case of resends
+							client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
+							_ = ResendPacketData(client, client.ReliableLocalSequence);
+						}
+					}
+					DebugByteMessage(data, $"Send {packet.Type} Bytes: ", true);
 				}
-				DebugByteMessage(data, $"Send {packet.Type} Bytes: ", true);
 			}
-			// TODO : handle other exceptions and set IsClientActive = false
+			catch (Exception ex)
+			{
+				switch (ex)
+				{
+					case ThreadAbortException:
+						break;
+					case SocketException:
+					case ObjectDisposedException:
+						Debug.LogError(ex.ToString());
+						_mainThreadActions.Enqueue(() => IsClientActive = false);
+						break;
+					default:
+						_mainThreadActions.Enqueue(() => IsClientActive = false);
+						ExceptionDispatchInfo.Capture(ex).Throw();
+						throw;
+				}
+			}
 		}
 
-		private async Task ResendSliceData(SyncConnectedClient client, (ushort, ushort) sequence, int retries)
+		/// <summary>
+		/// Retry sending a Packet Slice after a Delay and within a maximum number of retries
+		/// </summary>
+		/// <param name="client"></param>
+		/// <param name="sequence"></param>
+		/// <param name="retries"></param>
+		/// <returns></returns>
+		private async Task ResendSliceData(SyncConnectedClient client, (ushort, ushort) sequence, int retries = 0)
 		{
 			// TODO : use RTTx1.25 instead of constant delay
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
@@ -177,7 +205,15 @@ namespace jKnepel.UnitySync.Networking
 			return;
 		}
 
-		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries)
+
+		/// <summary>
+		/// Retry sending a Packet after a Delay and within a maximum number of retries
+		/// </summary>
+		/// <param name="client"></param>
+		/// <param name="sequence"></param>
+		/// <param name="retries"></param>
+		/// <returns></returns>
+		private async Task ResendPacketData(SyncConnectedClient client, ushort sequence, int retries = 0)
 		{
 			// TODO : use RTTx1.25 instead of constant delay
 			await Task.Delay(_settings.ResendReliablePacketsDelay);
@@ -191,6 +227,11 @@ namespace jKnepel.UnitySync.Networking
 			return;
 		}
 
+		/// <summary>
+		/// Send ACK to Client, acknowledging the receival of a Packet.
+		/// </summary>
+		/// <param name="client"></param>
+		/// <param name="sequence"></param>
 		private void SendACK(SyncConnectedClient client, ushort sequence)
 		{
 			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH];
@@ -198,9 +239,14 @@ namespace jKnepel.UnitySync.Networking
 			data[CRC32_LENGTH + SEQUENCE_ID_LENGTH] = (byte)SyncPacketType.ACK;
 			CalculateAndAddChecksum(data);
 			_udpClient.Send(data, data.Length, new(client.IP, _port));
-			// TODO : handle other exceptions and set IsClientActive = false
 		}
 
+		/// <summary>
+		/// Send ACK to Client, acknowledging the receival of a Packet Slice.
+		/// </summary>
+		/// <param name="client"></param>
+		/// <param name="sequence"></param>
+		/// <param name="sliceNumber"></param>
 		private void SendACK(SyncConnectedClient client, ushort sequence, ushort sliceNumber)
 		{
 			byte[] data = new byte[CRC32_LENGTH + SEQUENCE_ID_LENGTH + PACKET_TYPE_LENGTH + SLICE_NUMBER];
@@ -216,6 +262,10 @@ namespace jKnepel.UnitySync.Networking
 
 		#region helper methods
 
+		/// <summary>
+		/// Add CRC32 Checksum to packet header, calculated using Protocol ID and current Roomname
+		/// </summary>
+		/// <param name="packet"></param>
 		private void CalculateAndAddChecksum(byte[] packet)
 		{
 			// get packet without CRC32 bytes

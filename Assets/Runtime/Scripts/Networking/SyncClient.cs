@@ -60,6 +60,9 @@ namespace jKnepel.UnitySync.Networking
 			get => _isClientActive;
 			private set 
 			{
+				if (value == _isClientActive)
+					return;
+
 				_isClientActive = value;
 				if (value)
 					SyncManager.OnLocalClientConnected?.Invoke();
@@ -77,6 +80,9 @@ namespace jKnepel.UnitySync.Networking
 			get => _isConnectedToRoom;
 			private set
 			{
+				if (value == _isConnectedToRoom)
+					return;
+
 				_isConnectedToRoom = value;
 				if (value)
 					SyncManager.OnConnectedToRoom?.Invoke();
@@ -119,7 +125,6 @@ namespace jKnepel.UnitySync.Networking
 			}
 			catch (Exception ex)
 			{
-				IsClientActive = false;
 				switch (ex)
 				{
 					case SocketException:
@@ -141,10 +146,12 @@ namespace jKnepel.UnitySync.Networking
 					case OutOfMemoryException:
 						Debug.LogError("Not enough memory available to start the Threads!");
 						break;
-					default: 
+					default:
+						Dispose();
 						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
+				Dispose();
 			}
 		}
 
@@ -162,10 +169,10 @@ namespace jKnepel.UnitySync.Networking
 		{
 			if (Interlocked.Increment(ref _disposeCount) == 1)
 			{
-				IsConnectedToRoom = false;
-				CurrentRoom = null;
-				IsRoomOwner = false;
-				OpenRooms.Clear();
+				if (disposing)
+				{
+					SyncManager.OnUpdate -= Update;
+				}
 
 				if (_listenerThread != null)
 				{
@@ -189,10 +196,10 @@ namespace jKnepel.UnitySync.Networking
 					_udpClient.Dispose();
 				}
 
-				if (disposing)
-				{
-					SyncManager.OnUpdate -= Update;
-				}
+				IsConnectedToRoom = false;
+				CurrentRoom = null;
+				IsRoomOwner = false;
+				OpenRooms.Clear();
 			}
 		}
 
@@ -292,48 +299,32 @@ namespace jKnepel.UnitySync.Networking
 
 		public void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
-			{
-				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
-				onDataSend?.Invoke(false);
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
-			}
 
 			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, moduleHash, data, onDataSend, receiver));
 		}
 
 		public void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
-			{
-				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
-				onDataSend?.Invoke(false);
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
-			}
 
 			_packetsToSend.Enqueue(new(SyncPacketType.ReliableUnorderedData, moduleHash, data, onDataSend, receiver));
 		}
 
 		public void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
-			{
-				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
-				onDataSend?.Invoke(false);
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
-			}
 
 			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, moduleHash, data, onDataSend, receiver));
 		}
 
 		public void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			if (!IsConnectedToRoom || receiver != null && !CheckReceiver(receiver))
-			{
-				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
-				onDataSend?.Invoke(false);
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
-			}
 
 			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableUnorderedData, moduleHash, data, onDataSend, receiver));
 		}
@@ -366,27 +357,60 @@ namespace jKnepel.UnitySync.Networking
 			return false;
 		}
 
-		private bool CheckReceiver(SyncConnectedClient receiver)
+		/// <summary>
+		/// Checks if local client is connected to room and receiver is valid.
+		/// </summary>
+		/// <param name="onDataSend"></param>
+		/// <param name="receiver"></param>
+		/// <returns></returns>
+		private bool CheckIfEligibleForSending(Action<bool> onDataSend, SyncConnectedClient receiver = null)
 		{
-			return IsConnectedToRoom
-				&& CurrentRoom.ConnectedClients.TryGetValue(receiver.IP, out _);
+			if (!IsConnectedToRoom || receiver != null && !CurrentRoom.ConnectedClients.TryGetValue(receiver.IP, out _))
+			{
+				Debug.LogError("The Client is currently not connected or the given Receiver does not exist in the Room!");
+				onDataSend?.Invoke(false);
+				return false;
+			}
+			return true;
 		}
 
+		/// <summary>
+		/// Checks if string is ascii conform
+		/// </summary>
+		/// <param name="str"></param>
+		/// <returns></returns>
 		private static bool IsASCIIString(string str)
 		{
 			return (Encoding.UTF8.GetByteCount(str)) == str.Length;
 		}
 
+		/// <summary>
+		/// Returns wether or not the packet is unreliable or unreliable unordered.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <returns></returns>
 		private static bool IsUnreliableData(SyncPacketType type)
 		{
 			return type == SyncPacketType.UnreliableData || type == SyncPacketType.UnreliableUnorderedData;
 		}
 		
+		/// <summary>
+		/// Returns wether or not the packet is reliable or reliable unordered.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <returns></returns>
 		private static bool IsReliableData(SyncPacketType type)
 		{
 			return type == SyncPacketType.ReliableData || type == SyncPacketType.ReliableUnorderedData;
 		}
 
+		/// <summary>
+		/// Returns bytes from from source array starting at an offset.
+		/// </summary>
+		/// <param name="array"></param>
+		/// <param name="offset"></param>
+		/// <param name="size">if size is set to 0 the remainder of the array will be returned</param>
+		/// <returns></returns>
 		private static byte[] GetBytesFromArray(byte[] array, int offset, int size = 0)
 		{
 			if (size == 0)

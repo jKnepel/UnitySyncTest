@@ -56,29 +56,24 @@ namespace jKnepel.UnitySync
 		}
 
 		// user settings
-		public bool KeepSyncScene = true;
-        public string ImportSceneName = "SyncImportScene";
         public string Username = "Username";
         public Color32 Color = new(255, 255, 255, 255);
         
         // packet frequency settings
         public int HeartbeatDelay = 1000;
         public int ClientTimeoutDelay = 3000;
-        public int ClientVisualiserDelay = 50;
-        public int GLTFHierarchyDelay = 500;
-
 		public int ResendReliablePacketsDelay = 250;
 		public int MaxNumberResendReliablePackets = 5;
 
 		// debug settings
 		public int Port = 26822;
 
-        // prefabs
+		// scene sync variables
+		// TODO : move these to seperate settings asset?
+        public int ClientVisualiserDelay = 50;
+        public int GLTFHierarchyDelay = 500;
         public SyncClientVisualiser ClientVisualiser;
 		public Material HighlightMaterial;
-
-		internal Scene SyncScene;
-		internal Transform SyncParentContainer;
 	}
 
 #if UNITY_EDITOR && UNITY_IMGUI
