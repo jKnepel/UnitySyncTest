@@ -31,7 +31,75 @@ namespace jKnepel.UnitySync.Networking
         public Action<bool>     Callback;
         public uint             CRC32;
         public byte[]           Bytes;
+
+        public bool CheckChecksumBytes()
+		{
+            uint packetChecksum = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, SyncSettings.CRC32_LENGTH));
+            return packetChecksum == CRC32;
+        }
 	}
+
+    internal class SyncConnectionRequestPacket : SyncPacket
+	{
+        /// <summary>
+        /// Sender constructor.
+        /// </summary>
+        public SyncConnectionRequestPacket()
+		{
+            Type = SyncPacketType.ConnectionRequest;
+            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
+            Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
+            
+            CRC32 = SyncCRC32.CRC32Bytes(new byte[] { (byte)Type });
+            Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
+        }
+
+        /// <summary>
+        /// Receiver constructor.
+        /// </summary>
+        /// <param name="client"></param>
+        /// <param name="packet"></param>
+        public SyncConnectionRequestPacket(IPAddress client, byte[] packet)
+		{
+            ClientIP = client;
+            Type = SyncPacketType.ConnectionRequest;
+            Bytes = packet;
+            CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
+		}
+	}
+
+    internal class SyncConnectionChallengePacket : SyncPacket
+	{
+        public ulong Challenge;
+
+        /// <summary>
+        /// Sender constructor.
+        /// </summary>
+        public SyncConnectionChallengePacket()
+		{
+            Type = SyncPacketType.ConnectionChallenge;
+            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_LENGTH];
+            Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
+            ulong challenge = SyncPacketHelper.GenerateChallengeNonce();
+            Array.Copy(BitConverter.GetBytes(challenge), 0, Bytes, SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_LENGTH);
+
+            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
+        }
+
+        /// <summary>
+        /// Receiver constructor.
+        /// </summary>
+        public SyncConnectionChallengePacket(IPAddress client, byte[] packet)
+		{
+            ClientIP = client;
+            Type = SyncPacketType.ConnectionRequest;
+            Bytes = packet;
+            CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
+            Challenge = BitConverter.ToUInt64(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_LENGTH));
+        }
+	}
+
 
     internal abstract class SyncSequencedPacket : SyncPacket
 	{
@@ -155,6 +223,8 @@ namespace jKnepel.UnitySync.Networking
             Color = color;
 
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH];
+
+
 		}
 	}
 }
