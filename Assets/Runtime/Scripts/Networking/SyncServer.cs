@@ -22,6 +22,7 @@ namespace jKnepel.UnitySync.Networking
 
 		private readonly ConcurrentDictionary<IPAddress, byte[]> _pendingConnections = new();
 		private readonly ConcurrentDictionary<IPAddress, SyncConnectedClientDetail> _connectedClients = new();
+
 		private readonly ConcurrentDictionary<uint, IPAddress> _ipHashTable = new();
 
 		#endregion

@@ -13,8 +13,6 @@ namespace jKnepel.UnitySync.SceneSync
         private static SyncSettings _settings;
         private Editor _syncSettingsEditor;
 
-        private static SceneSyncDecorator _sceneSync;
-
         private Vector2 _serversViewPos;
         private Vector2 _clientsViewPos;
         private Vector2 _messagesViewPos;
@@ -24,17 +22,6 @@ namespace jKnepel.UnitySync.SceneSync
         private bool _newServerOptionsIsVisible = true;
         private string _newServerName = "New Server";
         private int _newServerDropdownIndex = 0;
-        private int NewServerDropdownIndex
-		{
-            get => _newServerDropdownIndex;
-            set
-            {
-                _newServerDropdownIndex = value;
-                _sceneSync.ExportSceneName = value < EditorSceneManager.sceneCount
-                    ? EditorSceneManager.GetSceneAt(value).name
-                    : "";
-			}
-		}
 
         private Texture2D _texture;
         private GUIStyle _style = new();
@@ -54,7 +41,6 @@ namespace jKnepel.UnitySync.SceneSync
             _texture = new(1, 1);
             _settings = SyncSettings.GetOrCreateSettings();
             _syncSettingsEditor = Editor.CreateEditor(_settings);
-            _sceneSync = new();
             SyncManager.OnSyncMessageAdded += AddSyncMessage;
 		}
 
@@ -75,10 +61,6 @@ namespace jKnepel.UnitySync.SceneSync
                 GUILayout.Label("UnitySync", EditorStyles.largeLabel);
 
                 // user settings
-                _sceneSync.KeepSyncScene = EditorGUILayout.Toggle("Keep ImportScene:", _sceneSync.KeepSyncScene);
-                _sceneSync.VisualiseClients = EditorGUILayout.Toggle(new GUIContent("Visualise Clients:"), _sceneSync.VisualiseClients);
-                _sceneSync.SyncSceneAutomatically = EditorGUILayout.Toggle(new GUIContent("Sync Scene Automatically:"), _sceneSync.SyncSceneAutomatically);
-                _sceneSync.ImportSceneName = EditorGUILayout.TextField("ImportScene Name:", _sceneSync.ImportSceneName);
                 _syncSettingsEditor.OnInspectorGUI();
                 EditorGUILayout.Space();
                 EditorGUILayout.Space();
@@ -141,7 +123,7 @@ namespace jKnepel.UnitySync.SceneSync
                         {
                             GUILayout.Label("Create a New Server", EditorStyles.boldLabel);
                             _newServerName = EditorGUILayout.TextField("Servername:", _newServerName);
-                            NewServerDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", NewServerDropdownIndex, sceneNames);
+                            _newServerDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", _newServerDropdownIndex, sceneNames);
                             if (GUILayout.Button(new GUIContent("Create")))
                                 SyncManager.ConnectToServer(_newServerName, true);
                         }

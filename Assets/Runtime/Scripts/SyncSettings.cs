@@ -1,4 +1,3 @@
-using jKnepel.UnitySync.SceneSync;
 using System.IO;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -98,13 +97,6 @@ namespace jKnepel.UnitySync
 		internal const int CHALLENGE_LENGTH = 8;            // length of the challenge values send to the connecting client
 		internal const int CHALLENGE_ANSWER_LENGTH = 32;	// length of the challenge values send to the connecting client
 		internal const int CLIENT_ID_LENGTH = 4;			// length of the hash used to identify the connected client
-
-		// scene sync variables
-		// TODO : move these to seperate settings asset?
-		public int ClientVisualiserDelay = 50;
-        public int GLTFHierarchyDelay = 500;
-        public SyncClientVisualiser ClientVisualiser;
-		public Material HighlightMaterial;
 	}
 
 #if UNITY_EDITOR && UNITY_IMGUI
