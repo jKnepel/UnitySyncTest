@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
-using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
@@ -29,15 +28,33 @@ namespace jKnepel.UnitySync.Networking
     internal abstract class SyncPacket
 	{
         // TODO : replace fields with properties restricting write
+        public bool             IsSenderPacket;
         public SyncPacketType   Type;
         public uint             Client;
         public uint             CRC32;
         public byte[]           Bytes;
 
-        public virtual bool CheckChecksumBytes()
+        protected virtual uint CalculateChecksumBytes(byte[] servername = null)
 		{
-            uint packetChecksum = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, SyncSettings.CRC32_LENGTH));
-            return packetChecksum == CRC32;
+            if (Bytes == null)
+                throw new Exception("The Bytes have to be initialized before a Checksum can be calculated!");
+
+            byte[] packetData = SyncPacketHelper.GetBytesFromArray(Bytes, SyncSettings.CRC32_LENGTH);
+            int servernameLength = servername == null ? 0 : servername.Length;
+
+            // calculate CRC32 checksum from protocol id, (optional) servername and packet data
+            byte[] bytes = new byte[SyncSettings.PROTOCOL_ID_LENGTH + servernameLength + packetData.Length];
+            Array.Copy(BitConverter.GetBytes(SyncSettings.PROTOCOL_ID), 0, bytes, 0, SyncSettings.PROTOCOL_ID_LENGTH);
+            if (servername != null)
+                Array.Copy(servername, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH, servername.Length);
+            Array.Copy(packetData, 0, bytes, SyncSettings.PROTOCOL_ID_LENGTH + servernameLength, packetData.Length);
+
+            return SyncCRC32.CRC32Bytes(bytes);
+        }
+
+        public virtual bool CheckCRC32Checksum(byte[] servername = null)
+		{
+            return CRC32 == CalculateChecksumBytes(servername);
         }
 	}
 
@@ -48,24 +65,26 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionRequestPacket(uint client)
+        public SyncConnectionRequestPacket(uint receiver)
 		{
+            IsSenderPacket = true;
             Type = SyncPacketType.ConnectionRequest;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
-            
-            CRC32 = SyncCRC32.CRC32Bytes(new byte[] { (byte)Type });
+
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionRequestPacket(uint client, byte[] packet)
+        public SyncConnectionRequestPacket(uint sender, byte[] packet)
 		{
+            IsSenderPacket = false;
             Type = SyncPacketType.ConnectionRequest;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
 		}
@@ -76,16 +95,17 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionChallengePacket(uint client)
+        public SyncConnectionChallengePacket(uint receiver)
 		{
+            IsSenderPacket = true;
             Type = SyncPacketType.ConnectionChallenge;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
             ulong challenge = SyncPacketHelper.GenerateChallengeNonce();
             Array.Copy(BitConverter.GetBytes(challenge), 0, Bytes, SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_LENGTH);
 
-            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
@@ -94,10 +114,11 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionChallengePacket(uint client, byte[] packet)
+        public SyncConnectionChallengePacket(uint sender, byte[] packet)
 		{
+            IsSenderPacket = false;
             Type = SyncPacketType.ConnectionRequest;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
             Challenge = BitConverter.ToUInt64(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_LENGTH));
@@ -109,10 +130,11 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncChallengeAnswerPacket(uint client, ulong challenge, string username, Color32 color)
+        public SyncChallengeAnswerPacket(uint receiver, ulong challenge, string username, Color32 color)
 		{
+            IsSenderPacket = true;
             Type = SyncPacketType.ChallengeAnswer;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH + SyncSettings.DATA_FLAG_LENGTH + username.Length + 3];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
             using (SHA256 h = SHA256.Create())
@@ -127,7 +149,7 @@ namespace jKnepel.UnitySync.Networking
             Bytes[position + 1] = color.g;
             Bytes[position + 2] = color.b;
 
-            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
@@ -138,10 +160,11 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncChallengeAnswerPacket(uint client, byte[] packet)
+        public SyncChallengeAnswerPacket(uint sender, byte[] packet)
 		{
+            IsSenderPacket = false;
             Type = SyncPacketType.ChallengeAnswer;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
             HashedChallenge = BitConverter.ToUInt64(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_ANSWER_LENGTH));
@@ -157,15 +180,16 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionAccepted(uint client)
+        public SyncConnectionAccepted(uint receiver)
 		{
+            IsSenderPacket = true;
             Type = SyncPacketType.ConnectionAccepted;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CLIENT_ID_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
-            Array.Copy(BitConverter.GetBytes(client), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
+            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
 
-            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
@@ -174,10 +198,11 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionAccepted(uint client, byte[] packet)
+        public SyncConnectionAccepted(uint sender, byte[] packet)
 		{
+            IsSenderPacket = false;
             Type = SyncPacketType.ConnectionAccepted;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
             ClientID = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CLIENT_ID_LENGTH));
@@ -190,24 +215,26 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionDenied(uint client)
+        public SyncConnectionDenied(uint receiver)
 		{
+            IsSenderPacket = true;
             Type = SyncPacketType.ConnectionDenied;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
 
-            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionDenied(uint client, byte[] packet)
+        public SyncConnectionDenied(uint sender, byte[] packet)
 		{
+            IsSenderPacket = false;
             Type = SyncPacketType.ConnectionDenied;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
         }
@@ -219,24 +246,26 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionClosed(uint client)
+        public SyncConnectionClosed(uint receiver)
         {
+            IsSenderPacket = true;
             Type = SyncPacketType.ConnectionClosed;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
 
-            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionClosed(uint client, byte[] packet)
+        public SyncConnectionClosed(uint sender, byte[] packet)
         {
+            IsSenderPacket = false;
             Type = SyncPacketType.ConnectionClosed;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
         }
@@ -247,24 +276,26 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncIsStillActive(uint client)
+        public SyncIsStillActive(uint receiver)
         {
+            IsSenderPacket = true;
             Type = SyncPacketType.IsStillActive;
-            Client = client;
+            Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
 
-            CRC32 = SyncCRC32.CRC32Bytes(SyncPacketHelper.GetBytesFromArray(Bytes, 0, SyncSettings.CRC32_LENGTH));
+            CRC32 = CalculateChecksumBytes(Bytes);
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncIsStillActive(uint client, byte[] packet)
+        public SyncIsStillActive(uint sender, byte[] packet)
         {
+            IsSenderPacket = false;
             Type = SyncPacketType.IsStillActive;
-            Client = client;
+            Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
         }
@@ -274,30 +305,45 @@ namespace jKnepel.UnitySync.Networking
 
     internal abstract class SyncSequencedPacket : SyncPacket
 	{
-        public ushort  Sequence;
+        public ushort Sequence;
 	}
 
     internal class SyncDataPacket : SyncSequencedPacket
     {
+        // TODO: potential bug if mtu changes while packet is in flight or during slice generation
         private readonly int MTU = SyncSettings.GetOrCreateSettings().MTU;
 
         public readonly ConcurrentDictionary<ushort, byte[]> ReceivedSlices;
 
-        public readonly uint    Source;
+        public readonly uint            Source;
+        public readonly Action<bool>    Callback;
+        public readonly uint            ModuleHash;
+        public readonly byte[]          Servername;
+
         public readonly bool    IsChunked;
         public readonly ushort  NumberOfSlices;
-        public readonly ushort  SliceNumber;
-        public readonly uint    ModuleHash;
-        public readonly byte[]  Data;
 
+        public byte[]   Data;
+        public ushort   SliceNumber;
 
-        public SyncDataPacket(SyncPacketType type, Action<bool> callback, uint moduleHash, byte[] data, uint receiver = 0)
+        /// <summary>
+        /// Sender constructor.
+        /// </summary>
+        public SyncDataPacket(SyncPacketType type, Action<bool> callback, uint moduleHash, byte[] data, 
+            byte[] servername, uint receiver, bool isServer, uint source = 0)
 		{
+            if (type != SyncPacketType.ReliableData && type != SyncPacketType.ReliableUnorderedData
+                && type != SyncPacketType.UnreliableData && type != SyncPacketType.UnreliableUnorderedData)
+                throw new Exception("This Packet only supports Reliable and Unreliable Data Types!");
+
+            IsSenderPacket = true;
             Type = type;
-            ClientID = receiver;
+            Client = receiver;
+            Source = source;
             Callback = callback;
             ModuleHash = moduleHash;
             Data = data;
+            Servername = servername;
 
             // define mtu reliant values
             IsChunked = data.Length > MTU;
@@ -312,90 +358,97 @@ namespace jKnepel.UnitySync.Networking
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH +
                 chunkedHeaderLength + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH + dataLength];
 
-            // fill in values that don't need to be adjusted per receiver
-            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength, SyncSettings.CLIENT_ID_LENGTH);
+            // fill in constant values
+            byte[] client = isServer ? BitConverter.GetBytes(source) : BitConverter.GetBytes(receiver);
+            Array.Copy(client, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength, SyncSettings.CLIENT_ID_LENGTH);
             Array.Copy(BitConverter.GetBytes(moduleHash), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + SyncSettings.CLIENT_ID_LENGTH, SyncSettings.MODULE_HASH_LENGTH);
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
+
             if (IsChunked)
-			{   // set bit for marking chunked packets and add number of slices
+			{   // set bit for marking chunked packets and first slice values
                 Bytes[SyncSettings.CRC32_LENGTH] |= 1 << 7;
                 Array.Copy(BitConverter.GetBytes(NumberOfSlices), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH, SyncSettings.NUMBER_OF_SLICES);
-			} 
+                Array.Copy(BitConverter.GetBytes(SliceNumber), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES, SyncSettings.SLICE_NUMBER);
+                Array.Copy(Data, MTU, Bytes, 0, MTU);
+            } 
             else
 			{   // add complete data
                 Array.Copy(data, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH, data.Length);
-			}
-        }
-
-        public SyncDataPacket(IPAddress sender, SyncPacketType type, byte[] packet)
-		{
-            Type = type;
-            ClientIP = sender;
-            Bytes = packet;
-
-            CRC32 = SyncPacketHelper.GetCRC32(packet);
-            Sequence = SyncPacketHelper.GetSequenceBytes(packet);
-
-            IsChunked = SyncPacketHelper.GetIsChunked(packet);
-            if (IsChunked)
-			{
-                NumberOfSlices = SyncPacketHelper.GetNumberOfSlices(packet);
-                SliceNumber = SyncPacketHelper.GetSliceNumber(packet);
-			}
-
-            ClientID = SyncPacketHelper.GetClientID(packet, IsChunked);
-            ModuleHash = SyncPacketHelper.GetModuleHash(packet, IsChunked);
-            Data = SyncPacketHelper.GetDataPacketData(packet, IsChunked);
-        }
-
-        public byte[] PrepareBytesForReceiver(uint receiver, ushort sequence, byte[] servernameBytes)
-		{
-            if (IsChunked)
-			{
-                Debug.LogError("This Method is exclusively meant for non-chunked packets!");
-                return null;
-			}
-
-            Array.Copy(BitConverter.GetBytes(sequence), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.SEQUENCE_ID_LENGTH);
-            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
-            SyncPacketHelper.CalculateAndAddChecksum(Bytes, servernameBytes);
-            return Bytes;
-		}
-
-        public byte[] PrepareSliceBytesForReceiver(uint receiver, ushort sequence, int sliceNumber, byte[] servernameBytes)
-		{
-            if (!IsChunked)
-            {
-                Debug.LogError("This Method is exclusively meant for chunked packets!");
-                return null;
             }
 
-            Array.Copy(BitConverter.GetBytes(sequence), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.SEQUENCE_ID_LENGTH);
-            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER, SyncSettings.CLIENT_ID_LENGTH);
+            CRC32 = CalculateChecksumBytes(Bytes);
+            Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
+        }
 
-            int sliceSize = sliceNumber < NumberOfSlices - 1 ? MTU : Data.Length % MTU;
-            Array.Copy(Data, sliceNumber * MTU, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH, sliceSize);
+        public void AdvanceSliceNumber()
+		{
+            if (!IsChunked || !IsSenderPacket)
+                throw new Exception("Slice Numbers can only be advanced if the Packet is chunked!");
 
-            SyncPacketHelper.CalculateAndAddChecksum(Bytes, servernameBytes);
-            return Bytes;
+            SliceNumber++;
+            int sliceLength = SliceNumber < NumberOfSlices - 1 ? MTU : Data.Length % MTU;
+
+            // copy old bytes to new array overwriting data length with new slice length
+            byte[] newBytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH +
+                SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH + sliceLength];
+            Array.Copy(Bytes, 0, newBytes, 0, newBytes.Length - sliceLength);
+            Bytes = newBytes;
+
+            // insert slice number and data
+            Array.Copy(BitConverter.GetBytes(SliceNumber), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES, SyncSettings.SLICE_NUMBER);
+            Array.Copy(Data, SliceNumber * MTU, Bytes, 0, sliceLength);
+
+            CRC32 = CalculateChecksumBytes(Bytes);
+            Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
+        }
+
+        /// <summary>
+        /// Receiver constructor.
+        /// </summary>
+        public SyncDataPacket(SyncPacketType type, bool isChunked, uint sender, byte[] packet, byte[] servername)
+		{
+            if (type != SyncPacketType.ReliableData && type != SyncPacketType.ReliableUnorderedData
+                && type != SyncPacketType.UnreliableData && type != SyncPacketType.UnreliableUnorderedData)
+                throw new Exception("This Packet only supports Reliable and Unreliable Data Types!");
+
+            IsSenderPacket = false;
+            Type = type;
+            Client = sender;
+            CRC32 = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
+            Sequence = BitConverter.ToUInt16(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.SEQUENCE_ID_LENGTH));
+            ModuleHash = BitConverter.ToUInt32(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH, SyncSettings.MODULE_HASH_LENGTH));
+
+            IsChunked = isChunked;
+            if (isChunked)
+			{
+                NumberOfSlices = BitConverter.ToUInt16(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH, SyncSettings.NUMBER_OF_SLICES));
+                SliceNumber = BitConverter.ToUInt16(SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES, SyncSettings.SLICE_NUMBER));
+                ReceivedSlices = new();
+                byte[] data = SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.NUMBER_OF_SLICES + SyncSettings.SLICE_NUMBER + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH);
+                ReceivedSlices.AddOrUpdate(SliceNumber, data, (key, oldValue) => oldValue = data);
+			}
+            else
+			{
+                Bytes = packet;
+                Data = SyncPacketHelper.GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH);
+            }
+        }
+
+        public bool ConcatenateSlices()
+		{
+            if (ReceivedSlices == null || ReceivedSlices.Count < NumberOfSlices)
+                return false;
+
+            List<byte> dataBytes = new();
+            for (ushort i = 1; i <= NumberOfSlices; i++)
+            {
+                if (!ReceivedSlices.TryGetValue(i, out byte[] sliceData))
+                    return false;
+                dataBytes.AddRange(sliceData);
+            }
+            Data = dataBytes.ToArray();
+            
+            return true;
         }
     }
-
-    internal class SyncClientInfoPacket : SyncSequencedPacket
-	{
-        public string   Username;
-        public Color32  Color;
-
-        public SyncClientInfoPacket(uint clientId, string username, Color32 color)
-		{
-            Type = SyncPacketType.ClientInfo;
-            ClientID = clientId;
-            Username = username;
-            Color = color;
-
-            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH];
-
-
-		}
-	}
 }
