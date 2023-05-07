@@ -223,14 +223,14 @@ namespace jKnepel.UnitySync.Networking
         }
     }
 
-    internal class SyncConnectionAccepted : SyncPacket
+    internal class SyncConnectionAcceptedPacket : SyncPacket
 	{
         public byte ClientID;
 
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionAccepted(byte receiver)
+        public SyncConnectionAcceptedPacket(byte receiver)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionAccepted;
@@ -247,7 +247,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionAccepted(byte sender, byte[] packet)
+        public SyncConnectionAcceptedPacket(byte sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionAccepted;
@@ -259,12 +259,12 @@ namespace jKnepel.UnitySync.Networking
     }
 
     // TODO : add reason?
-    internal class SyncConnectionDenied : SyncPacket
+    internal class SyncConnectionDeniedPacket : SyncPacket
 	{ 
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionDenied(byte receiver)
+        public SyncConnectionDeniedPacket(byte receiver)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionDenied;
@@ -279,7 +279,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionDenied(byte sender, byte[] packet)
+        public SyncConnectionDeniedPacket(byte sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionDenied;
@@ -290,12 +290,12 @@ namespace jKnepel.UnitySync.Networking
     }
 
     // TODO : add reason?
-    internal class SyncConnectionClosed : SyncPacket
+    internal class SyncConnectionClosedPacket : SyncPacket
     {
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionClosed(byte receiver)
+        public SyncConnectionClosedPacket(byte receiver)
         {
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionClosed;
@@ -310,7 +310,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionClosed(byte sender, byte[] packet)
+        public SyncConnectionClosedPacket(byte sender, byte[] packet)
         {
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionClosed;
@@ -320,14 +320,14 @@ namespace jKnepel.UnitySync.Networking
         }
     }
 
-    internal class SyncClientDisconnected : SyncPacket
+    internal class SyncClientDisconnectedPacket : SyncPacket
 	{
         public byte ClientID;
 
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncClientDisconnected(byte receiver, byte client)
+        public SyncClientDisconnectedPacket(byte receiver, byte client)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ClientDisconnected;
@@ -344,7 +344,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncClientDisconnected(byte sender, byte[] packet)
+        public SyncClientDisconnectedPacket(byte sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ClientDisconnected;
@@ -355,12 +355,12 @@ namespace jKnepel.UnitySync.Networking
         }
     }
 
-    internal class SyncIsStillActive : SyncPacket
+    internal class SyncIsStillActivePacket : SyncPacket
     {
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncIsStillActive(byte receiver)
+        public SyncIsStillActivePacket(byte receiver)
         {
             IsSenderPacket = true;
             Type = SyncPacketType.IsStillActive;
@@ -375,7 +375,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncIsStillActive(byte sender, byte[] packet)
+        public SyncIsStillActivePacket(byte sender, byte[] packet)
         {
             IsSenderPacket = false;
             Type = SyncPacketType.IsStillActive;
