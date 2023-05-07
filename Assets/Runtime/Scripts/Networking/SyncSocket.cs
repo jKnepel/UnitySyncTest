@@ -29,7 +29,7 @@ namespace jKnepel.UnitySync.Networking
 		protected int _disposeCount;
 
 		protected readonly ConcurrentQueue<Action> _mainThreadActions = new();
-		protected readonly ConcurrentQueue<SyncSenderPacket> _packetsToSend = new();
+		protected readonly ConcurrentQueue<SyncPacket> _packetsToSend = new();
 
 		#endregion
 
@@ -86,37 +86,13 @@ namespace jKnepel.UnitySync.Networking
 
 		public abstract void DisconnectFromServer();
 
-		public void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
-		{
-			if (!CheckIfEligibleForSending(true, data, onDataSend, receiver))
-				return;
+		public abstract void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null);
 
-			_packetsToSend.Enqueue(new(SyncPacketType.ReliableData, moduleHash, data, onDataSend, receiver)); 
-		}
+		public abstract void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null);
 
-		public void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
-		{
-			if (!CheckIfEligibleForSending(true, data, onDataSend, receiver))
-				return;
+		public abstract void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null);
 
-			_packetsToSend.Enqueue(new(SyncPacketType.ReliableUnorderedData, moduleHash, data, onDataSend, receiver));
-		}
-
-		public void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
-		{
-			if (!CheckIfEligibleForSending(false, data, onDataSend, receiver))
-				return;
-
-			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableData, moduleHash, data, onDataSend, receiver));
-		}
-
-		public void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, uint receiver = 0)
-		{
-			if (!CheckIfEligibleForSending(false, data, onDataSend, receiver))
-				return;
-
-			_packetsToSend.Enqueue(new(SyncPacketType.UnreliableUnorderedData, moduleHash, data, onDataSend, receiver));
-		}
+		public abstract void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null);
 
 		#endregion
 
@@ -146,13 +122,57 @@ namespace jKnepel.UnitySync.Networking
 			return false;
 		}
 
+		private const ushort HALF_USHORT = ushort.MaxValue / 2;
+
 		/// <summary>
-		/// Checks if local client is connected to server and receiver is valid.
+		/// Checks if a packet is new by comparing the packets sequence number and the corresponding remote sequence number.
+		/// Also handles ushort wrap-arounds by allowing packets that are smaller by half of the maximum value.
 		/// </summary>
-		/// <param name="onDataSend"></param>
-		/// <param name="receiver"></param>
+		/// <param name="packetSequence"></param>
+		/// <param name="remoteSequence"></param>
+		/// <returns>if the packet is new</returns>
+		protected static bool IsNewPacket(ushort packetSequence, ushort remoteSequence)
+		{
+			return ((packetSequence > remoteSequence) && (packetSequence - remoteSequence <= HALF_USHORT))
+				|| ((packetSequence < remoteSequence) && (remoteSequence - packetSequence > HALF_USHORT));
+		}
+
+		/// <summary>
+		/// Checks if a packet is next after remote sequence number.
+		/// </summary>
+		/// <param name="packetSequence"></param>
+		/// <param name="remoteSequence"></param>
+		/// <returns>if the packet is new</returns>
+		protected static bool IsNextPacket(ushort packetSequence, ushort remoteSequence)
+		{
+			return (packetSequence == (ushort)(remoteSequence + 1))
+				|| (packetSequence == 0 && remoteSequence == ushort.MaxValue);
+		}
+
+		/// <summary>
+		/// Returns wether or not the packet is reliable or reliable unordered.
+		/// </summary>
+		/// <param name="type"></param>
 		/// <returns></returns>
-		protected abstract bool CheckIfEligibleForSending(bool isReliable, byte[] data, Action<bool> dataCallback, uint receiver = 0);
+		protected static bool IsReliableData(SyncPacketType type)
+		{
+			return type == SyncPacketType.ReliableData || type == SyncPacketType.ReliableUnorderedData;
+		}
+
+		/// <summary>
+		/// Returns wether or not the packet is unreliable or unreliable unordered.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <returns></returns>
+		protected static bool IsUnreliableData(SyncPacketType type)
+		{
+			return type == SyncPacketType.UnreliableData || type == SyncPacketType.UnreliableUnorderedData;
+		}
+
+		protected static bool IsDataPacket(SyncPacketType type)
+		{
+			return IsReliableData(type) || IsUnreliableData(type);
+		}
 
 		/// <summary>
 		/// Checks if string is ascii conform

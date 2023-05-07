@@ -1,12 +1,12 @@
 using System.Net;
 using System.Text;
-using System.Collections.Concurrent;
 
 namespace jKnepel.UnitySync.Networking
 {
     public class SyncServerInformation
     {
         public IPAddress IP { get; private set; }
+        public byte ServerID => 1;
         public string Servername { get; private set; }
         public byte[] ServernameBytes { get; private set; }
         public int NumberConnectedClients { get; set; }

@@ -70,9 +70,9 @@ namespace jKnepel.UnitySync
 		public virtual void Start() { }
 		public virtual void Update() { }
 
-        public abstract void OnReceiveData(SyncConnectedClient sender, byte[] data);
+        public abstract void OnReceiveData(byte sender, byte[] data);
 
-        public abstract void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null);
+        public abstract void SendData(byte[] data, Action<bool> onDataSend, byte? receiver = null);
     }
 
 	public abstract class SyncReliableModule : SyncModule
@@ -85,7 +85,7 @@ namespace jKnepel.UnitySync
 		/// <param name="receiver">
 		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
-		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public override void SendData(byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			SyncManager.SendDataReliable(ModuleHash, data, onDataSend, receiver);
 		}
@@ -101,7 +101,7 @@ namespace jKnepel.UnitySync
 		/// <param name="receiver">
 		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
-		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public override void SendData(byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			SyncManager.SendDataReliableUnordered(ModuleHash, data, onDataSend, receiver);
 		}
@@ -119,7 +119,7 @@ namespace jKnepel.UnitySync
 		/// <param name="receiver">
 		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
-		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public override void SendData(byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			SyncManager.SendDataUnreliable(ModuleHash, data, onDataSend, receiver);
 		}
@@ -137,7 +137,7 @@ namespace jKnepel.UnitySync
 		/// <param name="receiver">
 		/// A Client in the same Server that should receive the Packet. If the Receiver is null, all Clients receive the Packet.
 		/// </param>
-		public override void SendData(byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		public override void SendData(byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			SyncManager.SendDataUnreliableUnordered(ModuleHash, data, onDataSend, receiver);
 		}

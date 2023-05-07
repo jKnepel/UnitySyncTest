@@ -7,7 +7,6 @@ using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Reflection;
@@ -121,7 +120,7 @@ namespace jKnepel.UnitySync
 
 		#region internal fields
 
-		internal static Action<uint, SyncConnectedClient, byte[]> DataReceived;
+		internal static Action<uint, byte, byte[]> DataReceived;
 
 		#endregion
 
@@ -234,30 +233,24 @@ namespace jKnepel.UnitySync
 						if (sender.Equals(_ip))
 							continue;
 
-						// get relevant header bytes
-						uint checksum = SyncPacketHelper.GetCRC32(receivedBytes);
-						byte[] remainder = SyncPacketHelper.GetRemainder(receivedBytes);
-						SyncPacketType packetType = SyncPacketHelper.GetPacketType(receivedBytes);
+						byte typeBytes = receivedBytes[SyncSettings.CRC32_LENGTH];
+						byte mask = 1 << 7;
+						typeBytes &= (byte)~mask;
+						SyncPacketType packetType = (SyncPacketType)typeBytes;
 
 						if (packetType != SyncPacketType.Heartbeat)
 							continue;
 
 						// check for bitswitches using crc32 checksum
-						byte[] compChecksum = new byte[SyncSettings.PROTOCOL_ID_LENGTH + remainder.Length];
-						Array.Copy(BitConverter.GetBytes(SyncSettings.PROTOCOL_ID), 0, compChecksum, 0, SyncSettings.PROTOCOL_ID_LENGTH);
-						Array.Copy(remainder, 0, compChecksum, SyncSettings.PROTOCOL_ID_LENGTH, remainder.Length);
-						if (checksum != SyncCRC32.CRC32Bytes(compChecksum))
+						SyncHeartbeatPacket heartbeat = new(receivedBytes);
+						if (!heartbeat.CheckCRC32Checksum())
 							continue;
 
-						// data from hearbeat
-						// TODO : handle number of clients
-						byte servernameLength = remainder[SyncSettings.DATA_FLAG_LENGTH];
-						byte[] servernameBytes = SyncPacketHelper.GetBytesFromArray(remainder, 1, servernameLength);
-						string servername = Encoding.ASCII.GetString(servernameBytes);
-
+						string servername = Encoding.ASCII.GetString(heartbeat.Servername);
 						if (!_openServers.TryGetValue(servername, out SyncServerInformation server))
 							server = new SyncServerInformation(sender, servername);
 
+						// TODO : set number clients
 						// TODO : update server values
 						// TODO : timeout server
 					}
@@ -267,7 +260,7 @@ namespace jKnepel.UnitySync
 			catch (ThreadAbortException) { }
 		}
 
-		private static void OnDataReceived(uint moduleHash, SyncConnectedClient client, byte[] data)
+		private static void OnDataReceived(uint moduleHash, byte client, byte[] data)
 		{
 			if (_registeredModules.TryGetValue(moduleHash, out SyncModule module))
 			{
@@ -317,7 +310,7 @@ namespace jKnepel.UnitySync
 			return _registeredModules.TryGetValue(moduleHash, out _);
 		}
 
-		internal static void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		internal static void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			if (!IsEligibleForSending(onDataSend))
 				return;
@@ -325,7 +318,7 @@ namespace jKnepel.UnitySync
 			_socket.SendDataReliable(moduleHash, data, onDataSend, receiver);
 		}
 
-		internal static void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		internal static void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			if (!IsEligibleForSending(onDataSend))
 				return;
@@ -333,7 +326,7 @@ namespace jKnepel.UnitySync
 			_socket.SendDataReliableUnordered(moduleHash, data, onDataSend, receiver);
 		}
 
-		internal static void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		internal static void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			if (!IsEligibleForSending(onDataSend))
 				return;
@@ -341,7 +334,7 @@ namespace jKnepel.UnitySync
 			_socket.SendDataUnreliable(moduleHash, data, onDataSend, receiver);
 		}
 
-		internal static void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, SyncConnectedClient receiver = null)
+		internal static void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
 			if (!IsEligibleForSending(onDataSend))
 				return;

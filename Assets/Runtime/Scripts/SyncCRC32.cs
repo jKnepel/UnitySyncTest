@@ -2,7 +2,7 @@ namespace jKnepel.UnitySync
 {
 	internal static class SyncCRC32
 	{
-		private static readonly uint[] crc_32_tab =  // CRC polynomial 0xedb88320 
+		private static readonly uint[] crc32 =  // CRC polynomial 0xedb88320 
 		{
 			0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
 			0xe963a535, 0x9e6495a3, 0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988,
@@ -49,21 +49,16 @@ namespace jKnepel.UnitySync
 			0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 		};
 
-		private static uint UPDC32(byte octet, uint crc)
-		{
-			return (crc_32_tab[((crc) ^ ((byte)octet)) & 0xff] ^ ((crc) >> 8));
-		}
-
 		public static uint CRC32Bytes(byte[] bytes)
 		{
 			uint oldcrc32;
 			oldcrc32 = 0xFFFFFFFF;
 			int len = bytes.Length;
 
-			for (int i = 0; len > 0; i++)
+			while (len > 0)
 			{
 				--len;
-				oldcrc32 = UPDC32(bytes[len], oldcrc32);
+				oldcrc32 = crc32[((oldcrc32) ^ bytes[len]) & 0xff] ^ ((oldcrc32) >> 8);
 			}
 			return ~oldcrc32;
 		}

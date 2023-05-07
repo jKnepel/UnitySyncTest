@@ -7,12 +7,12 @@ namespace jKnepel.UnitySync.Networking
 {
 	public class SyncConnectedClient
 	{
-		public uint ID { get; set; }
+		public byte ID { get; set; }
 		public string Username { get; set; }
 		public Color32 Color { get; set; }
 		public DateTime LastHeartbeat { get; set; }
 
-		public SyncConnectedClient(uint id, string username, Color32 color)
+		public SyncConnectedClient(byte id, string username, Color32 color)
 		{
 			ID = id;
 			Username = username;
@@ -34,7 +34,7 @@ namespace jKnepel.UnitySync.Networking
 
 		public override int GetHashCode()
 		{
-			return (int)ID;
+			return ID;
 		}
 	}
 
@@ -43,16 +43,18 @@ namespace jKnepel.UnitySync.Networking
 		public IPAddress IP { get; private set; }
 		public string IPString { get; private set; }
 
-		internal readonly ConcurrentDictionary<ushort, SyncReceiverPacket> ReceivedPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, (uint, byte[])> ReceivedPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, ConcurrentDictionary<ushort, byte[]>> ReceivedChunksBuffer = new();
+
 		internal readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
-		internal readonly ConcurrentDictionary<(ushort, ushort), byte[]> SendSlicesBuffer = new();
+		internal readonly ConcurrentDictionary<(ushort, ushort), byte[]> SendChunksBuffer = new();
 
 		internal ushort UnreliableLocalSequence { get; set; }
 		internal ushort UnreliableRemoteSequence { get; set; }
 		internal ushort ReliableLocalSequence { get; set; }
 		internal ushort ReliableRemoteSequence { get; set; }
 
-		public SyncConnectedClientDetail(uint id, IPAddress ip, string username, Color32 color) : base(id, username, color)
+		public SyncConnectedClientDetail(byte id, IPAddress ip, string username, Color32 color) : base(id, username, color)
 		{
 			IP = ip;
 			IPString = ip.ToString();
