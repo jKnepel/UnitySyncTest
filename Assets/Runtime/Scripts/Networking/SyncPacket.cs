@@ -15,6 +15,7 @@ namespace jKnepel.UnitySync.Networking
         ConnectionAccepted,
         ConnectionDenied,
         ConnectionClosed,
+        ClientDisconnected,
         IsStillActive,
         ReliableData,
         ReliableUnorderedData,
@@ -224,6 +225,8 @@ namespace jKnepel.UnitySync.Networking
 
     internal class SyncConnectionAccepted : SyncPacket
 	{
+        public byte ClientID;
+
         /// <summary>
         /// Sender constructor.
         /// </summary>
@@ -234,13 +237,12 @@ namespace jKnepel.UnitySync.Networking
             Client = receiver;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CLIENT_ID_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
-            Array.Copy(BitConverter.GetBytes(receiver), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CLIENT_ID_LENGTH);
+            Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.CLIENT_ID_LENGTH] = ClientID;
 
             CRC32 = CalculateChecksumBytes();
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
-        public uint ClientID;
 
         /// <summary>
         /// Receiver constructor.
@@ -252,7 +254,7 @@ namespace jKnepel.UnitySync.Networking
             Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
-            ClientID = BitConverter.ToUInt32(GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CLIENT_ID_LENGTH));
+            ClientID = packet[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
         }
     }
 
@@ -315,6 +317,41 @@ namespace jKnepel.UnitySync.Networking
             Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
+        }
+    }
+
+    internal class SyncClientDisconnected : SyncPacket
+	{
+        public byte ClientID;
+
+        /// <summary>
+        /// Sender constructor.
+        /// </summary>
+        public SyncClientDisconnected(byte receiver, byte client)
+		{
+            IsSenderPacket = true;
+            Type = SyncPacketType.ClientDisconnected;
+            Client = receiver;
+            ClientID = client;
+            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CLIENT_ID_LENGTH];
+            Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
+            Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.CLIENT_ID_LENGTH] = ClientID;
+
+            CRC32 = CalculateChecksumBytes();
+            Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
+        }
+
+        /// <summary>
+        /// Receiver constructor.
+        /// </summary>
+        public SyncClientDisconnected(byte sender, byte[] packet)
+		{
+            IsSenderPacket = false;
+            Type = SyncPacketType.ClientDisconnected;
+            Client = sender;
+            Bytes = packet;
+            CRC32 = BitConverter.ToUInt32(GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
+            ClientID = packet[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
         }
     }
 
@@ -462,8 +499,8 @@ namespace jKnepel.UnitySync.Networking
                 chunkedHeaderLength + SyncSettings.CLIENT_ID_LENGTH + SyncSettings.MODULE_HASH_LENGTH + dataLength];
 
             // fill in constant values
-            byte[] client = source == null ? BitConverter.GetBytes((byte)receiver) : BitConverter.GetBytes((byte)source);
-            Array.Copy(client, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength, SyncSettings.CLIENT_ID_LENGTH);
+            byte client = source == null ? (byte)receiver : (byte)source;
+            Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength] = client;
             Array.Copy(BitConverter.GetBytes(moduleHash), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + SyncSettings.CLIENT_ID_LENGTH, SyncSettings.MODULE_HASH_LENGTH);
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
 
