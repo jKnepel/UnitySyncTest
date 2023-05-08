@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
@@ -29,7 +30,6 @@ namespace jKnepel.UnitySync.Networking
         // TODO : replace fields with properties restricting write
         public bool             IsSenderPacket;
         public SyncPacketType   Type;
-        public byte             Client;
         public uint             CRC32;
         public byte[]           Bytes;
 
@@ -69,8 +69,16 @@ namespace jKnepel.UnitySync.Networking
 
     //------------------ Connection Packets ------------------
 
-    internal class SyncHeartbeatPacket : SyncPacket
-	{
+    internal abstract class SyncConnectionPacket : SyncPacket
+    {
+        public IPAddress Client;
+    }
+
+    internal class SyncHeartbeatPacket : SyncConnectionPacket
+    {
+        public readonly byte[]  Servername;
+        public readonly byte    NumberOfClients;
+
         /// <summary>
         /// Sender constructor.
         /// </summary>
@@ -78,6 +86,8 @@ namespace jKnepel.UnitySync.Networking
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.Heartbeat;
+            Servername = servername;
+            NumberOfClients = numberOfClients;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servername.Length + SyncSettings.DATA_FLAG_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
             Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH] = (byte)servername.Length;
@@ -87,9 +97,6 @@ namespace jKnepel.UnitySync.Networking
             CRC32 = CalculateChecksumBytes();
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
-
-        public readonly byte[]  Servername;
-        public readonly byte    NumberOfClients;
 
         /// <summary>
         /// Receiver constructor.
@@ -106,12 +113,12 @@ namespace jKnepel.UnitySync.Networking
         }
 	}
 
-    internal class SyncConnectionRequestPacket : SyncPacket
-	{
+    internal class SyncConnectionRequestPacket : SyncConnectionPacket
+    {
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionRequestPacket(byte receiver)
+        public SyncConnectionRequestPacket(IPAddress receiver)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionRequest;
@@ -126,7 +133,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionRequestPacket(byte sender, byte[] packet)
+        public SyncConnectionRequestPacket(IPAddress sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionRequest;
@@ -136,12 +143,14 @@ namespace jKnepel.UnitySync.Networking
 		}
 	}
 
-    internal class SyncConnectionChallengePacket : SyncPacket
-	{
+    internal class SyncConnectionChallengePacket : SyncConnectionPacket
+    {
+        public ulong Challenge;
+
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionChallengePacket(byte receiver)
+        public SyncConnectionChallengePacket(IPAddress receiver)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionChallenge;
@@ -157,12 +166,10 @@ namespace jKnepel.UnitySync.Networking
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
-        public ulong Challenge;
-
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionChallengePacket(byte sender, byte[] packet)
+        public SyncConnectionChallengePacket(IPAddress sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionRequest;
@@ -173,22 +180,28 @@ namespace jKnepel.UnitySync.Networking
         }
 	}
 
-    internal class SyncChallengeAnswerPacket : SyncPacket
-	{
+    internal class SyncChallengeAnswerPacket : SyncConnectionPacket
+    {
+        public byte[] HashedChallenge;
+        public string Username;
+        public Color32 Color;
+
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncChallengeAnswerPacket(byte receiver, ulong challenge, string username, Color32 color)
+        public SyncChallengeAnswerPacket(IPAddress receiver, ulong challenge, string username, Color32 color)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ChallengeAnswer;
             Client = receiver;
+            Username = username;
+            Color = color;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH + SyncSettings.DATA_FLAG_LENGTH + username.Length + 3];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
             using (SHA256 h = SHA256.Create())
             {
-                byte[] hashedChallenge = h.ComputeHash(BitConverter.GetBytes(challenge));
-                Array.Copy(hashedChallenge, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_ANSWER_LENGTH);
+                HashedChallenge = h.ComputeHash(BitConverter.GetBytes(challenge));
+                Array.Copy(HashedChallenge, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_ANSWER_LENGTH);
             }
             Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH] = (byte)username.Length;
             Array.Copy(Encoding.ASCII.GetBytes(username), 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH + SyncSettings.DATA_FLAG_LENGTH, username.Length);
@@ -201,21 +214,17 @@ namespace jKnepel.UnitySync.Networking
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
         }
 
-        public ulong HashedChallenge;
-        public string Username;
-        public Color32 Color;
-
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncChallengeAnswerPacket(byte sender, byte[] packet)
+        public SyncChallengeAnswerPacket(IPAddress sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ChallengeAnswer;
             Client = sender;
             Bytes = packet;
             CRC32 = BitConverter.ToUInt32(GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
-            HashedChallenge = BitConverter.ToUInt64(GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_ANSWER_LENGTH));
+            HashedChallenge = GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH, SyncSettings.CHALLENGE_ANSWER_LENGTH);
             byte usernameLength = packet[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH];
             Username = Encoding.ASCII.GetString(GetBytesFromArray(packet, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH + SyncSettings.DATA_FLAG_LENGTH, usernameLength));
             int position = SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CHALLENGE_ANSWER_LENGTH + SyncSettings.DATA_FLAG_LENGTH + usernameLength;
@@ -223,18 +232,19 @@ namespace jKnepel.UnitySync.Networking
         }
     }
 
-    internal class SyncConnectionAcceptedPacket : SyncPacket
-	{
+    internal class SyncConnectionAcceptedPacket : SyncConnectionPacket
+    {
         public byte ClientID;
 
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionAcceptedPacket(byte receiver)
+        public SyncConnectionAcceptedPacket(IPAddress receiver, byte clientID)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionAccepted;
             Client = receiver;
+            ClientID = clientID;
             Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.CLIENT_ID_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
             Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.CLIENT_ID_LENGTH] = ClientID;
@@ -247,7 +257,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionAcceptedPacket(byte sender, byte[] packet)
+        public SyncConnectionAcceptedPacket(IPAddress sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionAccepted;
@@ -259,12 +269,12 @@ namespace jKnepel.UnitySync.Networking
     }
 
     // TODO : add reason?
-    internal class SyncConnectionDeniedPacket : SyncPacket
-	{ 
+    internal class SyncConnectionDeniedPacket : SyncConnectionPacket
+    {
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionDeniedPacket(byte receiver)
+        public SyncConnectionDeniedPacket(IPAddress receiver)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionDenied;
@@ -279,7 +289,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionDeniedPacket(byte sender, byte[] packet)
+        public SyncConnectionDeniedPacket(IPAddress sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionDenied;
@@ -290,12 +300,12 @@ namespace jKnepel.UnitySync.Networking
     }
 
     // TODO : add reason?
-    internal class SyncConnectionClosedPacket : SyncPacket
+    internal class SyncConnectionClosedPacket : SyncConnectionPacket
     {
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncConnectionClosedPacket(byte receiver)
+        public SyncConnectionClosedPacket(IPAddress receiver)
         {
             IsSenderPacket = true;
             Type = SyncPacketType.ConnectionClosed;
@@ -310,7 +320,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncConnectionClosedPacket(byte sender, byte[] packet)
+        public SyncConnectionClosedPacket(IPAddress sender, byte[] packet)
         {
             IsSenderPacket = false;
             Type = SyncPacketType.ConnectionClosed;
@@ -320,14 +330,14 @@ namespace jKnepel.UnitySync.Networking
         }
     }
 
-    internal class SyncClientDisconnectedPacket : SyncPacket
-	{
+    internal class SyncClientDisconnectedPacket : SyncConnectionPacket
+    {
         public byte ClientID;
 
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncClientDisconnectedPacket(byte receiver, byte client)
+        public SyncClientDisconnectedPacket(IPAddress receiver, byte client)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.ClientDisconnected;
@@ -344,7 +354,7 @@ namespace jKnepel.UnitySync.Networking
         /// <summary>
         /// Receiver constructor.
         /// </summary>
-        public SyncClientDisconnectedPacket(byte sender, byte[] packet)
+        public SyncClientDisconnectedPacket(IPAddress sender, byte[] packet)
 		{
             IsSenderPacket = false;
             Type = SyncPacketType.ClientDisconnected;
@@ -355,7 +365,8 @@ namespace jKnepel.UnitySync.Networking
         }
     }
 
-    internal class SyncIsStillActivePacket : SyncPacket
+    /*
+    internal class SyncIsStillActivePacket : SyncConnectionPacket
     {
         /// <summary>
         /// Sender constructor.
@@ -384,12 +395,14 @@ namespace jKnepel.UnitySync.Networking
             CRC32 = BitConverter.ToUInt32(GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
         }
     }
+    */
 
     //------------------ Data Packets ------------------
 
     internal abstract class SyncSequencedPacket : SyncPacket
 	{
-        public ushort Sequence;
+        public byte     Client;
+        public ushort   Sequence;
 	}
 
     internal class SyncACKPacket : SyncSequencedPacket

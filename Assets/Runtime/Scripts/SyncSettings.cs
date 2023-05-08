@@ -60,8 +60,6 @@ namespace jKnepel.UnitySync
         
         // packet frequency settings
         public int HeartbeatDelay = 1000;
-        public int ClientTimeoutDelay = 3000;
-		public int ResendReliablePacketsDelay = 250;
 		public int MaxNumberResendReliablePackets = 5;
 
 		// debug settings
@@ -82,6 +80,22 @@ namespace jKnepel.UnitySync
 				_mtu = value;
 			}
 		}
+		// TODO : calculate rtt
+		private int _rtt = 200;
+		public int RTT
+		{
+			get => _rtt;
+			set
+			{
+				if (SyncManager.IsConnected)
+				{
+					Debug.LogWarning("The RTT should not be changed while connected to a Server!");
+					return;
+				}
+
+				_rtt = value;
+			}
+		}
 
 
 		// packet constants
@@ -96,7 +110,7 @@ namespace jKnepel.UnitySync
 		internal const int DATA_FLAG_LENGTH = 1;            // byte flag containing the length of the following byte data
 		internal const int CHALLENGE_LENGTH = 8;            // length of the challenge values send to the connecting client
 		internal const int CHALLENGE_ANSWER_LENGTH = 32;	// length of the challenge values send to the connecting client
-		internal const int CLIENT_ID_LENGTH = 4;			// length of the hash used to identify the connected client
+		internal const int CLIENT_ID_LENGTH = 1;			// length of the hash used to identify the connected client
 	}
 
 #if UNITY_EDITOR && UNITY_IMGUI

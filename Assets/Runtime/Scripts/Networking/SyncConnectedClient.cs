@@ -46,8 +46,8 @@ namespace jKnepel.UnitySync.Networking
 		internal readonly ConcurrentDictionary<ushort, (uint, byte[])> ReceivedPacketsBuffer = new();
 		internal readonly ConcurrentDictionary<ushort, ConcurrentDictionary<ushort, byte[]>> ReceivedChunksBuffer = new();
 
-		internal readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
-		internal readonly ConcurrentDictionary<(ushort, ushort), byte[]> SendChunksBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, SyncDataPacket> SendPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<(ushort, ushort), SyncDataPacket> SendChunksBuffer = new();
 
 		internal ushort UnreliableLocalSequence { get; set; }
 		internal ushort UnreliableRemoteSequence { get; set; }
