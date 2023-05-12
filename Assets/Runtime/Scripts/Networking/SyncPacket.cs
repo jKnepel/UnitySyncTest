@@ -77,22 +77,25 @@ namespace jKnepel.UnitySync.Networking
     internal class SyncHeartbeatPacket : SyncConnectionPacket
     {
         public readonly byte[]  Servername;
+        public readonly byte    MaxNumberOfClients;
         public readonly byte    NumberOfClients;
 
         /// <summary>
         /// Sender constructor.
         /// </summary>
-        public SyncHeartbeatPacket(byte[] servername, byte numberOfClients)
+        public SyncHeartbeatPacket(byte[] servername, byte maxNumberOfClients, byte numberOfClients)
 		{
             IsSenderPacket = true;
             Type = SyncPacketType.Heartbeat;
             Servername = servername;
+            MaxNumberOfClients = maxNumberOfClients;
             NumberOfClients = numberOfClients;
-            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servername.Length + SyncSettings.DATA_FLAG_LENGTH];
+            Bytes = new byte[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servername.Length + SyncSettings.NUMBER_CLIENTS_LENGTH + SyncSettings.NUMBER_CLIENTS_LENGTH];
             Bytes[SyncSettings.CRC32_LENGTH] = (byte)Type;
             Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH] = (byte)servername.Length;
             Array.Copy(servername, 0, Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH, servername.Length);
-            Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servername.Length] = numberOfClients;
+            Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servername.Length] = maxNumberOfClients;
+            Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servername.Length + SyncSettings.NUMBER_CLIENTS_LENGTH] = numberOfClients;
 
             CRC32 = CalculateChecksumBytes();
             Array.Copy(BitConverter.GetBytes(CRC32), 0, Bytes, 0, SyncSettings.CRC32_LENGTH);
@@ -109,7 +112,8 @@ namespace jKnepel.UnitySync.Networking
             CRC32 = BitConverter.ToUInt32(GetBytesFromArray(packet, 0, SyncSettings.CRC32_LENGTH));
             int servernameLength = packet[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH];
             Array.Copy(Bytes, SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH, Servername, 0, servernameLength);
-            NumberOfClients = Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servernameLength];
+            MaxNumberOfClients = Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servernameLength];
+            NumberOfClients = Bytes[SyncSettings.CRC32_LENGTH + SyncSettings.PACKET_TYPE_LENGTH + SyncSettings.DATA_FLAG_LENGTH + servernameLength + SyncSettings.NUMBER_CLIENTS_LENGTH];
         }
 	}
 

@@ -220,7 +220,8 @@ namespace jKnepel.UnitySync.Networking
 					typeBytes &= (byte)~mask;
 					SyncPacketType packetType = (SyncPacketType)typeBytes;
 
-					// TODO : send connectionclosed when disconnected client sends packet
+					// TODO : send connectionclosed when forcefully disconnected client sends packet
+					// TODO : otherwise refresh sequence numbers
 
 					if (packetType.GetType().IsSubclassOf(typeof(SyncConnectionPacket)))
 					{
@@ -276,7 +277,7 @@ namespace jKnepel.UnitySync.Networking
 						return;
 					}
 
-					if (_connectedClients.Count >= byte.MaxValue - 2)
+					if (_connectedClients.Count >= _settings.MaxNumberClients)
 					{   // send connection denied packet if no space available
 						_packetsToSend.Enqueue(new SyncConnectionDeniedPacket(sender));
 						return;
@@ -300,7 +301,7 @@ namespace jKnepel.UnitySync.Networking
 					if (!_pendingConnections.TryGetValue(sender, out byte[] value))
 						return;
 
-					if (!CompareByteArrays(value, challengeAnswer.HashedChallenge) || _connectedClients.Count >= byte.MaxValue - 2)
+					if (!CompareByteArrays(value, challengeAnswer.HashedChallenge) || _connectedClients.Count >= _settings.MaxNumberClients)
 					{   // send connection denied packet if no space available or challenge answer is incorrect
 						_packetsToSend.Enqueue(new SyncConnectionDeniedPacket(sender));
 						return;
@@ -308,7 +309,7 @@ namespace jKnepel.UnitySync.Networking
 
 					// find next available client id
 					byte newID = 0;
-					for (byte i = 2; i < byte.MaxValue - 2; i++)
+					for (byte i = 2; i < _settings.MaxNumberClients; i++)
 					{
 						if (!_idIpTable.TryGetValue(i, out _))
 						{
@@ -324,7 +325,6 @@ namespace jKnepel.UnitySync.Networking
 					SyncConnectedClientDetail newClient = new(newID, sender, challengeAnswer.Username, challengeAnswer.Color);
 					if (!_connectedClients.TryAdd(sender, newClient) || !_idIpTable.TryAdd(newID, sender) || !_pendingConnections.TryRemove(sender, out _))
 						throw new Exception("Something went wrong creating the Client!");
-
 
 					_packetsToSend.Enqueue(new SyncConnectionAcceptedPacket(sender, newID));
 
@@ -465,7 +465,7 @@ namespace jKnepel.UnitySync.Networking
 				try
 				{
 					// TODO : only recalculate if connected clients changed
-					SyncHeartbeatPacket heartbeat = new(ServerInformation.ServernameBytes, (byte)_connectedClients.Count);
+					SyncHeartbeatPacket heartbeat = new(ServerInformation.ServernameBytes, _settings.MaxNumberClients, (byte)_connectedClients.Count);
 					_udpClient.Send(heartbeat.Bytes, heartbeat.Bytes.Length, new(IPAddress.Broadcast, _port));
 					DebugByteMessage(heartbeat.Bytes, "Send Heartbeat Bytes: ");
 					Thread.Sleep(_settings.HeartbeatDelay);
@@ -485,6 +485,7 @@ namespace jKnepel.UnitySync.Networking
 							_mainThreadActions.Enqueue(() => IsConnected = false);
 							break;
 						default:
+							_mainThreadActions.Enqueue(() => IsConnected = false);
 							ExceptionDispatchInfo.Capture(ex).Throw();
 							throw;
 					}
@@ -558,6 +559,7 @@ namespace jKnepel.UnitySync.Networking
 							_mainThreadActions.Enqueue(() => IsConnected = false);
 							break;
 						default:
+							_mainThreadActions.Enqueue(() => IsConnected = false);
 							ExceptionDispatchInfo.Capture(ex).Throw();
 							throw;
 					}
@@ -582,7 +584,7 @@ namespace jKnepel.UnitySync.Networking
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
 					_ = ResendSliceData(clientID, sequence, retries + 1);
 				else
-					DisconnectClient(client.ID);
+					DisconnectClient(client.ID, true);
 			}
 		}
 
@@ -604,7 +606,7 @@ namespace jKnepel.UnitySync.Networking
 				if (retries < _settings.MaxNumberResendReliablePackets - 1)
 					_ = ResendPacketData(clientID, sequence, retries + 1);
 				else
-					DisconnectClient(client.ID);
+					DisconnectClient(client.ID, true);
 			}
 		}
 
@@ -626,15 +628,20 @@ namespace jKnepel.UnitySync.Networking
 		}
 
 		// TODO : add reason
-		private bool DisconnectClient(byte clientID)
+		private bool DisconnectClient(byte clientID, bool saveClient)
 		{
-			// TODO : save disconnected clients in buffer in case of reconnecting sequence numbers
 			if (!GetClientById(clientID, out SyncConnectedClientDetail client))
 				return false;
 
 			_packetsToSend.Enqueue(new SyncConnectionClosedPacket(client.IP));
 			_connectedClients.TryRemove(client.IP, out _);
-			// TODO : send message to all clients that a client disconnected
+			foreach (SyncConnectedClientDetail remainingClient in _connectedClients.Values)
+				_packetsToSend.Enqueue(new SyncClientDisconnectedPacket(remainingClient.IP, clientID));
+			
+			if (saveClient)
+			{
+				// TODO : save disconnected clients in buffer unless forcefully disconnected
+			}
 			return true;
 		}
 

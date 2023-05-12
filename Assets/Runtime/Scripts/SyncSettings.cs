@@ -57,6 +57,18 @@ namespace jKnepel.UnitySync
 		// user settings
         public string Username = "Username";
         public Color32 Color = new(255, 255, 255, 255);
+
+		// server settings
+		private byte _maxNumberClients = 253;
+		public byte MaxNumberClients
+		{
+			get => _maxNumberClients;
+			set
+			{
+				if (value < 253)
+					_maxNumberClients = value;
+			}
+		}
         
         // packet frequency settings
         public int HeartbeatDelay = 1000;
@@ -107,6 +119,7 @@ namespace jKnepel.UnitySync
 		internal const int MODULE_HASH_LENGTH = 4;          // flag containing the hash of the used module
 		internal const int NUMBER_OF_SLICES = 2;            // flag showing the number of packets the chunk consists of
 		internal const int SLICE_NUMBER = NUMBER_OF_SLICES; // number of the current slice
+		internal const int NUMBER_CLIENTS_LENGTH = 1;		// (max-) number of clients
 		internal const int DATA_FLAG_LENGTH = 1;            // byte flag containing the length of the following byte data
 		internal const int CHALLENGE_LENGTH = 8;            // length of the challenge values send to the connecting client
 		internal const int CHALLENGE_ANSWER_LENGTH = 32;	// length of the challenge values send to the connecting client

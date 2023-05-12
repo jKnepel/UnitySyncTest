@@ -19,9 +19,10 @@ namespace jKnepel.UnitySync.SceneSync
         private Color[] _scrollViewColors = new Color[] { new(0.25f, 0.25f, 0.25f), new(0.23f, 0.23f, 0.23f) };
         
         private bool _isAutoscroll = false;
-        private bool _newServerOptionsIsVisible = true;
-        private string _newServerName = "New Server";
-        private int _newServerDropdownIndex = 0;
+
+        private bool    _newServerOptionsIsVisible = true;
+        private string  _newServerName = "New Server";
+        private int     _newServerSceneIndex = 0;
 
         private Texture2D _texture;
         private GUIStyle _style = new();
@@ -123,7 +124,8 @@ namespace jKnepel.UnitySync.SceneSync
                         {
                             GUILayout.Label("Create a New Server", EditorStyles.boldLabel);
                             _newServerName = EditorGUILayout.TextField("Servername:", _newServerName);
-                            _newServerDropdownIndex = EditorGUILayout.Popup("Synced Scene: ", _newServerDropdownIndex, sceneNames);
+                            _newServerSceneIndex = EditorGUILayout.Popup("Synced Scene: ", _newServerSceneIndex, sceneNames);
+                            _settings.MaxNumberClients = (byte)EditorGUILayout.IntField("Server Discovery Port:", _settings.MaxNumberClients);
                             if (GUILayout.Button(new GUIContent("Create")))
                                 SyncManager.ConnectToServer(_newServerName, true);
                         }
@@ -137,14 +139,14 @@ namespace jKnepel.UnitySync.SceneSync
                     _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos,
                         EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
                     {
-                        if (SyncManager.CurrentServer.ConnectedClients.Count == 0)
+                        if (SyncManager.ConnectedClients.Count == 0)
                             GUILayout.Label($"There are no Clients in this server!");
 
                         Color defaultColor = _style.normal.textColor;
                         _style.alignment = TextAnchor.MiddleLeft;
                         for (int i = 0; i < SyncManager.CurrentServer.NumberConnectedClients; i++)
                         {
-                            SyncConnectedClient client = SyncManager.CurrentServer.ConnectedClients.ElementAt(i).Value;
+                            SyncConnectedClient client = SyncManager.ConnectedClients.ElementAt(i);
                             EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                             {
                                 _style.normal.textColor = client.Color;
