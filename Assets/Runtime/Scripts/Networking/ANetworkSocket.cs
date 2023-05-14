@@ -97,7 +97,7 @@ namespace jKnepel.UnitySync.Networking
 
 		#region helper methods
 
-		protected bool CheckLocalIP(string localIp)
+		protected static bool CheckLocalIP(string localIp)
 		{
 			foreach (NetworkInterface item in NetworkInterface.GetAllNetworkInterfaces())
 			{

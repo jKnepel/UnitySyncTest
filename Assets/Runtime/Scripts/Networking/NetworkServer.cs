@@ -222,16 +222,60 @@ namespace jKnepel.UnitySync.Networking
 					// TODO : send connectionclosed when forcefully disconnected client sends packet
 					// TODO : otherwise refresh sequence numbers
 
-					if (packetType.GetType().IsSubclassOf(typeof(AConnectionNetworkPacket)))
+					// handle individual packet types
+					switch (packetType)
 					{
-						HandleConnectionPacket(sender, packetType, receivedBytes);
-						continue;
-					}
+						case EPacketType.ConnectionRequest:
+							HandleConnectionRequestPacket(sender, receivedBytes);
+							break;
+						case EPacketType.ChallengeAnswer:
+							HandleChallengeAnswerPacket(sender, receivedBytes);
+							break;
+						case EPacketType.ACK:
+							{
+								if (!_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
+									break;
+								client.LastHeartbeat = DateTime.Now;
 
-					if (packetType.GetType().IsSubclassOf(typeof(ASequencedNetworkPacket)))
-					{
-						HandleSequencedPacket(sender, packetType, receivedBytes);
-						continue;
+								HandleACKPacket(client, receivedBytes);
+								break;
+							}
+						case EPacketType.ReliableData:
+						case EPacketType.ReliableUnorderedData:
+						case EPacketType.UnreliableData:
+						case EPacketType.UnreliableUnorderedData:
+							{
+								if (!_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
+									break;
+								client.LastHeartbeat = DateTime.Now;
+
+								DataPacket dataPacket = new(packetType, receivedBytes);
+								if (!dataPacket.TryDeserialize())
+									break;
+
+								if (dataPacket.IsChunked)
+								{
+									HandleChunkedDataPacket(client, dataPacket);
+									break;
+								}
+
+								HandleSequencedPacket(client, dataPacket);
+								break;
+							}
+						case EPacketType.ClientInfo:
+							{
+								if (!_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
+									break;
+								client.LastHeartbeat = DateTime.Now;
+
+								ClientInfoPacket clientInfoPacket = new(receivedBytes);
+								if (!clientInfoPacket.TryDeserialize())
+									break;
+
+								HandleSequencedPacket(client, clientInfoPacket);
+								break;
+							}
+						default: break;
 					}
 				}
 				catch (Exception ex)
@@ -257,152 +301,114 @@ namespace jKnepel.UnitySync.Networking
 			}
 		}
 
-		private void HandleConnectionPacket(IPAddress sender, EPacketType packetType, byte[] packet)
+		private void HandleConnectionRequestPacket(IPAddress sender, byte[] packet)
 		{
-			switch (packetType)
-			{
-				case EPacketType.ACK:
-					ACKPacket ack = new(packet);
-					if (!ack.TryDeserialize() || !_connectedClients.TryGetValue(sender, out ClientInformationSocket ackClient))
-						return;
-
-					if (ack.IsChunked)
-						ackClient.SendChunksBuffer.TryRemove((ack.Sequence, ack.SliceNumber), out _);
-					else
-						ackClient.SendPacketsBuffer.TryRemove(ack.Sequence, out _);
-					break;
-				case EPacketType.ConnectionRequest:
-					ConnectionRequestPacket connectionRequest = new(packet);
-					if (!connectionRequest.TryDeserialize())
-						return;
-
-					if (_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
-					{   // resend client id in case of client not receiving theirs
-						_packetsToSend.Enqueue((client.IP, new ConnectionAcceptedPacket(client.ID)));
-						return;
-					}
-
-					if (_connectedClients.Count >= ServerInformation.MaxNumberConnectedClients)
-					{   // send connection denied packet if no space available
-						_packetsToSend.Enqueue((sender, new ConnectionDeniedPacket()));
-						return;
-					}
-
-					// create challenge packet and send it if enough space available
-					ConnectionChallengePacket connectionChallenge = new();
-					using (SHA256 h = SHA256.Create())
-					{   // save sha256 hash of challenge nonce for comparing answer from client
-						byte[] hashedChallenge = h.ComputeHash(BitConverter.GetBytes(connectionChallenge.Challenge));
-						_pendingConnections.AddOrUpdate(sender, hashedChallenge, (key, oldValue) => oldValue = hashedChallenge);
-					}
-					_packetsToSend.Enqueue((sender, connectionChallenge));
-
-					break;
-				case EPacketType.ChallengeAnswer:
-					ChallengeAnswerPacket challengeAnswer = new(packet);
-					if (!challengeAnswer.TryDeserialize())
-						return;
-
-					if (!_pendingConnections.TryGetValue(sender, out byte[] value))
-						return;
-
-					if (!CompareByteArrays(value, challengeAnswer.ChallengeAnswer) || _connectedClients.Count >= ServerInformation.MaxNumberConnectedClients)
-					{   // send connection denied packet if no space available or challenge answer is incorrect
-						_packetsToSend.Enqueue((sender, new ConnectionDeniedPacket()));
-						return;
-					}
-
-					byte newID = AddClient(sender, challengeAnswer.Username, challengeAnswer.Color);
-					_packetsToSend.Enqueue((sender, new ConnectionAcceptedPacket(newID)));
-					break;
-			}
-		}
-
-		private void HandleSequencedPacket(IPAddress sender, EPacketType packetType, byte[] receivedBytes)
-		{   // handle all sequenced packets
-			if (!_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
+			ConnectionRequestPacket connectionRequest = new(packet);
+			if (!connectionRequest.TryDeserialize())
 				return;
 
-			client.LastHeartbeat = DateTime.Now;
-
-			ASequencedNetworkPacket packet;
-			switch (packetType)
-			{	// handle specific types of sequenced packets
-				case EPacketType.ReliableData:
-				case EPacketType.ReliableUnorderedData:
-				case EPacketType.UnreliableData:
-				case EPacketType.UnreliableUnorderedData:
-					DataPacket dataPacket = new(packetType, receivedBytes);
-					if (!dataPacket.TryDeserialize())
-						return;
-
-					if (dataPacket.IsChunked)
-					{
-						HandleChunkedDataPacket(client, dataPacket);
-						return;
-					}
-
-					packet = dataPacket;
-					break;
-				case EPacketType.ClientInfo:
-					ClientInfoPacket clientInfoPacket = new(receivedBytes);
-					if (!clientInfoPacket.TryDeserialize())
-						return;
-
-					packet = clientInfoPacket;
-					break;
-				default: return;
+			if (_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
+			{   // resend client id in case of client not receiving theirs
+				_packetsToSend.Enqueue((client.IP, new ConnectionAcceptedPacket(client.ID)));
+				return;
 			}
 
-			// unreliable packet sequence
-			if (IsUnreliableSequence(packetType))
+			if (_connectedClients.Count >= ServerInformation.MaxNumberConnectedClients)
+			{   // send connection denied packet if no space available
+				_packetsToSend.Enqueue((sender, new ConnectionDeniedPacket()));
+				return;
+			}
+
+			// create challenge packet and send it if enough space available
+			ConnectionChallengePacket connectionChallenge = new();
+			using (SHA256 h = SHA256.Create())
+			{   // save sha256 hash of challenge nonce for comparing answer from client
+				byte[] hashedChallenge = h.ComputeHash(BitConverter.GetBytes(connectionChallenge.Challenge));
+				_pendingConnections.AddOrUpdate(sender, hashedChallenge, (key, oldValue) => oldValue = hashedChallenge);
+			}
+			_packetsToSend.Enqueue((sender, connectionChallenge));
+		}
+
+		private void HandleChallengeAnswerPacket(IPAddress sender, byte[] packet)
+		{
+			ChallengeAnswerPacket challengeAnswer = new(packet);
+			if (!challengeAnswer.TryDeserialize())
+				return;
+
+			if (!_pendingConnections.TryGetValue(sender, out byte[] value))
+				return;
+
+			if (!CompareByteArrays(value, challengeAnswer.ChallengeAnswer) || _connectedClients.Count >= ServerInformation.MaxNumberConnectedClients)
+			{   // send connection denied packet if no space available or challenge answer is incorrect
+				_packetsToSend.Enqueue((sender, new ConnectionDeniedPacket()));
+				return;
+			}
+
+			byte newID = AddClient(sender, challengeAnswer.Username, challengeAnswer.Color);
+			_packetsToSend.Enqueue((sender, new ConnectionAcceptedPacket(newID)));
+		}
+
+		private void HandleACKPacket(ClientInformationSocket sender, byte[] packet)
+		{
+			ACKPacket ack = new(packet);
+			if (!ack.TryDeserialize())
+				return;
+
+			if (ack.IsChunked)
+				sender.SendChunksBuffer.TryRemove((ack.Sequence, ack.SliceNumber), out _);
+			else
+				sender.SendPacketsBuffer.TryRemove(ack.Sequence, out _);
+		}
+
+		private void HandleSequencedPacket(ClientInformationSocket sender, ASequencedNetworkPacket packet)
+		{   // unreliable packet sequence
+			if (IsUnreliableSequence(packet.Type))
 			{   // ignore old packets unless they are unordered
-				if (!IsNewPacket(packet.Sequence, client.UnreliableRemoteSequence) && !IsUnorderedSequence(packetType))
+				if (!IsNewPacket(packet.Sequence, sender.UnreliableRemoteSequence) && !IsUnorderedSequence(packet.Type))
 					return;
 
 				// update sequence and consume packet
-				client.UnreliableRemoteSequence = packet.Sequence;
-				ConsumeSequencedPacket(client, packet);
+				sender.UnreliableRemoteSequence = packet.Sequence;
+				ConsumeSequencedPacket(sender, packet);
 				return;
 			}
 
 			// reliable packet sequence
 			{
 				// send ACK for reliable sequence
-				_packetsToSend.Enqueue((client.IP, new ACKPacket(packet.Sequence)));
+				_packetsToSend.Enqueue((sender.IP, new ACKPacket(packet.Sequence)));
 
 				// ignore old packets unless they are unordered
-				if (!IsNewPacket(packet.Sequence, client.ReliableRemoteSequence) && !IsUnorderedSequence(packetType))
+				if (!IsNewPacket(packet.Sequence, sender.ReliableRemoteSequence) && !IsUnorderedSequence(packet.Type))
 					return;
 
-				if (!IsNextPacket(packet.Sequence, client.ReliableRemoteSequence) && !IsUnorderedSequence(packetType))
+				if (!IsNextPacket(packet.Sequence, sender.ReliableRemoteSequence) && !IsUnorderedSequence(packet.Type))
 				{   // if a packet is missing in the sequence keep it in the buffer
-					client.ReceivedPacketsBuffer.TryAdd(packet.Sequence, packet);
+					sender.ReceivedPacketsBuffer.TryAdd(packet.Sequence, packet);
 					return;
 				}
 
 				// update sequence and consume packet
-				client.ReliableRemoteSequence = packet.Sequence;
-				ConsumeSequencedPacket(client, packet);
+				sender.ReliableRemoteSequence = packet.Sequence;
+				ConsumeSequencedPacket(sender, packet);
 
 				// apply all packets from that senders buffer that are now next in the sequence
 				ushort sequence = packet.Sequence;
-				while (client.ReceivedPacketsBuffer.Count > 0)
+				while (sender.ReceivedPacketsBuffer.Count > 0)
 				{
 					sequence++;
-					if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out ASequencedNetworkPacket bufferedPacket))
+					if (!sender.ReceivedPacketsBuffer.TryRemove(sequence, out ASequencedNetworkPacket bufferedPacket))
 						break;
 
 					// update sequence and consume packet
-					client.ReliableRemoteSequence = sequence;
-					ConsumeSequencedPacket(client, bufferedPacket);
+					sender.ReliableRemoteSequence = sequence;
+					ConsumeSequencedPacket(sender, bufferedPacket);
 				}
 			}
 		}
 
 		private void HandleChunkedDataPacket(ClientInformationSocket sender, DataPacket packet)
-		{
-			// send ACK
+		{	// send ACK
 			_packetsToSend.Enqueue((sender.IP, new ACKPacket(packet.Sequence, packet.SliceNumber)));
 
 			// ignore old packets unless they are unordered
