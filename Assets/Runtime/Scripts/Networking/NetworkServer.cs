@@ -777,21 +777,21 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="sender"></param>
 		private void CreateDataSenderPackets(EPacketType type, uint moduleHash, byte[] data, Action<bool> dataCallback, IPAddress receiver, byte sender)
 		{
-			if (data.Length > _settings.MTU && !IsReliableSequence(type))
+			int mtu = _settings.MTU;
+			if (data.Length > mtu && !IsReliableSequence(type))
 			{
-				Debug.LogError("On Reliable Packets can be larger than the MTU!");
+				Debug.LogError($"On Reliable Packets can be larger than the MTU ({mtu})!");
 				dataCallback?.Invoke(false);
 				return;
 			}
 
-			int mtu = _settings.MTU;
 			if (data.Length > mtu)
 			{   // if data is larger than MTU split packet into slices and send individually
 				ushort numberOfSlices = (ushort)(data.Length % mtu == 0
 					? data.Length / mtu
 					: data.Length / mtu + 1);
 
-				for (ushort sliceNumber = 0; sliceNumber < numberOfSlices; sliceNumber++)
+				for (ushort sliceNumber = 1; sliceNumber <= numberOfSlices; sliceNumber++)
 				{
 					int sliceSize = sliceNumber < numberOfSlices - 1 ? mtu : data.Length % mtu;
 					byte[] sliceData = new byte[sliceSize];
