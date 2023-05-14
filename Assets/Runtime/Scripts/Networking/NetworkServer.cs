@@ -694,9 +694,17 @@ namespace jKnepel.UnitySync.Networking
 			ServerInformation.NumberConnectedClients++;
 			_mainThreadActions.Enqueue(() => ModuledNetManager.OnClientConnected?.Invoke(newID));
 
-			// TODO : notify other clients
+			foreach (ClientInformationSocket client in _connectedClients.Values)
+			{
+				if (client.ID == newID)
+					continue;
 
-			// TODO : send all information on all clients to the client
+				// notify all other clients of new client
+				_packetsToSend.Enqueue((client.IP, new ClientInfoPacket(newID, username, color)));
+
+				// send data of all other clients to new client
+				_packetsToSend.Enqueue((ip, new ClientInfoPacket(client.ID, client.Username, client.Color)));
+			}
 
 			return newID;
 		}
