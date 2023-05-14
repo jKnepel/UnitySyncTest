@@ -62,6 +62,11 @@ namespace jKnepel.UnitySync
 		public static Action<uint> OnClientDisconnected;
 
 		/// <summary>
+		/// Action for when a Server was added or removed from the OpenServers.
+		/// </summary>
+		public static Action OnServerListChanged;
+
+		/// <summary>
 		/// If the Client is connected to the Network and able to discover Servers.
 		/// </summary>
 		public static bool IsServerDiscoveryActive
@@ -261,6 +266,8 @@ namespace jKnepel.UnitySync
 							server = newServer;
 						else
 							_openServers.TryAdd(sender, newServer);
+
+						_mainThreadActions.Enqueue(() => OnServerListChanged?.Invoke());
 					}
 					catch (OverflowException) { continue; }
 				}

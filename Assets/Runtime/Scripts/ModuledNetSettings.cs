@@ -65,7 +65,7 @@ namespace jKnepel.UnitySync
 			get => _maxNumberClients;
 			set
 			{
-				if (value < 253)
+				if (value < 253 && value > 1)
 					_maxNumberClients = value;
 			}
 		}

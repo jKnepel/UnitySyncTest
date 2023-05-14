@@ -43,7 +43,8 @@ namespace jKnepel.UnitySync.SceneSync
             _settings = ModuledNetSettings.GetOrCreateSettings();
             _syncSettingsEditor = Editor.CreateEditor(_settings);
             ModuledNetManager.OnSyncMessageAdded += AddSyncMessage;
-		}
+            ModuledNetManager.OnServerListChanged += Repaint;
+        }
 
 		public void CreateGUI()
 		{
@@ -52,6 +53,7 @@ namespace jKnepel.UnitySync.SceneSync
         private void OnDestroy()
 		{
             ModuledNetManager.OnSyncMessageAdded -= AddSyncMessage;
+            ModuledNetManager.OnServerListChanged -= Repaint;
         }
 
         // TODO : add descriptions to labels, was too lazy
@@ -104,7 +106,7 @@ namespace jKnepel.UnitySync.SceneSync
                             EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                             {
                                 GUILayout.Label(server.Servername);
-                                GUILayout.Label($"#{server.NumberConnectedClients}");
+                                GUILayout.Label($"#{server.NumberConnectedClients}/{server.MaxNumberConnectedClients}");
                                 if (GUILayout.Button(new GUIContent("Connect To Server"), GUILayout.ExpandWidth(false)))
                                     ModuledNetManager.ConnectToServer(server.IP);
                             }
