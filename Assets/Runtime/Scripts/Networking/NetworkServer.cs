@@ -170,7 +170,7 @@ namespace jKnepel.UnitySync.Networking
 
 		public override void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null)
 		{
-			if (!CheckIfEligibleForSending(true, data, onDataReceived, receiver))
+			if (!CheckIfEligibleForSending(onDataReceived, receiver))
 				return;
 
 			CreateDataSenderPackets(EPacketType.ReliableData, moduleHash, data, onDataReceived, receiver);
@@ -178,7 +178,7 @@ namespace jKnepel.UnitySync.Networking
 
 		public override void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null)
 		{
-			if (!CheckIfEligibleForSending(true, data, onDataReceived, receiver))
+			if (!CheckIfEligibleForSending(onDataReceived, receiver))
 				return;
 
 			CreateDataSenderPackets(EPacketType.ReliableUnorderedData, moduleHash, data, onDataReceived, receiver);
@@ -186,7 +186,7 @@ namespace jKnepel.UnitySync.Networking
 
 		public override void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
-			if (!CheckIfEligibleForSending(false, data, onDataSend, receiver))
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
 
 			CreateDataSenderPackets(EPacketType.UnreliableData, moduleHash, data, onDataSend, receiver);
@@ -194,7 +194,7 @@ namespace jKnepel.UnitySync.Networking
 
 		public override void SendDataUnreliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
-			if (!CheckIfEligibleForSending(false, data, onDataSend, receiver))
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
 
 			CreateDataSenderPackets(EPacketType.UnreliableUnorderedData, moduleHash, data, onDataSend, receiver);
@@ -380,6 +380,7 @@ namespace jKnepel.UnitySync.Networking
 					return;
 				}
 
+				// update sequence and consume packet
 				client.ReliableRemoteSequence = packet.Sequence;
 				ConsumeSequencedPacket(client, packet);
 
@@ -483,7 +484,6 @@ namespace jKnepel.UnitySync.Networking
 					// TODO : only recalculate if connected clients changed
 					HeartbeatPacket heartbeat = new(ServerInformation.Servername, ServerInformation.MaxNumberConnectedClients, (byte)_connectedClients.Count);
 					_udpClient.Send(heartbeat.Bytes, heartbeat.Bytes.Length, new(IPAddress.Broadcast, _port));
-					DebugByteMessage(heartbeat.Bytes, "Send Heartbeat Bytes: ");
 					Thread.Sleep(_settings.ServerHeartbeatDelay);
 				}
 				catch (Exception ex)
@@ -643,6 +643,12 @@ namespace jKnepel.UnitySync.Networking
 
 		#region helper methods
 
+		/// <summary>
+		/// Translates Client ID into Client Information, if it exists.
+		/// </summary>
+		/// <param name="clientID"></param>
+		/// <param name="client"></param>
+		/// <returns></returns>
 		private bool GetClientById(byte clientID, out ClientInformationSocket client)
 		{
 			if (!_idIpTable.TryGetValue(clientID, out IPAddress clientIP)
@@ -656,6 +662,13 @@ namespace jKnepel.UnitySync.Networking
 			return true;
 		}
 
+		/// <summary>
+		/// Creates and adds new Client to all relevant collections and notifies the Manager and other connected Clients.
+		/// </summary>
+		/// <param name="ip"></param>
+		/// <param name="username"></param>
+		/// <param name="color"></param>
+		/// <returns></returns>
 		private byte AddClient(IPAddress ip, string username, Color32 color)
 		{
 			// find next available client id
@@ -680,10 +693,18 @@ namespace jKnepel.UnitySync.Networking
 			ServerInformation.NumberConnectedClients++;
 			_mainThreadActions.Enqueue(() => ModuledNetManager.OnClientConnected?.Invoke(newID));
 
+			// TODO : notify other clients
+
 			return newID;
 		}
 
 		// TODO : add reason
+		/// <summary>
+		/// Removes Client from all relevant collections and notifies the Manager and other connected Clients.
+		/// </summary>
+		/// <param name="clientID"></param>
+		/// <param name="saveClient"></param>
+		/// <returns></returns>
 		private bool RemoveClient(byte clientID, bool saveClient)
 		{
 			if (!GetClientById(clientID, out ClientInformationSocket client))
@@ -704,18 +725,17 @@ namespace jKnepel.UnitySync.Networking
 			return true;
 		}
 
-		private bool CheckIfEligibleForSending(bool isReliable, byte[] data, Action<bool> dataCallback, byte? receiver = null)
+		/// <summary>
+		/// Checks if the given Receiver exists or is a multicast.
+		/// </summary>
+		/// <param name="dataCallback"></param>
+		/// <param name="receiver"></param>
+		/// <returns></returns>
+		private bool CheckIfEligibleForSending(Action<bool> dataCallback, byte? receiver = null)
 		{
 			if (receiver != null && !GetClientById((byte)receiver, out ClientInformationSocket _))
 			{
 				Debug.LogError("The given Receiver does not exist in the Server!");
-				dataCallback?.Invoke(false);
-				return false;
-			}
-
-			if (!isReliable && data.Length > _settings.MTU)
-			{
-				Debug.LogError($"Only reliable Packets can be larger than {_settings.MTU} Bytes!");
 				dataCallback?.Invoke(false);
 				return false;
 			}

@@ -153,7 +153,7 @@ namespace jKnepel.UnitySync.Networking
 		}
 
 		/// <summary>
-		/// Returns wether or not the packet is reliable or reliable unordered.
+		/// Returns wether or not the packet uses a reliable sequence.
 		/// </summary>
 		/// <param name="type"></param>
 		/// <returns></returns>
@@ -164,7 +164,7 @@ namespace jKnepel.UnitySync.Networking
 		}
 
 		/// <summary>
-		/// Returns wether or not the packet is unreliable or unreliable unordered.
+		/// Returns wether or not the packet uses a unreliable sequence.
 		/// </summary>
 		/// <param name="type"></param>
 		/// <returns></returns>
@@ -173,17 +173,32 @@ namespace jKnepel.UnitySync.Networking
 			return type == EPacketType.UnreliableData || type == EPacketType.UnreliableUnorderedData;
 		}
 
+		/// <summary>
+		/// Returns wether or not the packet uses a ordered sequence.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <returns></returns>
 		protected static bool IsOrderedSequence(EPacketType type)
 		{
 			return type == EPacketType.ReliableData || type == EPacketType.UnreliableData 
 				|| type == EPacketType.ClientInfo;
 		}
 
+		/// <summary>
+		/// Returns wether or not the packet uses a unordered sequence.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <returns></returns>
 		protected static bool IsUnorderedSequence(EPacketType type)
 		{
 			return type == EPacketType.ReliableUnorderedData || type == EPacketType.UnreliableUnorderedData;
 		}
 
+		/// <summary>
+		/// Returns wether or not the packet is a Data Packet.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <returns></returns>
 		protected static bool IsDataPacket(EPacketType type)
 		{
 			return type == EPacketType.ReliableData || type == EPacketType.ReliableUnorderedData

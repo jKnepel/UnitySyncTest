@@ -4,7 +4,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 {
 	internal class DataPacket : ASequencedNetworkPacket
 	{
-		public byte ClientID { get; set; }
+		public byte ClientID { get; private set; }
 		public Action<bool> Callback { get; private set; }
 		public uint ModuleHash { get; private set; }
 		public byte[] Data { get; private set; }
