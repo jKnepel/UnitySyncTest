@@ -31,10 +31,10 @@ namespace jKnepel.UnitySync.SceneSync
 
         #endregion
 
-        [MenuItem("Window/Unity Sync/Scene Sync Manager")]
+        [MenuItem("Window/ModuledNet/ModuledNet Manager")]
         public static void ShowWindow()
         {
-            GetWindow(typeof(ModuledEditorEditorWindow), false, "Scene Sync Manager");
+            GetWindow(typeof(ModuledEditorEditorWindow), false, "ModuledNet Manager");
         }
 
 		public void OnEnable()

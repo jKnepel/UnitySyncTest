@@ -440,7 +440,7 @@ namespace jKnepel.UnitySync.Networking
 					HeartbeatPacket heartbeat = new(ServerInformation.Servername, ServerInformation.MaxNumberConnectedClients, (byte)_connectedClients.Count);
 					_udpClient.Send(heartbeat.Bytes, heartbeat.Bytes.Length, new(IPAddress.Broadcast, _port));
 					DebugByteMessage(heartbeat.Bytes, "Send Heartbeat Bytes: ");
-					Thread.Sleep(_settings.HeartbeatDelay);
+					Thread.Sleep(_settings.ServerHeartbeatDelay);
 				}
 				catch (Exception ex)
 				{

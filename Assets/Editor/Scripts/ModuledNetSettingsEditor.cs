@@ -29,7 +29,8 @@ namespace jKnepel.UnitySync
 			if (_packetSettingsIsVisible)
 			{
 				EditorGUI.indentLevel++;
-				_settings.HeartbeatDelay = EditorGUILayout.IntField("Heartbeat Delay:", _settings.HeartbeatDelay);
+				_settings.ServerHeartbeatDelay = EditorGUILayout.IntField("Heartbeat Delay:", _settings.ServerHeartbeatDelay);
+				_settings.ServerDiscoveryTimeout = EditorGUILayout.IntField("ServerDiscovery Timeout:", _settings.ServerDiscoveryTimeout);
 				_settings.MaxNumberResendReliablePackets = EditorGUILayout.IntField("Number of Resends of Reliable Packets: ", _settings.MaxNumberResendReliablePackets);
 				EditorGUI.indentLevel--;
 			}

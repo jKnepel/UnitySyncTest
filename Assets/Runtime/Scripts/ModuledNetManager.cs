@@ -8,6 +8,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Reflection;
@@ -88,7 +89,7 @@ namespace jKnepel.UnitySync
 		public static List<ServerInformation> OpenServers
 		{ 
 			get => IsServerDiscoveryActive
-				? _openServers.Values.ToList() 
+				? _openServers.Values.Select(x => x.Item1).ToList()
 				: null; 
 		}
 		
@@ -144,7 +145,7 @@ namespace jKnepel.UnitySync
 
 		private readonly static ModuledNetSettings _settings = ModuledNetSettings.GetOrCreateSettings();
 		
-		private readonly static ConcurrentDictionary<IPAddress, ServerInformation> _openServers = new();
+		private readonly static ConcurrentDictionary<IPAddress, (ServerInformation, DateTime)> _openServers = new();
 
 		private readonly static ConcurrentDictionary<uint, ModuledNetModule> _registeredModules = new();
 
@@ -249,11 +250,11 @@ namespace jKnepel.UnitySync
 						if (sender.Equals(_ip))
 							continue;
 
+						// get packet type without chunked packet bit
 						byte typeBytes = receivedBytes[ModuledNetSettings.CRC32_LENGTH];
 						byte mask = 1 << 7;
 						typeBytes &= (byte)~mask;
 						EPacketType packetType = (EPacketType)typeBytes;
-
 						if (packetType != EPacketType.Heartbeat)
 							continue;
 
@@ -261,11 +262,16 @@ namespace jKnepel.UnitySync
 						if (!heartbeat.TryDeserialize())
 							continue;
 
-						ServerInformation newServer = new ServerInformation(sender, heartbeat.Servername, heartbeat.MaxNumberOfClients, heartbeat.NumberOfClients);
-						if (_openServers.TryGetValue(sender, out ServerInformation server))
-							server = newServer;
+						ServerInformation newServer = new(sender, heartbeat.Servername, heartbeat.MaxNumberOfClients, heartbeat.NumberOfClients);
+						if (_openServers.TryGetValue(sender, out (ServerInformation, DateTime) server))
+						{	// update server with new values
+							server = (newServer, DateTime.Now);
+						}
 						else
-							_openServers.TryAdd(sender, newServer);
+						{	// add server to dict and create timeout
+							_openServers.TryAdd(sender, (newServer, DateTime.Now));
+							_ = TimeoutServer(sender);
+						}
 
 						_mainThreadActions.Enqueue(() => OnServerListChanged?.Invoke());
 					}
@@ -273,6 +279,22 @@ namespace jKnepel.UnitySync
 				}
 			}
 			catch (ThreadAbortException) { }
+		}
+
+		private static async Task TimeoutServer(IPAddress serverIP)
+		{
+			await Task.Delay(_settings.ServerDiscoveryTimeout);
+			if (_openServers.TryGetValue(serverIP, out (ServerInformation, DateTime) server))
+			{	// timeout and remove servers that haven't been updated for longer than the timeout value
+				if ((DateTime.Now - server.Item2).TotalMilliseconds > _settings.ServerDiscoveryTimeout)
+				{
+					_openServers.TryRemove(serverIP, out _);
+					_mainThreadActions.Enqueue(() => OnServerListChanged?.Invoke());
+					return;
+				}
+
+				_ = TimeoutServer(serverIP);
+			}
 		}
 
 		private static void OnDataReceived(uint moduleHash, byte client, byte[] data)
@@ -440,7 +462,7 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Connect to a given Server. Membership in a Server is required before Data can be send.
 		/// </summary>
-		/// <param name="serverIP">IP of the Server</param>
+		/// <param name="serverIP">IP of the Server.</param>
 		/// <returns><see langword="true"/> if the local Client successfully connected to the Server</returns>
 		public static bool ConnectToServer(IPAddress serverIP)
 		{

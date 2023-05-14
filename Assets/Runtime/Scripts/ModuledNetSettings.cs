@@ -71,7 +71,8 @@ namespace jKnepel.UnitySync
 		}
         
         // packet frequency settings
-        public int HeartbeatDelay = 1000;
+        public int ServerHeartbeatDelay = 1000;
+        public int ServerDiscoveryTimeout = 3000;
 		public int MaxNumberResendReliablePackets = 5;
 
 		// debug settings
