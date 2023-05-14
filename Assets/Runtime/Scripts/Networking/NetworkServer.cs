@@ -518,20 +518,22 @@ namespace jKnepel.UnitySync.Networking
 					if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out (IPAddress, ANetworkPacket) packet))
 						continue;
 
+					byte[] data;
 					switch (packet.Item2)
 					{
 						case AConnectionNetworkPacket c:
-							c.Serialize();
-							_udpClient.Send(c.Bytes, c.Bytes.Length, new(packet.Item1, _port));
+							data = c.Serialize();
+							_udpClient.Send(data, data.Length, new(packet.Item1, _port));
 							continue;
 						case ASequencedNetworkPacket s:
 							if (!_connectedClients.TryGetValue(packet.Item1, out ClientInformationSocket client))
 								continue;
 
+							// serialize with unreliable sequence
 							if (IsUnreliableSequence(s.Type))
-							{   // serialize with unreliable sequence
+							{
 								client.UnreliableLocalSequence++;
-								byte[] data = s.Serialize(client.UnreliableLocalSequence);
+								data = s.Serialize(client.UnreliableLocalSequence);
 								_udpClient.Send(data, data.Length, new(packet.Item1, _port));
 
 								if (s is DataPacket ud)
@@ -545,7 +547,7 @@ namespace jKnepel.UnitySync.Networking
 							// serialize with reliable sequence
 							{
 								client.ReliableLocalSequence++;
-								byte[] data = s.Serialize(client.ReliableLocalSequence);
+								data = s.Serialize(client.ReliableLocalSequence);
 								_udpClient.Send(data, data.Length, new(packet.Item1, _port));
 
 								if (s is DataPacket rd)
