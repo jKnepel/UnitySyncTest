@@ -1,12 +1,10 @@
 using System;
-using System.Text;
-using UnityEngine;
 
 namespace jKnepel.UnitySync.Networking.Packets
 {
 	internal class DataPacket : ASequencedNetworkPacket
 	{
-		public byte? ClientID { get; private set; }
+		public byte ClientID { get; set; }
 		public Action<bool> Callback { get; private set; }
 		public uint ModuleHash { get; private set; }
 		public byte[] Data { get; private set; }
@@ -15,55 +13,37 @@ namespace jKnepel.UnitySync.Networking.Packets
 		public ushort NumberOfSlices { get; private set; }
 		public ushort SliceNumber { get; private set; }
 
-		private readonly int MTU;
-		private readonly byte[] ChunkData;
-
-		public DataPacket(EPacketType type, Action<bool> callback, uint moduleHash, byte[] data, byte? clientID)
+		public DataPacket(EPacketType type, uint moduleHash, byte[] data, Action<bool> callback, byte clientID)
 		{
 			Type = type;
 			ClientID = clientID;
-			Callback = callback;
 			ModuleHash = moduleHash;
+			Data = data;
+			Callback = callback;
 
-			MTU = ModuledNetSettings.GetOrCreateSettings().MTU;
-			IsChunked = data.Length > MTU;
+			IsChunked = false;
+			NumberOfSlices = 0;
+			SliceNumber = 0;
+		}
 
-			if (IsChunked)
-			{
-				NumberOfSlices = (ushort)(data.Length % MTU == 0
-					? data.Length / MTU
-					: data.Length / MTU + 1);
-				SliceNumber = 0;
-				ChunkData = data;
-				Data = GetBytesFromArray(data, 0, MTU);
-			}
-			else
-			{
-				NumberOfSlices = 0;
-				SliceNumber = 0;
-				Data = data;
-				ChunkData = data;
-			}
+		public DataPacket(EPacketType type, uint moduleHash, byte[] data, Action<bool> callback, byte clientID,
+			ushort numberOfSlices, ushort sliceNumber)
+		{
+			Type = type;
+			ClientID = clientID;
+			ModuleHash = moduleHash;
+			Data = data;
+			Callback = callback;
+
+			IsChunked = true;
+			NumberOfSlices = numberOfSlices;
+			SliceNumber = sliceNumber;
 		}
 
 		public DataPacket(EPacketType type, byte[] packet)
 		{
 			Type = type;
 			Bytes = packet;
-		}
-
-		public void SetSliceData(ushort? sliceNumber = null)
-		{
-			if (!IsChunked)
-				throw new Exception("Can't set Slice data on a non-chunked Packet!");
-
-			if (sliceNumber == null)
-				SliceNumber++;
-			else
-				SliceNumber = Math.Min((ushort)sliceNumber, NumberOfSlices);
-
-			int sliceLength = SliceNumber < NumberOfSlices - 1 ? MTU : ChunkData.Length % MTU;
-			Data = GetBytesFromArray(ChunkData, SliceNumber * MTU, sliceLength);
 		}
 
 		public override byte[] Serialize(ushort sequence)

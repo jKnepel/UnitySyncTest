@@ -157,9 +157,10 @@ namespace jKnepel.UnitySync.Networking
 		/// </summary>
 		/// <param name="type"></param>
 		/// <returns></returns>
-		protected static bool IsReliableData(EPacketType type)
+		protected static bool IsReliableSequence(EPacketType type)
 		{
-			return type == EPacketType.ReliableData || type == EPacketType.ReliableUnorderedData || type == EPacketType.ClientInfo;
+			return type == EPacketType.ReliableData || type == EPacketType.ReliableUnorderedData 
+				|| type == EPacketType.ClientInfo;
 		}
 
 		/// <summary>
@@ -167,14 +168,26 @@ namespace jKnepel.UnitySync.Networking
 		/// </summary>
 		/// <param name="type"></param>
 		/// <returns></returns>
-		protected static bool IsUnreliableData(EPacketType type)
+		protected static bool IsUnreliableSequence(EPacketType type)
 		{
 			return type == EPacketType.UnreliableData || type == EPacketType.UnreliableUnorderedData;
 		}
 
+		protected static bool IsOrderedSequence(EPacketType type)
+		{
+			return type == EPacketType.ReliableData || type == EPacketType.UnreliableData 
+				|| type == EPacketType.ClientInfo;
+		}
+
+		protected static bool IsUnorderedSequence(EPacketType type)
+		{
+			return type == EPacketType.ReliableUnorderedData || type == EPacketType.UnreliableUnorderedData;
+		}
+
 		protected static bool IsDataPacket(EPacketType type)
 		{
-			return IsReliableData(type) || IsUnreliableData(type);
+			return type == EPacketType.ReliableData || type == EPacketType.ReliableUnorderedData
+				|| type == EPacketType.UnreliableData || type == EPacketType.UnreliableUnorderedData;
 		}
 
 		/// <summary>

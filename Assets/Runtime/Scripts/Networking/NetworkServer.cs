@@ -233,11 +233,7 @@ namespace jKnepel.UnitySync.Networking
 
 					if (packetType.GetType().IsSubclassOf(typeof(ASequencedNetworkPacket)))
 					{   // handle sequenced packets for connected clients
-						if (!_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
-							continue;
-
-						client.LastHeartbeat = DateTime.Now;
-						HandleSequencedPacket(client, packetType, receivedBytes);
+						HandleSequencedPacket(sender, packetType, receivedBytes);
 						continue;
 					}
 				}
@@ -325,103 +321,151 @@ namespace jKnepel.UnitySync.Networking
 			}
 		}
 
-		private void HandleSequencedPacket(ClientInformationSocket sender, EPacketType packetType, byte[] packet)
-		{	// handle data packets
-			// TODO : handle Client info
-			DataPacket dataPacket = new(packetType, packet);
-			if (!dataPacket.TryDeserialize())
+		private void HandleSequencedPacket(IPAddress sender, EPacketType packetType, byte[] receivedBytes)
+		{   // handle all sequenced packets
+			if (!_connectedClients.TryGetValue(sender, out ClientInformationSocket client))
 				return;
 
-			// resend packets that are not addressed to server
+			client.LastHeartbeat = DateTime.Now;
 
-			// TODO : handle 0 (all clients) or > 1 (specific client)
+			ASequencedNetworkPacket packet;
+			switch (packetType)
+			{	// handle specific types of sequenced packets
+				case EPacketType.ReliableData:
+				case EPacketType.ReliableUnorderedData:
+				case EPacketType.UnreliableData:
+				case EPacketType.UnreliableUnorderedData:
+					DataPacket dataPacket = new(packetType, receivedBytes);
+					if (!dataPacket.TryDeserialize())
+						return;
 
-			if (dataPacket.ClientID != 1)
-				return;
+					if (dataPacket.IsChunked)
+						HandleChunkedDataPacket(client, dataPacket);
+
+					packet = dataPacket;
+					break;
+				case EPacketType.ClientInfo:
+					ClientInfoPacket clientInfoPacket = new(receivedBytes);
+					if (!clientInfoPacket.TryDeserialize())
+						return;
+
+					packet = clientInfoPacket;
+					break;
+				default: return;
+			}
 
 			// unreliable packet sequence
-			if (IsUnreliableData(packetType))
+			if (IsUnreliableSequence(packetType))
 			{   // ignore old packets unless they are unordered
-				if (!IsNewPacket(dataPacket.Sequence, sender.UnreliableRemoteSequence)
-					&& packetType != EPacketType.UnreliableUnorderedData)
+				if (!IsNewPacket(packet.Sequence, client.UnreliableRemoteSequence) && !IsUnorderedSequence(packetType))
 					return;
 
-				sender.UnreliableRemoteSequence = dataPacket.Sequence;
-				ModuledNetManager.DataReceived?.Invoke(dataPacket.ModuleHash, sender.ID, dataPacket.Data);
+				client.UnreliableRemoteSequence = packet.Sequence;
+				ConsumeSequencedPacket(client, packet);
 				return;
 			}
 
-			// send ACK
-			_packetsToSend.Enqueue((sender.IP, new ACKPacket(dataPacket.Sequence, dataPacket.SliceNumber)));
-
-			// reliable (and chunked) packet sequence
-			if (dataPacket.IsChunked)
-			{   // ignore old packets unless they are unordered
-				if (!IsNewPacket(dataPacket.Sequence, sender.ReliableRemoteSequence)
-					&& packetType != EPacketType.ReliableUnorderedData)
-					return;
-
-				if (!sender.ReceivedChunksBuffer.TryGetValue(dataPacket.Sequence, out ConcurrentDictionary<ushort, byte[]> bufferedChunk))
-				{   // create chunked packet if it doesn't exist yet
-					ConcurrentDictionary<ushort, byte[]> dict = new();
-					sender.ReceivedChunksBuffer.TryAdd(dataPacket.Sequence, dict);
-					bufferedChunk = dict;
-				}
-
-				// add slice to chunk and return if chunk is not complete
-				bufferedChunk.TryAdd(dataPacket.SliceNumber, dataPacket.Data);
-				if (bufferedChunk.Count != dataPacket.NumberOfSlices)
-					return;
-
-				// concatenate slices to complete packet and remove it from chunk buffer
-				List<byte> dataBytes = new();
-				for (ushort i = 1; i <= dataPacket.NumberOfSlices; i++)
-				{
-					if (!bufferedChunk.TryGetValue(i, out byte[] sliceData))
-						return;
-					dataBytes.AddRange(sliceData);
-				}
-				byte[] data = dataBytes.ToArray();
-				sender.ReceivedChunksBuffer.TryRemove(dataPacket.Sequence, out _);
-
-				// if a packet is missing in the sequence keep it in the packet buffer
-				if (!IsNextPacket(dataPacket.Sequence, sender.ReliableRemoteSequence)
-					&& packetType != EPacketType.ReliableUnorderedData)
-				{
-					sender.ReceivedPacketsBuffer.TryAdd(dataPacket.Sequence, (dataPacket.ModuleHash, data));
-					return;
-				}
-
-				sender.ReliableRemoteSequence = dataPacket.Sequence;
-				ModuledNetManager.DataReceived?.Invoke(dataPacket.ModuleHash, sender.ID, data);
-			}
-			else
-			{   // ignore old packets unless they are unordered
-				if (!IsNewPacket(dataPacket.Sequence, sender.ReliableRemoteSequence)
-					&& packetType != EPacketType.ReliableUnorderedData)
-					return;
-
-				if (!IsNextPacket(dataPacket.Sequence, sender.ReliableRemoteSequence)
-					&& packetType != EPacketType.ReliableUnorderedData)
-				{   // if a packet is missing in the sequence keep it in the buffer
-					sender.ReceivedPacketsBuffer.TryAdd(dataPacket.Sequence, (dataPacket.ModuleHash, dataPacket.Data));
-					return;
-				}
-
-				sender.ReliableRemoteSequence = dataPacket.Sequence;
-				ModuledNetManager.DataReceived?.Invoke(dataPacket.ModuleHash, sender.ID, dataPacket.Data);
-			}
-
-			// apply all packets from that senders buffer that are now next in the sequence
-			ushort sequence = dataPacket.Sequence;
-			while (sender.ReceivedPacketsBuffer.Count > 0)
+			// reliable packet sequence
 			{
-				sequence++;
-				if (!sender.ReceivedPacketsBuffer.TryRemove(sequence, out (uint, byte[]) bufferedPacket))
-					break;
+				// send ACK for reliable sequence
+				_packetsToSend.Enqueue((client.IP, new ACKPacket(packet.Sequence)));
 
-				sender.ReliableRemoteSequence = sequence;
-				ModuledNetManager.DataReceived?.Invoke(bufferedPacket.Item1, sender.ID, bufferedPacket.Item2);
+				// ignore old packets unless they are unordered
+				if (!IsNewPacket(packet.Sequence, client.ReliableRemoteSequence) && !IsUnorderedSequence(packetType))
+					return;
+
+				if (!IsNextPacket(packet.Sequence, client.ReliableRemoteSequence) && !IsUnorderedSequence(packetType))
+				{   // if a packet is missing in the sequence keep it in the buffer
+					client.ReceivedPacketsBuffer.TryAdd(packet.Sequence, packet);
+					return;
+				}
+
+				client.ReliableRemoteSequence = packet.Sequence;
+				ConsumeSequencedPacket(client, packet);
+
+				// apply all packets from that senders buffer that are now next in the sequence
+				ushort sequence = packet.Sequence;
+				while (client.ReceivedPacketsBuffer.Count > 0)
+				{
+					sequence++;
+					if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out ASequencedNetworkPacket bufferedPacket))
+						break;
+
+					client.ReliableRemoteSequence = sequence;
+					ConsumeSequencedPacket(client, bufferedPacket);
+				}
+			}
+		}
+
+		private void HandleChunkedDataPacket(ClientInformationSocket sender, DataPacket packet)
+		{
+			// send ACK
+			_packetsToSend.Enqueue((sender.IP, new ACKPacket(packet.Sequence, packet.SliceNumber)));
+
+			// ignore old packets unless they are unordered
+			if (!IsNewPacket(packet.Sequence, sender.ReliableRemoteSequence) && !IsUnorderedSequence(packet.Type))
+				return;
+
+			if (!sender.ReceivedChunksBuffer.TryGetValue(packet.Sequence, out ConcurrentDictionary<ushort, DataPacket> bufferedChunk))
+			{   // create chunked packet if it doesn't exist yet
+				ConcurrentDictionary<ushort, DataPacket> dict = new();
+				bufferedChunk = dict;
+			}
+
+			// add slice to chunk and return if chunk is not complete
+			bufferedChunk.TryAdd(packet.SliceNumber, packet);
+			if (bufferedChunk.Count != packet.NumberOfSlices)
+				return;
+
+			// concatenate slices to complete packet and remove it from chunk buffer
+			List<byte> dataBytes = new();
+			for (ushort i = 1; i <= packet.NumberOfSlices; i++)
+			{
+				if (!bufferedChunk.TryGetValue(i, out DataPacket sliceData))
+					return;
+				dataBytes.AddRange(sliceData.Data);
+			}
+			byte[] data = dataBytes.ToArray();
+			DataPacket dataPacket = new(packet.Type, packet.ModuleHash, data, null, sender.ID);
+			sender.ReceivedChunksBuffer.TryRemove(packet.Sequence, out _);
+
+			// if a packet is missing in the sequence keep it in the packet buffer
+			if (!IsNextPacket(packet.Sequence, sender.ReliableRemoteSequence) && !IsUnorderedSequence(packet.Type))
+			{
+				sender.ReceivedPacketsBuffer.TryAdd(packet.Sequence, dataPacket);
+				return;
+			}
+
+			sender.ReliableRemoteSequence = packet.Sequence;
+			ConsumeSequencedPacket(sender, dataPacket);
+		}
+
+		private void ConsumeSequencedPacket(ClientInformationSocket sender, ASequencedNetworkPacket packet)
+		{
+			switch (packet)
+			{
+				case DataPacket dataPacket:
+					if (dataPacket.ClientID > 1)
+					{   // forward packet to specified client
+						if (GetClientById(dataPacket.ClientID, out ClientInformationSocket targetClient))
+						{
+							CreateDataSenderPackets(dataPacket.Type, dataPacket.ModuleHash, dataPacket.Data, null, targetClient.IP, sender.ID);
+						}
+						return;
+					}
+
+					if (dataPacket.ClientID == 0)
+					{   // forward packet to all other clients before consuming
+						foreach (ClientInformationSocket targetClient in _connectedClients.Values)
+						{
+							CreateDataSenderPackets(dataPacket.Type, dataPacket.ModuleHash, dataPacket.Data, null, targetClient.IP, sender.ID);
+						}
+					}
+
+					// notify manager of received data, consuming the packet
+					ModuledNetManager.DataReceived?.Invoke(dataPacket.ModuleHash, sender.ID, dataPacket.Data);
+					break;
+				default: break;
 			}
 		}
 
@@ -474,59 +518,57 @@ namespace jKnepel.UnitySync.Networking
 					if (_packetsToSend.Count == 0 || !_packetsToSend.TryDequeue(out (IPAddress, ANetworkPacket) packet))
 						continue;
 
-					if (packet.Item2 is AConnectionNetworkPacket c)
+					switch (packet.Item2)
 					{
-						c.Serialize();
-						_udpClient.Send(c.Bytes, c.Bytes.Length, new(packet.Item1, _port));
-						continue;
-					}
-					
-					if (packet.Item2 is ASequencedNetworkPacket s)
-					{
-						if (!_connectedClients.TryGetValue(packet.Item1, out ClientInformationSocket client))
+						case AConnectionNetworkPacket c:
+							c.Serialize();
+							_udpClient.Send(c.Bytes, c.Bytes.Length, new(packet.Item1, _port));
 							continue;
+						case ASequencedNetworkPacket s:
+							if (!_connectedClients.TryGetValue(packet.Item1, out ClientInformationSocket client))
+								continue;
 
-						if (IsUnreliableData(s.Type))
-						{	// serialize with unrelaible sequence and increment
-							s.Serialize(client.UnreliableLocalSequence);
-							_udpClient.Send(s.Bytes, s.Bytes.Length, new(packet.Item1, _port));
-							client.UnreliableLocalSequence++;
+							if (IsUnreliableSequence(s.Type))
+							{   // serialize with unreliable sequence
+								client.UnreliableLocalSequence++;
+								byte[] data = s.Serialize(client.UnreliableLocalSequence);
+								_udpClient.Send(data, data.Length, new(packet.Item1, _port));
 
-							if (s is DataPacket ud)
-								ud.Callback?.Invoke(true);
-
-							continue;
-						}
-
-						// serialize with reliable sequence and increment
-						byte[] data = s.Serialize(client.ReliableLocalSequence);
-						_udpClient.Send(data, data.Length, new(packet.Item1, _port));
-						client.ReliableLocalSequence++;
-
-						if (s is DataPacket rd)
-						{
-							if (rd.IsChunked)
-							{   // save slices in buffer in case of resends
-								client.SendChunksBuffer.TryAdd((client.ReliableLocalSequence, rd.SliceNumber), data);
-								_ = ResendSliceData(packet.Item1, (client.ReliableLocalSequence, rd.SliceNumber));
-
-								if (rd.SliceNumber < rd.NumberOfSlices - 1)
-								{   // if slices are still missing advance slice number and add to queue
-									rd.SetSliceData();
-									_packetsToSend.Enqueue((packet.Item1, rd));
+								if (s is DataPacket ud)
+								{	// invoke callback once it was send
+									ud.Callback?.Invoke(true);
 								}
-								else
-								{	// invoke callback once all slices are send
-									rd.Callback?.Invoke(true);
-								}
+
 								continue;
 							}
-							rd.Callback?.Invoke(true);
-						}
 
-						// save packets in buffer in case of resends
-						client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
-						_ = ResendPacketData(packet.Item1, client.ReliableLocalSequence);
+							// serialize with reliable sequence
+							{
+								client.ReliableLocalSequence++;
+								byte[] data = s.Serialize(client.ReliableLocalSequence);
+								_udpClient.Send(data, data.Length, new(packet.Item1, _port));
+
+								if (s is DataPacket rd)
+								{	// invoke callback once it was send
+									if (rd.IsChunked)
+									{   // save slices in buffer in case of resends
+										client.SendChunksBuffer.TryAdd((client.ReliableLocalSequence, rd.SliceNumber), data);
+										_ = ResendSliceData(packet.Item1, (client.ReliableLocalSequence, rd.SliceNumber));
+
+										if (rd.SliceNumber == rd.NumberOfSlices - 1)
+										{   // only invoke callback once all slices were send
+											rd.Callback?.Invoke(true);
+										}
+										continue;
+									}
+									rd.Callback?.Invoke(true);
+								}
+
+								// save packets in buffer in case of resends
+								client.SendPacketsBuffer.TryAdd(client.ReliableLocalSequence, data);
+								_ = ResendPacketData(packet.Item1, client.ReliableLocalSequence);
+							}
+							break;
 					}
 				}
 				catch (Exception ex)
@@ -679,19 +721,65 @@ namespace jKnepel.UnitySync.Networking
 			return true;
 		}
 
+		/// <summary>
+		/// Creates a Data Packet send by the Server to the given Receiver or all connected Clients.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <param name="moduleHash"></param>
+		/// <param name="data"></param>
+		/// <param name="dataCallback"></param>
+		/// <param name="receiver"></param>
 		private void CreateDataSenderPackets(EPacketType type, uint moduleHash, byte[] data, Action<bool> dataCallback, byte? receiver = null)
 		{
 			if (receiver != null)
 			{
 				if (GetClientById((byte)receiver, out ClientInformationSocket client))
-					_packetsToSend.Enqueue((client.IP, new DataPacket(type, dataCallback, moduleHash, data, ClientInformation.ID)));
+					CreateDataSenderPackets(type, moduleHash, data, dataCallback, client.IP, 1);
 				else
 					dataCallback?.Invoke(false);
 				return;
 			}
 
 			foreach (ClientInformationSocket client in _connectedClients.Values)
-				_packetsToSend.Enqueue((client.IP, new DataPacket(type, dataCallback, moduleHash, data, ClientInformation.ID)));
+				CreateDataSenderPackets(type, moduleHash, data, dataCallback, client.IP, 1);
+		}
+
+		/// <summary>
+		/// Creates a Data Packet send by the given Sender to a given Receiver.
+		/// </summary>
+		/// <param name="type"></param>
+		/// <param name="moduleHash"></param>
+		/// <param name="data"></param>
+		/// <param name="dataCallback"></param>
+		/// <param name="receiver"></param>
+		/// <param name="sender"></param>
+		private void CreateDataSenderPackets(EPacketType type, uint moduleHash, byte[] data, Action<bool> dataCallback, IPAddress receiver, byte sender)
+		{
+			if (data.Length > _settings.MTU && !IsReliableSequence(type))
+			{
+				Debug.LogError("On Reliable Packets can be larger than the MTU!");
+				dataCallback?.Invoke(false);
+				return;
+			}
+
+			int mtu = _settings.MTU;
+			if (data.Length > mtu)
+			{   // if data is larger than MTU split packet into slices and send individually
+				ushort numberOfSlices = (ushort)(data.Length % mtu == 0
+					? data.Length / mtu
+					: data.Length / mtu + 1);
+
+				for (ushort sliceNumber = 0; sliceNumber < numberOfSlices; sliceNumber++)
+				{
+					int sliceSize = sliceNumber < numberOfSlices - 1 ? mtu : data.Length % mtu;
+					byte[] sliceData = new byte[sliceSize];
+					Array.Copy(data, sliceNumber * mtu, sliceData, 0, sliceSize);
+					_packetsToSend.Enqueue((receiver, new DataPacket(type, moduleHash, sliceData, dataCallback, sender, numberOfSlices, sliceNumber)));
+				}
+				return;
+			}
+
+			_packetsToSend.Enqueue((receiver, new DataPacket(type, moduleHash, data, dataCallback, sender)));
 		}
 
 		private static bool CompareByteArrays(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b)

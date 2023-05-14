@@ -42,8 +42,8 @@ namespace jKnepel.UnitySync.Networking
 		public IPAddress IP { get; private set; }
 		public DateTime LastHeartbeat { get; set; }
 
-		internal readonly ConcurrentDictionary<ushort, (uint, byte[])> ReceivedPacketsBuffer = new();
-		internal readonly ConcurrentDictionary<ushort, ConcurrentDictionary<ushort, byte[]>> ReceivedChunksBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, ASequencedNetworkPacket> ReceivedPacketsBuffer = new();
+		internal readonly ConcurrentDictionary<ushort, ConcurrentDictionary<ushort, DataPacket>> ReceivedChunksBuffer = new();
 
 		internal readonly ConcurrentDictionary<ushort, byte[]> SendPacketsBuffer = new();
 		internal readonly ConcurrentDictionary<(ushort, ushort), byte[]> SendChunksBuffer = new();
