@@ -7,8 +7,6 @@ using System.Net.Sockets;
 using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
-using System.Threading.Tasks;
-using System.Runtime.ExceptionServices;
 using UnityEngine;
 using jKnepel.UnitySync.Networking.Packets;
 
@@ -56,8 +54,6 @@ namespace jKnepel.UnitySync.Networking
 			}
 		}
 
-		public abstract bool IsServer { get; }
-
 		/// <summary>
 		/// Information about the Local Server/the Server that you are connected to.
 		/// </summary>
@@ -89,9 +85,9 @@ namespace jKnepel.UnitySync.Networking
 
 		public abstract void DisconnectFromServer();
 
-		public abstract void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null);
+		public abstract void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null);
 
-		public abstract void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null);
+		public abstract void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null);
 
 		public abstract void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null);
 

@@ -4,9 +4,7 @@ using System.Collections.Concurrent;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
-using System.Net.NetworkInformation;
 using System.Security.Cryptography;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.ExceptionServices;
@@ -23,14 +21,13 @@ namespace jKnepel.UnitySync.Networking
 
 		private readonly ConcurrentDictionary<IPAddress, byte[]> _pendingConnections = new();
 
-		private readonly ConcurrentDictionary<IPAddress, ClientInformationSocket> _connectedClients = new();
 		private readonly ConcurrentDictionary<byte, IPAddress> _idIpTable = new();
+		private readonly ConcurrentDictionary<IPAddress, ClientInformationSocket> _connectedClients = new();
 
 		#endregion
 
 		#region public properties
 
-		public override bool IsServer => true;
 		public override List<ClientInformation> ConnectedClients => _connectedClients.Values.Cast<ClientInformation>().ToList();
 
 		#endregion
@@ -168,20 +165,20 @@ namespace jKnepel.UnitySync.Networking
 			ModuledNetManager.AddSyncMessage(new("Disconnected from Server!"));
 		}
 
-		public override void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null)
+		public override void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
-			if (!CheckIfEligibleForSending(onDataReceived, receiver))
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
 
-			CreateDataSenderPackets(EPacketType.ReliableData, moduleHash, data, onDataReceived, receiver);
+			CreateDataSenderPackets(EPacketType.ReliableData, moduleHash, data, onDataSend, receiver);
 		}
 
-		public override void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataReceived, byte? receiver = null)
+		public override void SendDataReliableUnordered(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
 		{
-			if (!CheckIfEligibleForSending(onDataReceived, receiver))
+			if (!CheckIfEligibleForSending(onDataSend, receiver))
 				return;
 
-			CreateDataSenderPackets(EPacketType.ReliableUnorderedData, moduleHash, data, onDataReceived, receiver);
+			CreateDataSenderPackets(EPacketType.ReliableUnorderedData, moduleHash, data, onDataSend, receiver);
 		}
 
 		public override void SendDataUnreliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
@@ -232,7 +229,7 @@ namespace jKnepel.UnitySync.Networking
 					}
 
 					if (packetType.GetType().IsSubclassOf(typeof(ASequencedNetworkPacket)))
-					{   // handle sequenced packets for connected clients
+					{
 						HandleSequencedPacket(sender, packetType, receivedBytes);
 						continue;
 					}
@@ -248,7 +245,7 @@ namespace jKnepel.UnitySync.Networking
 							break;
 						case SocketException:
 						case ObjectDisposedException:
-							Debug.LogError($"An Error occurred in the Server. Try again later! \n {ex}");
+							Debug.LogError(ex.ToString());
 							_mainThreadActions.Enqueue(() => IsConnected = false);
 							break;
 						default:
@@ -360,6 +357,7 @@ namespace jKnepel.UnitySync.Networking
 				if (!IsNewPacket(packet.Sequence, client.UnreliableRemoteSequence) && !IsUnorderedSequence(packetType))
 					return;
 
+				// update sequence and consume packet
 				client.UnreliableRemoteSequence = packet.Sequence;
 				ConsumeSequencedPacket(client, packet);
 				return;
@@ -392,6 +390,7 @@ namespace jKnepel.UnitySync.Networking
 					if (!client.ReceivedPacketsBuffer.TryRemove(sequence, out ASequencedNetworkPacket bufferedPacket))
 						break;
 
+					// update sequence and consume packet
 					client.ReliableRemoteSequence = sequence;
 					ConsumeSequencedPacket(client, bufferedPacket);
 				}
@@ -430,13 +429,13 @@ namespace jKnepel.UnitySync.Networking
 			DataPacket dataPacket = new(packet.Type, packet.ModuleHash, data, null, sender.ID);
 			sender.ReceivedChunksBuffer.TryRemove(packet.Sequence, out _);
 
-			// if a packet is missing in the sequence keep it in the packet buffer
 			if (!IsNextPacket(packet.Sequence, sender.ReliableRemoteSequence) && !IsUnorderedSequence(packet.Type))
-			{
+			{   // if a packet is missing in the sequence keep it in the buffer
 				sender.ReceivedPacketsBuffer.TryAdd(packet.Sequence, dataPacket);
 				return;
 			}
 
+			// update sequence and consume packet
 			sender.ReliableRemoteSequence = packet.Sequence;
 			ConsumeSequencedPacket(sender, dataPacket);
 		}
@@ -475,8 +474,7 @@ namespace jKnepel.UnitySync.Networking
 		#region sender logic
 
 		private void HeartbeatThread()
-		{
-			// send heartbeat used for discovery until server is closed
+		{	// send heartbeat used for discovery until server is closed
 			while (_disposeCount == 0 && IsConnected)
 			{
 				try
@@ -695,6 +693,8 @@ namespace jKnepel.UnitySync.Networking
 
 			// TODO : notify other clients
 
+			// TODO : send all information on all clients to the client
+
 			return newID;
 		}
 
@@ -780,7 +780,7 @@ namespace jKnepel.UnitySync.Networking
 			int mtu = _settings.MTU;
 			if (data.Length > mtu && !IsReliableSequence(type))
 			{
-				Debug.LogError($"On Reliable Packets can be larger than the MTU ({mtu})!");
+				Debug.LogError($"Only Reliable Packets can be larger than the MTU ({mtu})!");
 				dataCallback?.Invoke(false);
 				return;
 			}

@@ -8,9 +8,10 @@ namespace jKnepel.UnitySync.Networking
 {
 	public class ClientInformation
 	{
-		public byte ID { get; set; }
-		public string Username { get; set; }
-		public Color32 Color { get; set; }
+		public byte ID { get; private set; }
+		public string Username { get; private set; }
+		public Color32 Color { get; private set; }
+		public bool IsServer => ID == 1;
 
 		public ClientInformation(byte id, string username, Color32 color)
 		{

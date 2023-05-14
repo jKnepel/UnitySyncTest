@@ -1,5 +1,3 @@
-using jKnepel.UnitySync.Networking;
-using jKnepel.UnitySync.Networking.Packets;
 using System;
 using System.Linq;
 using System.Collections.Generic;
@@ -13,6 +11,9 @@ using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Reflection;
 using UnityEngine;
+using jKnepel.UnitySync.Networking;
+using jKnepel.UnitySync.Networking.Packets;
+
 #if UNITY_EDITOR
 using UnityEditor;
 #endif
@@ -128,7 +129,7 @@ namespace jKnepel.UnitySync
 		/// </summary>
 		public static bool IsServer
 		{
-			get => IsConnected && _socket.IsServer;
+			get => IsConnected && LocalClient.IsServer;
 		}
 
 		public static readonly List<ModuledNetMessage> SyncMessages = new();
@@ -463,7 +464,10 @@ namespace jKnepel.UnitySync
 		/// Connect to a given Server. Membership in a Server is required before Data can be send.
 		/// </summary>
 		/// <param name="serverIP">IP of the Server.</param>
-		/// <returns><see langword="true"/> if the local Client successfully connected to the Server</returns>
+		/// <returns>
+		/// <see langword="true"/> if the local Client successfully connected to the Server
+		/// <see langword="false"/> if no Server with that IP exists, the client is already connected to a Server or the connection was unsuccessful
+		/// </returns>
 		public static bool ConnectToServer(IPAddress serverIP)
 		{
 			if (IsConnected)
