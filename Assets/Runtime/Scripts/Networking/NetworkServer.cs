@@ -337,7 +337,10 @@ namespace jKnepel.UnitySync.Networking
 						return;
 
 					if (dataPacket.IsChunked)
+					{
 						HandleChunkedDataPacket(client, dataPacket);
+						return;
+					}
 
 					packet = dataPacket;
 					break;
@@ -413,7 +416,7 @@ namespace jKnepel.UnitySync.Networking
 			}
 
 			// add slice to chunk and return if chunk is not complete
-			bufferedChunk.TryAdd(packet.SliceNumber, packet);
+			bufferedChunk.AddOrUpdate(packet.SliceNumber, packet, (key, oldValue) => oldValue = packet);
 			if (bufferedChunk.Count != packet.NumberOfSlices)
 				return;
 
@@ -671,7 +674,7 @@ namespace jKnepel.UnitySync.Networking
 		{
 			// find next available client id
 			byte newID = 0;
-			for (byte i = 2; i < ServerInformation.MaxNumberConnectedClients; i++)
+			for (byte i = 2; i <= ServerInformation.MaxNumberConnectedClients; i++)
 			{
 				if (!_idIpTable.TryGetValue(i, out _))
 				{
