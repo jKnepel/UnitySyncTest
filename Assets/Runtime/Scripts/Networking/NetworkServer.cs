@@ -327,11 +327,13 @@ namespace jKnepel.UnitySync.Networking
 
 		private void HandleSequencedPacket(ClientInformationSocket sender, EPacketType packetType, byte[] packet)
 		{	// handle data packets
+			// TODO : handle Client info
 			DataPacket dataPacket = new(packetType, packet);
 			if (!dataPacket.TryDeserialize())
 				return;
 
 			// resend packets that are not addressed to server
+
 			// TODO : handle 0 (all clients) or > 1 (specific client)
 
 			if (dataPacket.ClientID != 1)
@@ -632,6 +634,7 @@ namespace jKnepel.UnitySync.Networking
 				throw new Exception("Something went wrong creating the Client!");
 
 			ServerInformation.NumberConnectedClients++;
+			_mainThreadActions.Enqueue(() => ModuledNetManager.OnClientConnected?.Invoke(newID));
 
 			return newID;
 		}
@@ -645,6 +648,8 @@ namespace jKnepel.UnitySync.Networking
 			_packetsToSend.Enqueue((client.IP, new ConnectionClosedPacket()));
 			_connectedClients.TryRemove(client.IP, out _);
 			ServerInformation.NumberConnectedClients--;
+			_mainThreadActions.Enqueue(() => ModuledNetManager.OnClientConnected?.Invoke(clientID));
+
 			foreach (ClientInformationSocket remainingClient in _connectedClients.Values)
 				_packetsToSend.Enqueue((remainingClient.IP, new ClientDisconnectedPacket(clientID)));
 			

@@ -52,12 +52,12 @@ namespace jKnepel.UnitySync
 		public static Action OnDisconnected;
 
 		/// <summary>
-		/// Action for when a Client connected to the current Server and can now receive Messages.
+		/// Action for when a remote Client connected to the current Server and can now receive Messages.
 		/// </summary>
 		public static Action<uint> OnClientConnected;
 
 		/// <summary>
-		/// Action for when a Client disconnected from the current Server and can no longer receive any Messages.
+		/// Action for when a remote Client disconnected from the current Server and can no longer receive any Messages.
 		/// </summary>
 		public static Action<uint> OnClientDisconnected;
 
@@ -88,13 +88,23 @@ namespace jKnepel.UnitySync
 		}
 		
 		/// <summary>
-		/// The Server to which the Client is currently connected to.
+		/// Information on the Server to which the local Client is currently connected to.
 		/// </summary>
 		public static ServerInformation CurrentServer 
 		{ 
 			get => IsConnected
 				? _socket.ServerInformation
 				: null; 
+		}
+
+		/// <summary>
+		/// Information on the local Client.
+		/// </summary>
+		public static ClientInformation LocalClient
+		{
+			get => IsConnected
+				? _socket.ClientInformation
+				: null;
 		}
 
 		/// <summary>
@@ -129,9 +139,9 @@ namespace jKnepel.UnitySync
 
 		private readonly static ModuledNetSettings _settings = ModuledNetSettings.GetOrCreateSettings();
 		
-		private readonly static Dictionary<string, ServerInformation> _openServers = new();
+		private readonly static ConcurrentDictionary<IPAddress, ServerInformation> _openServers = new();
 
-		private readonly static Dictionary<uint, ModuledNetModule> _registeredModules = new();
+		private readonly static ConcurrentDictionary<uint, ModuledNetModule> _registeredModules = new();
 
 		private readonly static ConcurrentQueue<Action> _mainThreadActions = new();
 
@@ -247,10 +257,10 @@ namespace jKnepel.UnitySync
 							continue;
 
 						ServerInformation newServer = new ServerInformation(sender, heartbeat.Servername, heartbeat.MaxNumberOfClients, heartbeat.NumberOfClients);
-						if (_openServers.TryGetValue(heartbeat.Servername, out ServerInformation server))
+						if (_openServers.TryGetValue(sender, out ServerInformation server))
 							server = newServer;
 						else
-							_openServers.TryAdd(heartbeat.Servername, newServer);
+							_openServers.TryAdd(sender, newServer);
 					}
 					catch (OverflowException) { continue; }
 				}
@@ -293,13 +303,13 @@ namespace jKnepel.UnitySync
 				return 0;
 			}
 
-			_registeredModules.Add(hash, module);
+			_registeredModules.TryAdd(hash, module);
 			return hash;
 		}
 
 		internal static void UnregisterModule(uint moduleHash)
 		{
-			if (!_registeredModules.Remove(moduleHash))
+			if (!_registeredModules.TryRemove(moduleHash, out _))
 				Debug.LogWarning($"The given Module could not be found!");
 		}
 
@@ -354,7 +364,7 @@ namespace jKnepel.UnitySync
 		}
 
 		/// <summary>
-		/// Resets the Client. Use this, when Exceptions ocurred or the Socket was closed, to reconnect to the network.
+		/// Resets the Client. Use this when Exceptions ocurred or the Service Discovery was closed.
 		/// </summary>
 		/// <returns><see langword="true"/> if the Client is Active after the Reset</returns>
 		public static bool ResetClient()
@@ -421,12 +431,11 @@ namespace jKnepel.UnitySync
 		}
 
 		/// <summary>
-		/// Connect to a Server or create a new one. Membership in a Server is required before Data can be send.
+		/// Connect to a given Server. Membership in a Server is required before Data can be send.
 		/// </summary>
-		/// <param name="servername">Name of the Server</param>
-		/// <param name="createserver">Wether an existing Server should be joined or a new Server should be created.</param>
-		/// <returns><see langword="true"/> if the Client successfully connected to the Server</returns>
-		public static bool ConnectToServer(string servername, bool createserver = false)
+		/// <param name="serverIP">IP of the Server</param>
+		/// <returns><see langword="true"/> if the local Client successfully connected to the Server</returns>
+		public static bool ConnectToServer(IPAddress serverIP)
 		{
 			if (IsConnected)
 			{
@@ -434,27 +443,30 @@ namespace jKnepel.UnitySync
 				return false;
 			}
 
-			if (createserver)
+			if (!_openServers.TryGetValue(serverIP, out _))
 			{
-				if (_openServers.TryGetValue(servername, out _))
-				{
-					Debug.LogError("A Server with this Name already exists!");
-					return false;
-				}
-
-				_socket = new NetworkServer(servername);
-			}
-			else
-			{
-				if (!_openServers.TryGetValue(servername, out _))
-				{
-					Debug.LogError("No Server with this Name exists!");
-					return false;
-				}
-
-				//_socket = new SyncClient(servername);
+				Debug.LogError("No Server with this IP exists!");
+				return false;
 			}
 
+			//_socket = new NetworkClient(servername);
+			return IsConnected;
+		}
+
+		/// <summary>
+		/// Connect to a given Server. Membership in a Server is required before Data can be send.
+		/// </summary>
+		/// <param name="servername">Name of the local Server that is to be created.</param>
+		/// <returns><see langword="true"/> if the local Client successfully created and now hosts a Server</returns>
+		public static bool CreateServer(string servername)
+		{
+			if (IsConnected)
+			{
+				Debug.LogWarning("The local Client is already connected to a Server!");
+				return false;
+			}
+
+			_socket = new NetworkServer(servername);
 			return IsConnected;
 		}
 

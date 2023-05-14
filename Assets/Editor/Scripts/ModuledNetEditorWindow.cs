@@ -106,7 +106,7 @@ namespace jKnepel.UnitySync.SceneSync
                                 GUILayout.Label(server.Servername);
                                 GUILayout.Label($"#{server.NumberConnectedClients}");
                                 if (GUILayout.Button(new GUIContent("Connect To Server"), GUILayout.ExpandWidth(false)))
-                                    ModuledNetManager.ConnectToServer(server.Servername, false);
+                                    ModuledNetManager.ConnectToServer(server.IP);
                             }
                             EditorGUILayout.EndHorizontal();
                         }
@@ -127,7 +127,7 @@ namespace jKnepel.UnitySync.SceneSync
                             _newServerSceneIndex = EditorGUILayout.Popup("Synced Scene: ", _newServerSceneIndex, sceneNames);
                             _settings.MaxNumberClients = (byte)EditorGUILayout.IntField("Server Discovery Port:", _settings.MaxNumberClients);
                             if (GUILayout.Button(new GUIContent("Create")))
-                                ModuledNetManager.ConnectToServer(_newServerName, true);
+                                ModuledNetManager.CreateServer(_newServerName);
                         }
                         EditorGUILayout.EndVertical();
                     }
