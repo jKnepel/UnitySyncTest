@@ -422,8 +422,8 @@ namespace jKnepel.UnitySync.Networking
 
 			if (!sender.ReceivedChunksBuffer.TryGetValue(packet.Sequence, out ConcurrentDictionary<ushort, DataPacket> bufferedChunk))
 			{   // create chunked packet if it doesn't exist yet
-				ConcurrentDictionary<ushort, DataPacket> dict = new();
-				bufferedChunk = dict;
+				bufferedChunk = new();
+				sender.ReceivedChunksBuffer.TryAdd(packet.Sequence, bufferedChunk);
 			}
 
 			// add slice to chunk and return if chunk is not complete
