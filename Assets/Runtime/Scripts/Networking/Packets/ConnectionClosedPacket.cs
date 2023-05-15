@@ -6,12 +6,12 @@ namespace jKnepel.UnitySync.Networking.Packets
 	{
 		public ConnectionClosedPacket()
 		{
-			Type = EPacketType.ConnectionDenied;
+			Type = EPacketType.ConnectionClosed;
 		}
 
 		public ConnectionClosedPacket(byte[] packet)
 		{
-			Type = EPacketType.ConnectionDenied;
+			Type = EPacketType.ConnectionClosed;
 			Bytes = packet;
 		}
 

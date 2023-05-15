@@ -161,8 +161,13 @@ namespace jKnepel.UnitySync.Networking
 			if (!IsConnected)
 				return;
 
-			Dispose();
+			ConnectionClosedPacket connectionClosed = new();
+			byte[] data = connectionClosed.Serialize();
+			foreach (ClientInformationSocket client in _connectedClients.Values)
+				_udpClient.Send(data, data.Length, new(client.IP, _port));
+
 			ModuledNetManager.AddSyncMessage(new("Disconnected from Server!"));
+			Dispose();
 		}
 
 		public override void SendDataReliable(uint moduleHash, byte[] data, Action<bool> onDataSend, byte? receiver = null)
