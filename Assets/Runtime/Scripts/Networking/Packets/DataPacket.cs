@@ -71,25 +71,29 @@ namespace jKnepel.UnitySync.Networking.Packets
 
 		public override bool TryDeserialize()
 		{
-			if (!CheckCRC32Checksum(Bytes))
-				return false;
-
-			IsChunked = (Bytes[ModuledNetSettings.CRC32_LENGTH] & (1 << 7)) != 0;
-			int chunkedHeaderLength = IsChunked ? ModuledNetSettings.NUMBER_OF_SLICES + ModuledNetSettings.SLICE_NUMBER : 0;
-
-			CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
-			Sequence = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.SEQUENCE_ID_LENGTH));
-			ClientID = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength];
-			ModuleHash = BitConverter.ToUInt32(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + ModuledNetSettings.CLIENT_ID_LENGTH, ModuledNetSettings.MODULE_HASH_LENGTH));
-			Data = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + ModuledNetSettings.CLIENT_ID_LENGTH + ModuledNetSettings.MODULE_HASH_LENGTH);
-
-			if (IsChunked)
+			try
 			{
-				NumberOfSlices = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH, ModuledNetSettings.NUMBER_OF_SLICES));
-				SliceNumber = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + ModuledNetSettings.NUMBER_OF_SLICES, ModuledNetSettings.SLICE_NUMBER));
-			}
+				if (!CheckCRC32Checksum(Bytes))
+					return false;
 
-			return true;
+				IsChunked = (Bytes[ModuledNetSettings.CRC32_LENGTH] & (1 << 7)) != 0;
+				int chunkedHeaderLength = IsChunked ? ModuledNetSettings.NUMBER_OF_SLICES + ModuledNetSettings.SLICE_NUMBER : 0;
+
+				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
+				Sequence = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.SEQUENCE_ID_LENGTH));
+				ClientID = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength];
+				ModuleHash = BitConverter.ToUInt32(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + ModuledNetSettings.CLIENT_ID_LENGTH, ModuledNetSettings.MODULE_HASH_LENGTH));
+				Data = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + chunkedHeaderLength + ModuledNetSettings.CLIENT_ID_LENGTH + ModuledNetSettings.MODULE_HASH_LENGTH);
+
+				if (IsChunked)
+				{
+					NumberOfSlices = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH, ModuledNetSettings.NUMBER_OF_SLICES));
+					SliceNumber = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH + ModuledNetSettings.NUMBER_OF_SLICES, ModuledNetSettings.SLICE_NUMBER));
+				}
+
+				return true;
+			}
+			catch (Exception) { return false; }
 		}
 	}
 }

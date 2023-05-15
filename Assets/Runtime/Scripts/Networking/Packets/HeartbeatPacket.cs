@@ -42,17 +42,21 @@ namespace jKnepel.UnitySync.Networking.Packets
 
 		public override bool TryDeserialize()
 		{
-			if (!CheckCRC32Checksum(Bytes))
-				return false;
+			try
+			{
+				if (!CheckCRC32Checksum(Bytes))
+					return false;
 
-			CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
-			int servernameLength = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH];
-			byte[] servername = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH, servernameLength);
-			Servername = Encoding.ASCII.GetString(servername);
-			MaxNumberOfClients = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH + servernameLength];
-			NumberOfClients = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH + servernameLength + ModuledNetSettings.NUMBER_CLIENTS_LENGTH];
-			
-			return true;
+				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
+				int servernameLength = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH];
+				byte[] servername = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH, servernameLength);
+				Servername = Encoding.ASCII.GetString(servername);
+				MaxNumberOfClients = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH + servernameLength];
+				NumberOfClients = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH + servernameLength + ModuledNetSettings.NUMBER_CLIENTS_LENGTH];
+
+				return true;
+			}
+			catch (Exception) { return false; }
 		}
 	}
 }

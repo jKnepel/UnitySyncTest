@@ -45,17 +45,21 @@ namespace jKnepel.UnitySync.Networking.Packets
 
 		public override bool TryDeserialize()
 		{
-			if (!CheckCRC32Checksum(Bytes))
-				return false;
+			try
+			{
+				if (!CheckCRC32Checksum(Bytes))
+					return false;
 
-			CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
-			ChallengeAnswer = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_ANSWER_LENGTH);
-			byte usernameLength = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_ANSWER_LENGTH];
-			Username = Encoding.ASCII.GetString(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_ANSWER_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH, usernameLength));
-			int position = ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_ANSWER_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH + usernameLength;
-			Color = new(Bytes[position], Bytes[position + 1], Bytes[position + 2], 255);
+				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
+				ChallengeAnswer = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_ANSWER_LENGTH);
+				byte usernameLength = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_ANSWER_LENGTH];
+				Username = Encoding.ASCII.GetString(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_ANSWER_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH, usernameLength));
+				int position = ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_ANSWER_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH + usernameLength;
+				Color = new(Bytes[position], Bytes[position + 1], Bytes[position + 2], 255);
 			
-			return true;
+				return true;
+			}
+			catch (Exception) { return false; }
 		}
 	}
 }

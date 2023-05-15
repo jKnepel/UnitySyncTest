@@ -56,12 +56,12 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// Action for when a remote Client connected to the current Server and can now receive Messages.
 		/// </summary>
-		public static Action<uint> OnClientConnected;
+		public static Action<byte> OnClientConnected;
 
 		/// <summary>
 		/// Action for when a remote Client disconnected from the current Server and can no longer receive any Messages.
 		/// </summary>
-		public static Action<uint> OnClientDisconnected;
+		public static Action<byte> OnClientDisconnected;
 
 		/// <summary>
 		/// Action for when a Server was added or removed from the OpenServers.

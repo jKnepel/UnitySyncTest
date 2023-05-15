@@ -56,7 +56,7 @@ namespace jKnepel.UnitySync
 		protected virtual void ServerDiscoveryDeactivated() { }
 		protected virtual void Connected() { }
 		protected virtual void Disconnected() { }
-		protected virtual void ClientConnected(uint id) { }
-		protected virtual void ClientDisconnected(uint id) { }
+		protected virtual void ClientConnected(byte id) { }
+		protected virtual void ClientDisconnected(byte id) { }
 	}
 }
