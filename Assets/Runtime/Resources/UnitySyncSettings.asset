@@ -16,13 +16,8 @@ MonoBehaviour:
   Color:
     serializedVersion: 2
     rgba: 4280758225
-  HeartbeatDelay: 1000
-  ClientTimeoutDelay: 3000
-  ResendReliablePacketsDelay: 250
+  ServerHeartbeatDelay: 1000
+  ServerDiscoveryTimeout: 3000
   MaxNumberResendReliablePackets: 5
   Port: 26822
   DiscoveryPort: 26823
-  ClientVisualiserDelay: 50
-  GLTFHierarchyDelay: 500
-  ClientVisualiser: {fileID: 7080547937376749528, guid: 50aa1bbdf9c3eac459c8e97ce858b662, type: 3}
-  HighlightMaterial: {fileID: 2100000, guid: 34734aadb01022e4c858284cc356e1b4, type: 2}

@@ -799,6 +799,9 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="sender"></param>
 		private void CreateDataSenderPackets(EPacketType type, uint moduleHash, byte[] data, Action<bool> dataCallback, IPAddress receiver, byte sender)
 		{
+			if (!IsDataPacket(type))
+				throw new Exception("This function only supports Data Packets!");
+
 			int mtu = _settings.MTU;
 			if (data.Length > mtu && !IsReliableSequence(type))
 			{

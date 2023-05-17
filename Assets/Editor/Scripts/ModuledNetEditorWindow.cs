@@ -118,16 +118,11 @@ namespace jKnepel.UnitySync.SceneSync
                     // new server options
                     if (_newServerOptionsIsVisible)
                     {
-                        int sceneCount = EditorSceneManager.sceneCount;
-                        string[] sceneNames = new string[sceneCount];
-                        for (int i = 0; i < sceneCount; i++)
-                            sceneNames[i] = EditorSceneManager.GetSceneAt(i).name;
                         EditorGUILayout.BeginVertical(EditorStyles.helpBox);
                         {
                             GUILayout.Label("Create a New Server", EditorStyles.boldLabel);
                             _newServerName = EditorGUILayout.TextField("Servername:", _newServerName);
-                            _newServerSceneIndex = EditorGUILayout.Popup("Synced Scene: ", _newServerSceneIndex, sceneNames);
-                            _settings.MaxNumberClients = (byte)EditorGUILayout.IntField("Server Discovery Port:", _settings.MaxNumberClients);
+                            _settings.MaxNumberClients = (byte)EditorGUILayout.IntField("Max Clients:", _settings.MaxNumberClients);
                             if (GUILayout.Button(new GUIContent("Create")))
                                 ModuledNetManager.CreateServer(_newServerName);
                         }
