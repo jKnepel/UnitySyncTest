@@ -28,31 +28,37 @@ namespace jKnepel.UnitySync.Networking
 		protected int _disposeCount;
 
 		protected readonly ConcurrentQueue<Action> _mainThreadActions = new();
-		protected readonly ConcurrentQueue<(IPAddress, ANetworkPacket)> _packetsToSend = new();
 
 		#endregion
 
 		#region public properties
 
-		private bool _isConnected = false;
-		public bool IsConnected
+		private ConnectionStatus _connectionStatus = ConnectionStatus.IsDisconnected;
+		public ConnectionStatus ConnectionStatus
 		{
-			get => _isConnected;
+			get => _connectionStatus;
 			protected set
 			{
-				if (value == _isConnected)
+				if (value == _connectionStatus)
 					return;
 
-				_isConnected = value;
-				if (value)
-					ModuledNetManager.OnConnected?.Invoke();
-				else
+				_connectionStatus = value;
+				switch (value)
 				{
-					Dispose();
-					ModuledNetManager.OnDisconnected?.Invoke();
+					case ConnectionStatus.IsDisconnected:
+						ModuledNetManager.OnDisconnected?.Invoke();
+						break;
+					case ConnectionStatus.IsConnecting:
+						ModuledNetManager.OnConnecting?.Invoke();
+						break;
+					case ConnectionStatus.IsConnected:
+						ModuledNetManager.OnConnected?.Invoke();
+						break;
 				}
 			}
 		}
+
+		public bool IsConnected => ConnectionStatus == ConnectionStatus.IsConnected;
 
 		/// <summary>
 		/// Information about the Local Server/the Server that you are connected to.
@@ -77,7 +83,7 @@ namespace jKnepel.UnitySync.Networking
 			Dispose(true);
 		}
 
-		public abstract void Dispose(bool disposing);
+		protected abstract void Dispose(bool disposing);
 
 		#endregion
 

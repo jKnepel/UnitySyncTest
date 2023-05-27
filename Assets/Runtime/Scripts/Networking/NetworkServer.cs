@@ -24,6 +24,8 @@ namespace jKnepel.UnitySync.Networking
 		private readonly ConcurrentDictionary<byte, IPAddress> _idIpTable = new();
 		private readonly ConcurrentDictionary<IPAddress, ClientInformationSocket> _connectedClients = new();
 
+		private readonly ConcurrentQueue<(IPAddress, ANetworkPacket)> _packetsToSend = new();
+
 		#endregion
 
 		#region public properties
@@ -34,33 +36,39 @@ namespace jKnepel.UnitySync.Networking
 
 		#region lifecycle
 
-		public NetworkServer(string servername)
+		public NetworkServer(string servername, Action<bool> onConnectionEstablished)
 		{
 			try
 			{
-				if (!CheckLocalIP(ModuledNetManager.IP))
+				if (!CheckLocalIP(ModuledNetManager.LocalIP))
 				{
 					Debug.LogError("No network interface possesses the given local IP!");
+					onConnectionEstablished?.Invoke(false);
 					return;
 				}
 
 				if (servername.Length > 100 || _settings.Username.Length > 100)
 				{
 					Debug.LogError($"The Servername and Username must be shorter than 100 Characters!");
+					onConnectionEstablished?.Invoke(false);
 					return;
 				}
 
 				if (!IsASCIIString(servername) || !IsASCIIString(_settings.Username))
 				{
 					Debug.LogError($"The Servername or Username contains a non-ASCII Character!");
+					onConnectionEstablished?.Invoke(false);
 					return;
 				}
 
-				_localIP = IPAddress.Parse(ModuledNetManager.IP);
+				ConnectionStatus = ConnectionStatus.IsConnecting;
+
+				_localIP = IPAddress.Parse(ModuledNetManager.LocalIP);
 				_port = _settings.Port;
 				_udpClient = new(_port);
 				ServerInformation = new(_localIP, servername, _settings.MaxNumberClients);
 				ClientInformation = new(1, _settings.Username, _settings.Color);
+
 
 				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
 				_listenerThread.Start();
@@ -72,10 +80,13 @@ namespace jKnepel.UnitySync.Networking
 				ModuledNetManager.OnUpdate += Update;
 
 				ModuledNetManager.AddSyncMessage(new("Server has been opened!"));
-				IsConnected = true;
+				ConnectionStatus = ConnectionStatus.IsConnected;
+				onConnectionEstablished?.Invoke(true);
 			}
 			catch (Exception ex)
 			{
+				ConnectionStatus = ConnectionStatus.IsDisconnected;
+				onConnectionEstablished?.Invoke(false);
 				switch (ex)
 				{
 					case SocketException:
@@ -106,7 +117,7 @@ namespace jKnepel.UnitySync.Networking
 			}
 		}
 
-		public override void Dispose(bool disposing)
+		protected override void Dispose(bool disposing)
 		{
 			if (Interlocked.Increment(ref _disposeCount) == 1)
 			{
@@ -137,7 +148,7 @@ namespace jKnepel.UnitySync.Networking
 					_udpClient.Dispose();
 				}
 
-				IsConnected = false;
+				ConnectionStatus = ConnectionStatus.IsDisconnected;
 				ServerInformation = null;
 			}
 		}
@@ -150,7 +161,6 @@ namespace jKnepel.UnitySync.Networking
 					action?.Invoke();
 			}
 		}
-
 
 		#endregion
 
@@ -208,7 +218,7 @@ namespace jKnepel.UnitySync.Networking
 
 		private void ListenerThread()
 		{
-			while (_disposeCount == 0 && IsConnected)
+			while (_disposeCount == 0)
 			{
 				try
 				{	// get packet ip headers
@@ -291,14 +301,14 @@ namespace jKnepel.UnitySync.Networking
 						case ArgumentException:
 							continue;
 						case ThreadAbortException:
-							break;
+							return;
 						case SocketException:
 						case ObjectDisposedException:
 							Debug.LogError(ex.ToString());
-							_mainThreadActions.Enqueue(() => IsConnected = false);
+							_mainThreadActions.Enqueue(() => Dispose());
 							break;
 						default:
-							_mainThreadActions.Enqueue(() => IsConnected = false);
+							_mainThreadActions.Enqueue(() => Dispose());
 							ExceptionDispatchInfo.Capture(ex).Throw();
 							throw;
 					}
@@ -349,7 +359,7 @@ namespace jKnepel.UnitySync.Networking
 				return;
 			}
 
-			byte newID = AddClient(sender, challengeAnswer.Username, challengeAnswer.Color);
+			byte newID = AddClient(sender).ID;
 			_packetsToSend.Enqueue((sender, new ConnectionAcceptedPacket(newID)));
 		}
 
@@ -461,7 +471,7 @@ namespace jKnepel.UnitySync.Networking
 				case DataPacket dataPacket:
 					if (dataPacket.ClientID > 1)
 					{   // forward packet to specified client
-						if (GetClientById(dataPacket.ClientID, out ClientInformationSocket targetClient))
+						if (GetClientById((byte)dataPacket.ClientID, out ClientInformationSocket targetClient))
 						{
 							CreateDataSenderPackets(dataPacket.Type, dataPacket.ModuleHash, dataPacket.Data, null, targetClient.IP, sender.ID);
 						}
@@ -479,6 +489,17 @@ namespace jKnepel.UnitySync.Networking
 					// notify manager of received data, consuming the packet
 					ModuledNetManager.DataReceived?.Invoke(dataPacket.ModuleHash, sender.ID, dataPacket.Data);
 					break;
+				case ClientInfoPacket clientInfoPacket:
+					sender.Username = clientInfoPacket.Username;
+					sender.Color = clientInfoPacket.Color;
+
+					ClientInfoPacket info = new(sender.ID, sender.Username, sender.Color);
+					foreach (ClientInformationSocket client in _connectedClients.Values)
+					{
+						if (sender.ID != client.ID)
+							_packetsToSend.Enqueue((client.IP, info));
+					}
+					break;
 				default: break;
 			}
 		}
@@ -489,7 +510,7 @@ namespace jKnepel.UnitySync.Networking
 
 		private void HeartbeatThread()
 		{	// send heartbeat used for discovery until server is closed
-			while (_disposeCount == 0 && IsConnected)
+			while (_disposeCount == 0)
 			{
 				try
 				{
@@ -506,14 +527,14 @@ namespace jKnepel.UnitySync.Networking
 						case ArgumentException:
 							continue;
 						case ThreadAbortException:
-							break;
+							return;
 						case SocketException:
 						case ObjectDisposedException:
 							Debug.LogError(ex.ToString());
-							_mainThreadActions.Enqueue(() => IsConnected = false);
+							_mainThreadActions.Enqueue(() => Dispose());
 							break;
 						default:
-							_mainThreadActions.Enqueue(() => IsConnected = false);
+							_mainThreadActions.Enqueue(() => Dispose());
 							ExceptionDispatchInfo.Capture(ex).Throw();
 							throw;
 					}
@@ -523,7 +544,7 @@ namespace jKnepel.UnitySync.Networking
 
 		private void SenderThread()
 		{
-			while (_disposeCount == 0 && IsConnected)
+			while (_disposeCount == 0)
 			{
 				try
 				{
@@ -593,14 +614,14 @@ namespace jKnepel.UnitySync.Networking
 						case ArgumentException:
 							continue;
 						case ThreadAbortException:
-							break;
+							return;
 						case SocketException:
 						case ObjectDisposedException:
 							Debug.LogError(ex.ToString());
-							_mainThreadActions.Enqueue(() => IsConnected = false);
+							_mainThreadActions.Enqueue(() => Dispose());
 							break;
 						default:
-							_mainThreadActions.Enqueue(() => IsConnected = false);
+							_mainThreadActions.Enqueue(() => Dispose());
 							ExceptionDispatchInfo.Capture(ex).Throw();
 							throw;
 					}
@@ -681,7 +702,7 @@ namespace jKnepel.UnitySync.Networking
 		/// <param name="username"></param>
 		/// <param name="color"></param>
 		/// <returns></returns>
-		private byte AddClient(IPAddress ip, string username, Color32 color)
+		private ClientInformationSocket AddClient(IPAddress ip)
 		{
 			// find next available client id
 			byte newID = 0;
@@ -698,26 +719,28 @@ namespace jKnepel.UnitySync.Networking
 				throw new Exception("Something went wrong assigning the Client ID!");
 
 			// create client
-			ClientInformationSocket newClient = new(newID, ip, username, color);
+			ClientInformationSocket newClient = new(newID, ip);
 			if (!_connectedClients.TryAdd(ip, newClient) || !_idIpTable.TryAdd(newID, ip) || !_pendingConnections.TryRemove(ip, out _))
 				throw new Exception("Something went wrong creating the Client!");
 
 			ServerInformation.NumberConnectedClients++;
 			_mainThreadActions.Enqueue(() => ModuledNetManager.OnClientConnected?.Invoke(newID));
 
+			ClientInfoPacket info = new(newID, newClient.Username, newClient.Color);
 			foreach (ClientInformationSocket client in _connectedClients.Values)
 			{
-				if (client.ID == newID)
-					continue;
+				if (client.ID != newID)
+				{
+					// notify all other clients of new client
+					_packetsToSend.Enqueue((client.IP, info));
 
-				// notify all other clients of new client
-				_packetsToSend.Enqueue((client.IP, new ClientInfoPacket(newID, username, color)));
+					// send data of all other clients to new client
+					_packetsToSend.Enqueue((ip, new ClientInfoPacket(client.ID, client.Username, client.Color)));
+				}
 
-				// send data of all other clients to new client
-				_packetsToSend.Enqueue((ip, new ClientInfoPacket(client.ID, client.Username, client.Color)));
 			}
 
-			return newID;
+			return newClient;
 		}
 
 		// TODO : add reason
@@ -805,7 +828,7 @@ namespace jKnepel.UnitySync.Networking
 			int mtu = _settings.MTU;
 			if (data.Length > mtu && !IsReliableSequence(type))
 			{
-				Debug.LogError($"Only Reliable Packets can be larger than the MTU ({mtu})!");
+				Debug.LogError($"Only Reliable Packets can be larger than the MTU ({mtu} Bytes)!");
 				dataCallback?.Invoke(false);
 				return;
 			}

@@ -26,7 +26,7 @@ namespace jKnepel.UnitySync.Networking
             else
             {
                 ServerInformation server = (ServerInformation)obj;
-                return server.IP.Equals(IP) && server.Servername.Equals(Servername);
+                return server.IP.Equals(IP);
             }
         }
 

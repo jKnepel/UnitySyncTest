@@ -4,7 +4,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 {
 	internal class DataPacket : ASequencedNetworkPacket
 	{
-		public byte ClientID { get; private set; }
+		public byte? ClientID { get; private set; }
 		public Action<bool> Callback { get; private set; }
 		public uint ModuleHash { get; private set; }
 		public byte[] Data { get; private set; }
@@ -13,7 +13,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 		public ushort NumberOfSlices { get; private set; }
 		public ushort SliceNumber { get; private set; }
 
-		public DataPacket(EPacketType type, uint moduleHash, byte[] data, Action<bool> callback, byte clientID)
+		public DataPacket(EPacketType type, uint moduleHash, byte[] data, Action<bool> callback, byte? clientID)
 		{
 			Type = type;
 			ClientID = clientID;
@@ -26,7 +26,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 			SliceNumber = 0;
 		}
 
-		public DataPacket(EPacketType type, uint moduleHash, byte[] data, Action<bool> callback, byte clientID,
+		public DataPacket(EPacketType type, uint moduleHash, byte[] data, Action<bool> callback, byte? clientID,
 			ushort numberOfSlices, ushort sliceNumber)
 		{
 			Type = type;

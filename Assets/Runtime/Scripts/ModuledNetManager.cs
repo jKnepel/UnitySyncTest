@@ -25,7 +25,7 @@ namespace jKnepel.UnitySync
 		#region public properties
 
 		public static bool IsDebug = false;
-		public static string IP = GetLocalIPAddress();
+		public static string LocalIP = GetLocalIPAddress();
 
 		public static Action OnAwake;
 		public static Action OnStart;
@@ -47,6 +47,11 @@ namespace jKnepel.UnitySync
 		/// Action for when successfully connecting to or creating a Server.
 		/// </summary>
 		public static Action OnConnected;
+
+		/// <summary>
+		/// Action for when connection to or creation of a server is being started.
+		/// </summary>
+		public static Action OnConnecting;
 
 		/// <summary>
 		/// Action for when disconnecting from or closing the Server.
@@ -75,13 +80,18 @@ namespace jKnepel.UnitySync
 		{
 			get => _isServerDiscoveryActive; private set => _isServerDiscoveryActive = value;
 		}
+
+		public static ConnectionStatus ConnectionStatus
+		{
+			get => _socket == null ? ConnectionStatus.IsDisconnected : _socket.ConnectionStatus;
+		}
 		
 		/// <summary>
 		/// If the Client is connected to a Server or is a Server.
 		/// </summary>
 		public static bool IsConnected
-		{ 
-			get => _socket != null && _socket.IsConnected; 
+		{
+			get => _socket != null && _socket.IsConnected;
 		}
 		
 		/// <summary>
@@ -127,9 +137,9 @@ namespace jKnepel.UnitySync
 		/// <summary>
 		/// If the local Client acts as a Server that remote Clients can connect to.
 		/// </summary>
-		public static bool IsServer
+		public static bool IsHost
 		{
-			get => IsConnected && LocalClient.IsServer;
+			get => IsConnected && LocalClient.IsHost;
 		}
 
 		public static readonly List<ModuledNetMessage> SyncMessages = new();
@@ -412,7 +422,7 @@ namespace jKnepel.UnitySync
 
 			try
 			{
-				_ip = IPAddress.Parse(IP);
+				_ip = IPAddress.Parse(LocalIP);
 				_port = _settings.DiscoveryPort;
 
 				IPEndPoint localport = new(IPAddress.Any, _port);
@@ -464,43 +474,39 @@ namespace jKnepel.UnitySync
 		/// Connect to a given Server. Membership in a Server is required before Data can be send.
 		/// </summary>
 		/// <param name="serverIP">IP of the Server.</param>
+		/// <param name="onConnectionEstablished">Invoked once the connection was successfully established or failed to.</param>
 		/// <returns>
 		/// <see langword="true"/> if the local Client successfully connected to the Server
 		/// <see langword="false"/> if no Server with that IP exists, the client is already connected to a Server or the connection was unsuccessful
 		/// </returns>
-		public static bool ConnectToServer(IPAddress serverIP)
+		public static void ConnectToServer(IPAddress serverIP, Action<bool> onConnectionEstablished = null)
 		{
 			if (IsConnected)
 			{
 				Debug.LogWarning("The local Client is already connected to a Server!");
-				return false;
+				onConnectionEstablished?.Invoke(false);
+				return;
 			}
 
-			if (!_openServers.TryGetValue(serverIP, out _))
-			{
-				Debug.LogError("No Server with this IP exists!");
-				return false;
-			}
-
-			//_socket = new NetworkClient(servername);
-			return IsConnected;
+			_socket = new NetworkClient(serverIP, onConnectionEstablished);
 		}
 
 		/// <summary>
 		/// Connect to a given Server. Membership in a Server is required before Data can be send.
 		/// </summary>
 		/// <param name="servername">Name of the local Server that is to be created.</param>
+		/// <param name="onConnectionEstablished">Invoked once the connection was successfully established or failed to.</param>
 		/// <returns><see langword="true"/> if the local Client successfully created and now hosts a Server</returns>
-		public static bool CreateServer(string servername)
+		public static void CreateServer(string servername, Action<bool> onConnectionEstablished = null)
 		{
 			if (IsConnected)
 			{
 				Debug.LogWarning("The local Client is already connected to a Server!");
-				return false;
+				onConnectionEstablished?.Invoke(false);
+				return;
 			}
 
-			_socket = new NetworkServer(servername);
-			return IsConnected;
+			_socket = new NetworkServer(servername, onConnectionEstablished);
 		}
 
 		/// <summary>

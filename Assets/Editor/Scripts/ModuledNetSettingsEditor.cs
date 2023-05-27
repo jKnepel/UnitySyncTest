@@ -41,7 +41,7 @@ namespace jKnepel.UnitySync
 			{
 				EditorGUI.indentLevel++;
 				ModuledNetManager.IsDebug = EditorGUILayout.Toggle(new GUIContent("Is Debug:", "Allows the display of debug messages."), ModuledNetManager.IsDebug);
-				ModuledNetManager.IP = EditorGUILayout.TextField("Local IP:", ModuledNetManager.IP);
+				ModuledNetManager.LocalIP = EditorGUILayout.TextField("Local IP:", ModuledNetManager.LocalIP);
 				_settings.Port = EditorGUILayout.IntField("Port:", _settings.Port);
 				_settings.DiscoveryPort = EditorGUILayout.IntField("Server Discovery Port:", _settings.DiscoveryPort);
 				_settings.MTU = EditorGUILayout.IntField("MTU:", _settings.MTU);

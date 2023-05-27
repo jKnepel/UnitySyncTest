@@ -1,8 +1,7 @@
-using jKnepel.UnitySync.Networking;
 using System.Linq;
 using UnityEngine;
 using UnityEditor;
-using UnityEditor.SceneManagement;
+using jKnepel.UnitySync.Networking;
 
 namespace jKnepel.UnitySync.SceneSync
 {
@@ -22,7 +21,6 @@ namespace jKnepel.UnitySync.SceneSync
 
         private bool    _newServerOptionsIsVisible = true;
         private string  _newServerName = "New Server";
-        private int     _newServerSceneIndex = 0;
 
         private Texture2D _texture;
         private GUIStyle _style = new();

@@ -8,14 +8,19 @@ namespace jKnepel.UnitySync.Networking
 {
 	public class ClientInformation
 	{
-		public byte ID { get; private set; }
-		public string Username { get; private set; }
-		public Color32 Color { get; private set; }
-		public bool IsServer => ID == 1;
+		public readonly byte ID;
 
-		public ClientInformation(byte id, string username, Color32 color)
+		public string Username = "Username";
+		public Color32 Color = new(255, 255, 255, 255);
+		public bool IsHost => ID == 1;
+
+		public ClientInformation(byte id)
 		{
 			ID = id;
+		}
+
+		public ClientInformation(byte id, string username, Color32 color) : this(id)
+		{
 			Username = username;
 			Color = color;
 		}
@@ -53,6 +58,17 @@ namespace jKnepel.UnitySync.Networking
 		internal ushort UnreliableRemoteSequence { get; set; }
 		internal ushort ReliableLocalSequence { get; set; }
 		internal ushort ReliableRemoteSequence { get; set; }
+		
+		public ClientInformationSocket(byte id, IPAddress ip) : base(id) 
+		{
+			IP = ip;
+			LastHeartbeat = DateTime.Now;
+
+			UnreliableLocalSequence = 0;
+			UnreliableRemoteSequence = 0;
+			ReliableLocalSequence = 0;
+			ReliableRemoteSequence = 0;
+		}
 
 		public ClientInformationSocket(byte id, IPAddress ip, string username, Color32 color) : base(id, username, color)
 		{
@@ -64,5 +80,6 @@ namespace jKnepel.UnitySync.Networking
 			ReliableLocalSequence = 0;
 			ReliableRemoteSequence = 0;
 		}
+
 	}
 }
