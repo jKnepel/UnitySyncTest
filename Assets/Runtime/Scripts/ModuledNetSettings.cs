@@ -69,8 +69,9 @@ namespace jKnepel.UnitySync
 					_maxNumberClients = value;
 			}
 		}
-        
-        // packet frequency settings
+
+		// packet frequency settings
+		public int ServerConnectionTimeout = 5000;
         public int ServerHeartbeatDelay = 1000;
         public int ServerDiscoveryTimeout = 3000;
 		public int MaxNumberResendReliablePackets = 5;
