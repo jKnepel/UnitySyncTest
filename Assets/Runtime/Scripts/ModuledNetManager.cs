@@ -248,48 +248,58 @@ namespace jKnepel.UnitySync
 
 		private static void DiscoveryThread()
 		{
-			try
+			while (true)
 			{
-				while (true)
+				try
 				{
-					try
-					{
-						// get packet ip headers
-						IPEndPoint receiveEndpoint = new(IPAddress.Any, 0);
-						byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
-						IPAddress sender = receiveEndpoint.Address;
-						if (sender.Equals(_ip))
-							continue;
+					// get packet ip headers
+					IPEndPoint receiveEndpoint = new(IPAddress.Any, 0);
+					byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
+					IPAddress sender = receiveEndpoint.Address;
+					if (sender.Equals(_ip))
+						continue;
 
-						// get packet type without chunked packet bit
-						byte typeBytes = receivedBytes[ModuledNetSettings.CRC32_LENGTH];
-						byte mask = 1 << 7;
-						typeBytes &= (byte)~mask;
-						EPacketType packetType = (EPacketType)typeBytes;
-						if (packetType != EPacketType.ServerInformation)
-							continue;
+					// get packet type without chunked packet bit
+					byte typeBytes = receivedBytes[ModuledNetSettings.CRC32_LENGTH];
+					byte mask = 1 << 7;
+					typeBytes &= (byte)~mask;
+					EPacketType packetType = (EPacketType)typeBytes;
+					if (packetType != EPacketType.ServerInformation)
+						continue;
 
-						ServerInformationPacket heartbeat = new(receivedBytes);
-						if (!heartbeat.TryDeserialize())
-							continue;
+					ServerInformationPacket heartbeat = new(receivedBytes);
+					if (!heartbeat.TryDeserialize())
+						continue;
 
-						ServerInformation newServer = new(sender, heartbeat.Servername, heartbeat.MaxNumberOfClients, heartbeat.NumberOfClients);
-						if (_openServers.TryGetValue(sender, out (ServerInformation, DateTime) server))
-						{	// update server with new values
-							server = (newServer, DateTime.Now);
-						}
-						else
-						{	// add server to dict and create timeout
-							_openServers.TryAdd(sender, (newServer, DateTime.Now));
-							_ = TimeoutServer(sender);
-						}
-
-						_mainThreadActions.Enqueue(() => OnServerListChanged?.Invoke());
+					ServerInformation newServer = new(sender, heartbeat.Servername, heartbeat.MaxNumberOfClients, heartbeat.NumberOfClients);
+					if (_openServers.TryGetValue(sender, out (ServerInformation, DateTime) server))
+					{   // update server with new values
+						server = (newServer, DateTime.Now);
 					}
-					catch (OverflowException) { continue; }
+					else
+					{   // add server to dict and create timeout
+						_openServers.TryAdd(sender, (newServer, DateTime.Now));
+						_ = TimeoutServer(sender);
+					}
+
+					_mainThreadActions.Enqueue(() => OnServerListChanged?.Invoke());
+				}
+				catch (Exception ex)
+				{
+					switch (ex)
+					{
+						case IndexOutOfRangeException:
+						case ArgumentException:
+							continue;
+						case ThreadAbortException:
+							return;
+						default:
+							Debug.LogError("An Error occurred in the Server Discovery. Reset Server Discovery!");
+							IsServerDiscoveryActive = false;
+							return;
+					}
 				}
 			}
-			catch (ThreadAbortException) { }
 		}
 
 		private static async Task TimeoutServer(IPAddress serverIP)
@@ -409,19 +419,19 @@ namespace jKnepel.UnitySync
 		/// <returns><see langword="true"/> if the Client is Active after the Reset</returns>
 		public static bool ResetClient()
 		{
-			if (_udpClient != null)
-			{
-				_udpClient.Close();
-				_udpClient.Dispose();
-			}
-			if (_discoveryThread != null)
-			{
-				_discoveryThread.Abort();
-				_discoveryThread.Join();
-			}
-
 			try
 			{
+				if (_udpClient != null)
+				{
+					_udpClient.Close();
+					_udpClient.Dispose();
+				}
+				if (_discoveryThread != null)
+				{
+					_discoveryThread.Abort();
+					_discoveryThread.Join();
+				}
+
 				_ip = IPAddress.Parse(LocalIP);
 				_port = _settings.DiscoveryPort;
 
@@ -434,6 +444,9 @@ namespace jKnepel.UnitySync
 
 				_discoveryThread = new(() => DiscoveryThread()) { IsBackground = true };
 				_discoveryThread.Start();
+
+				IsServerDiscoveryActive = true;
+				return IsServerDiscoveryActive;
 			}
 			catch (Exception ex)
 			{
@@ -465,9 +478,6 @@ namespace jKnepel.UnitySync
 				IsServerDiscoveryActive = false;
 				return false;
 			}
-
-			IsServerDiscoveryActive = true;
-			return IsServerDiscoveryActive;
 		}
 
 		/// <summary>
@@ -475,10 +485,6 @@ namespace jKnepel.UnitySync
 		/// </summary>
 		/// <param name="serverIP">IP of the Server.</param>
 		/// <param name="onConnectionEstablished">Invoked once the connection was successfully established or failed to.</param>
-		/// <returns>
-		/// <see langword="true"/> if the local Client successfully connected to the Server
-		/// <see langword="false"/> if no Server with that IP exists, the client is already connected to a Server or the connection was unsuccessful
-		/// </returns>
 		public static void ConnectToServer(IPAddress serverIP, Action<bool> onConnectionEstablished = null)
 		{
 			if (IsConnected)
@@ -496,7 +502,6 @@ namespace jKnepel.UnitySync
 		/// </summary>
 		/// <param name="servername">Name of the local Server that is to be created.</param>
 		/// <param name="onConnectionEstablished">Invoked once the connection was successfully established or failed to.</param>
-		/// <returns><see langword="true"/> if the local Client successfully created and now hosts a Server</returns>
 		public static void CreateServer(string servername, Action<bool> onConnectionEstablished = null)
 		{
 			if (IsConnected)
