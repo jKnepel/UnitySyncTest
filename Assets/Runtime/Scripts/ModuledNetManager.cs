@@ -266,10 +266,10 @@ namespace jKnepel.UnitySync
 						byte mask = 1 << 7;
 						typeBytes &= (byte)~mask;
 						EPacketType packetType = (EPacketType)typeBytes;
-						if (packetType != EPacketType.Heartbeat)
+						if (packetType != EPacketType.ServerInformation)
 							continue;
 
-						HeartbeatPacket heartbeat = new(receivedBytes);
+						ServerInformationPacket heartbeat = new(receivedBytes);
 						if (!heartbeat.TryDeserialize())
 							continue;
 

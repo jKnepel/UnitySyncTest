@@ -361,6 +361,7 @@ namespace jKnepel.UnitySync.Networking
 
 			byte newID = AddClient(sender).ID;
 			_packetsToSend.Enqueue((sender, new ConnectionAcceptedPacket(newID)));
+			_packetsToSend.Enqueue((sender, new ServerInformationPacket(ServerInformation.Servername, ServerInformation.MaxNumberConnectedClients, ServerInformation.NumberConnectedClients)));
 		}
 
 		private void HandleACKPacket(ClientInformationSocket sender, byte[] packet)
@@ -472,19 +473,14 @@ namespace jKnepel.UnitySync.Networking
 					if (dataPacket.ClientID > 1)
 					{   // forward packet to specified client
 						if (GetClientById((byte)dataPacket.ClientID, out ClientInformationSocket targetClient))
-						{
 							CreateDataSenderPackets(dataPacket.Type, dataPacket.ModuleHash, dataPacket.Data, null, targetClient.IP, sender.ID);
-						}
 						return;
 					}
 
+					// forward packet to all other clients before consuming
 					if (dataPacket.ClientID == 0)
-					{   // forward packet to all other clients before consuming
 						foreach (ClientInformationSocket targetClient in _connectedClients.Values)
-						{
 							CreateDataSenderPackets(dataPacket.Type, dataPacket.ModuleHash, dataPacket.Data, null, targetClient.IP, sender.ID);
-						}
-					}
 
 					// notify manager of received data, consuming the packet
 					ModuledNetManager.DataReceived?.Invoke(dataPacket.ModuleHash, sender.ID, dataPacket.Data);
@@ -495,10 +491,8 @@ namespace jKnepel.UnitySync.Networking
 
 					ClientInfoPacket info = new(sender.ID, sender.Username, sender.Color);
 					foreach (ClientInformationSocket client in _connectedClients.Values)
-					{
 						if (sender.ID != client.ID)
 							_packetsToSend.Enqueue((client.IP, info));
-					}
 					break;
 				default: break;
 			}
@@ -515,8 +509,9 @@ namespace jKnepel.UnitySync.Networking
 				try
 				{
 					// TODO : only recalculate if connected clients changed
-					HeartbeatPacket heartbeat = new(ServerInformation.Servername, ServerInformation.MaxNumberConnectedClients, (byte)_connectedClients.Count);
-					_udpClient.Send(heartbeat.Bytes, heartbeat.Bytes.Length, new(IPAddress.Broadcast, _port));
+					ServerInformationPacket heartbeat = new(ServerInformation.Servername, ServerInformation.MaxNumberConnectedClients, (byte)_connectedClients.Count);
+					byte[] heartbeatBytes = heartbeat.Serialize();
+					_udpClient.Send(heartbeatBytes, heartbeatBytes.Length, new(IPAddress.Broadcast, _port));
 					Thread.Sleep(_settings.ServerHeartbeatDelay);
 				}
 				catch (Exception ex)

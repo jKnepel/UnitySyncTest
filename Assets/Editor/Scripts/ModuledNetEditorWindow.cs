@@ -131,25 +131,28 @@ namespace jKnepel.UnitySync.SceneSync
                 {
                     // server client list
                     GUILayout.Label($"Current Server: {ModuledNetManager.CurrentServer.Servername}");
-                    _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos,
-                        EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
+                    _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos, EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
                     {
                         if (ModuledNetManager.ConnectedClients.Count == 0)
+						{
                             GUILayout.Label($"There are no Clients in this server!");
-
-                        Color defaultColor = _style.normal.textColor;
-                        _style.alignment = TextAnchor.MiddleLeft;
-                        for (int i = 0; i < ModuledNetManager.CurrentServer.NumberConnectedClients; i++)
-                        {
-                            ClientInformation client = ModuledNetManager.ConnectedClients.ElementAt(i);
-                            EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
+						}
+                        else
+						{
+                            Color defaultColor = _style.normal.textColor;
+                            _style.alignment = TextAnchor.MiddleLeft;
+                            for (int i = 0; i < ModuledNetManager.CurrentServer.NumberConnectedClients; i++)
                             {
-                                _style.normal.textColor = client.Color;
-                                GUILayout.Label(client.Username, _style);
+                                ClientInformation client = ModuledNetManager.ConnectedClients.ElementAt(i);
+                                EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
+                                {
+                                    _style.normal.textColor = client.Color;
+                                    GUILayout.Label(client.Username, _style);
+                                }
+                                EditorGUILayout.EndHorizontal();
                             }
-                            EditorGUILayout.EndHorizontal();
-                        }
-                        _style.normal.textColor = defaultColor;
+                            _style.normal.textColor = defaultColor;
+						}
                     }
                     EditorGUILayout.EndScrollView();
 

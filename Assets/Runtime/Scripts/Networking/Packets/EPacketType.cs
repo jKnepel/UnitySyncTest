@@ -2,8 +2,8 @@ namespace jKnepel.UnitySync.Networking.Packets
 {
     internal enum EPacketType : byte
     {
+        ServerInformation,
         ACK,
-        Heartbeat,
         ConnectionRequest,
         ConnectionChallenge,
         ChallengeAnswer,

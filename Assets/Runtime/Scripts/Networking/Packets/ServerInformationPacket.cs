@@ -3,23 +3,23 @@ using System.Text;
 
 namespace jKnepel.UnitySync.Networking.Packets
 {
-	internal class HeartbeatPacket : AConnectionNetworkPacket
+	internal class ServerInformationPacket : AConnectionNetworkPacket
 	{
 		public string Servername { get; private set; }
 		public byte MaxNumberOfClients { get; private set; }
 		public byte NumberOfClients { get; private set; }
 
-		public HeartbeatPacket(string servername, byte maxNumberOfClients, byte numberOfClients)
+		public ServerInformationPacket(string servername, byte maxNumberOfClients, byte numberOfClients)
 		{
-			Type = EPacketType.Heartbeat;
+			Type = EPacketType.ServerInformation;
 			Servername = servername;
 			MaxNumberOfClients = maxNumberOfClients;
 			NumberOfClients = numberOfClients;
 		}
 
-		public HeartbeatPacket(byte[] packet)
+		public ServerInformationPacket(byte[] packet)
 		{
-			Type = EPacketType.Heartbeat;
+			Type = EPacketType.ServerInformation;
 			Bytes = packet;
 		}
 
