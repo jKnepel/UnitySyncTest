@@ -44,10 +44,10 @@ namespace jKnepel.UnitySync.Networking.Packets
 		{
 			try
 			{
+				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
 				if (!CheckCRC32Checksum(Bytes))
 					return false;
 
-				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
 				int servernameLength = Bytes[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH];
 				byte[] servername = GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.DATA_FLAG_LENGTH, servernameLength);
 				Servername = Encoding.ASCII.GetString(servername);

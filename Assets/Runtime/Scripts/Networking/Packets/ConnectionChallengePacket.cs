@@ -36,11 +36,10 @@ namespace jKnepel.UnitySync.Networking.Packets
 		{
 			try
 			{
+				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
 				if (!CheckCRC32Checksum(Bytes))
 					return false;
 
-				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
-			
 				return true;
 			}
 			catch (Exception) { return false; }
