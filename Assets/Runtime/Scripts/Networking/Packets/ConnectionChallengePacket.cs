@@ -24,7 +24,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 			byte[] bytes = new byte[ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.CHALLENGE_LENGTH];
 			bytes[ModuledNetSettings.CRC32_LENGTH] = (byte)Type;
 
-			Array.Copy(BitConverter.GetBytes(Challenge), 0, bytes, ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_LENGTH);
+			Array.Copy(BitConverter.GetBytes(Challenge), 0, bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_LENGTH);
 
 			CRC32 = CalculateChecksumBytes(bytes);
 			Array.Copy(BitConverter.GetBytes(CRC32), 0, bytes, 0, ModuledNetSettings.CRC32_LENGTH);
@@ -39,6 +39,8 @@ namespace jKnepel.UnitySync.Networking.Packets
 				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
 				if (!CheckCRC32Checksum(Bytes))
 					return false;
+
+				BitConverter.ToUInt64(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_LENGTH));
 
 				return true;
 			}
