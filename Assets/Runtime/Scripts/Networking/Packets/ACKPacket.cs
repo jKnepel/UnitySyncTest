@@ -1,5 +1,4 @@
 using System;
-using System.Text;
 
 namespace jKnepel.UnitySync.Networking.Packets
 {
@@ -49,7 +48,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 			{
 				CRC32 = BitConverter.ToUInt32(GetBytesFromArray(Bytes, 0, ModuledNetSettings.CRC32_LENGTH));
 				if (!CheckCRC32Checksum(Bytes))
-					return true;
+					return false;
 
 				Sequence = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.SEQUENCE_ID_LENGTH));
 				IsChunked = (Bytes[ModuledNetSettings.CRC32_LENGTH] & (1 << 7)) != 0;
@@ -57,7 +56,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 				if (IsChunked)
 					SliceNumber = BitConverter.ToUInt16(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH + ModuledNetSettings.SEQUENCE_ID_LENGTH, ModuledNetSettings.SLICE_NUMBER));
 
-				return false;
+				return true;
 			}
 			catch (Exception) { return false; }
 		}

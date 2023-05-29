@@ -638,7 +638,7 @@ namespace jKnepel.UnitySync.Networking
 				&& client.SendChunksBuffer.TryGetValue(sequence, out byte[] data))
 			{
 				_udpClient.Send(data, data.Length, new(client.IP, _port));
-				if (retries < _settings.MaxNumberResendReliablePackets - 1)
+				if (retries < _settings.MaxNumberResendReliablePackets)
 					_ = ResendSliceData(clientIP, sequence, retries + 1);
 				else
 					RemoveClient(client.ID, true);
@@ -660,7 +660,7 @@ namespace jKnepel.UnitySync.Networking
 				&& client.SendPacketsBuffer.TryGetValue(sequence, out byte[] data))
 			{
 				_udpClient.Send(data, data.Length, new(client.IP, _port));
-				if (retries < _settings.MaxNumberResendReliablePackets - 1)
+				if (retries < _settings.MaxNumberResendReliablePackets)
 					_ = ResendPacketData(clientIP, sequence, retries + 1);
 				else
 					RemoveClient(client.ID, true);
