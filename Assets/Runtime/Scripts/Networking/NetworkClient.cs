@@ -60,6 +60,8 @@ namespace jKnepel.UnitySync.Networking
 					return;
 				}
 
+				ConnectionStatus = ConnectionStatus.IsConnecting;
+
 				_localIP = IPAddress.Parse(ModuledNetManager.LocalIP);
 				_port = _settings.Port;
 				_udpClient = new(_port);

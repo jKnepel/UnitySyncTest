@@ -163,7 +163,6 @@ namespace jKnepel.UnitySync
 		private readonly static ConcurrentQueue<Action> _mainThreadActions = new();
 
 		private static IPAddress _ip;
-		private static int		 _port;
 		private static UdpClient _udpClient;
 
 		private static Thread _discoveryThread;
@@ -248,16 +247,19 @@ namespace jKnepel.UnitySync
 
 		private static void DiscoveryThread()
 		{
+			IPEndPoint receiveEndpoint = new(IPAddress.Any, _settings.DiscoveryPort);
+
 			while (true)
 			{
 				try
 				{
 					// get packet ip headers
-					IPEndPoint receiveEndpoint = new(IPAddress.Any, 0);
 					byte[] receivedBytes = _udpClient.Receive(ref receiveEndpoint);
 					IPAddress sender = receiveEndpoint.Address;
 					if (sender.Equals(_ip))
 						continue;
+
+					Debug.Log(_openServers.Count);
 
 					// get packet type without chunked packet bit
 					byte typeBytes = receivedBytes[ModuledNetSettings.CRC32_LENGTH];
@@ -274,7 +276,8 @@ namespace jKnepel.UnitySync
 					ServerInformation newServer = new(sender, heartbeat.Servername, heartbeat.MaxNumberOfClients, heartbeat.NumberOfClients);
 					if (_openServers.TryGetValue(sender, out (ServerInformation, DateTime) server))
 					{   // update server with new values
-						server = (newServer, DateTime.Now);
+						server.Item1 = newServer;
+						server.Item2 = DateTime.Now;
 					}
 					else
 					{   // add server to dict and create timeout
@@ -433,20 +436,18 @@ namespace jKnepel.UnitySync
 				}
 
 				_ip = IPAddress.Parse(LocalIP);
-				_port = _settings.DiscoveryPort;
 
-				IPEndPoint localport = new(IPAddress.Any, _port);
 				_udpClient = new();
+				_udpClient.EnableBroadcast = true;
 				_udpClient.ExclusiveAddressUse = false;
 				_udpClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-				_udpClient.EnableBroadcast = true;
-				_udpClient.Client.Bind(localport);
+				_udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, _settings.DiscoveryPort));
 
 				_discoveryThread = new(() => DiscoveryThread()) { IsBackground = true };
 				_discoveryThread.Start();
 
 				IsServerDiscoveryActive = true;
-				return IsServerDiscoveryActive;
+				return true;
 			}
 			catch (Exception ex)
 			{
@@ -472,6 +473,7 @@ namespace jKnepel.UnitySync
 						Debug.LogError("Not enough memory available to start the Threads!");
 						break;
 					default:
+						IsServerDiscoveryActive = false;
 						ExceptionDispatchInfo.Capture(ex).Throw();
 						throw;
 				}
@@ -487,9 +489,9 @@ namespace jKnepel.UnitySync
 		/// <param name="onConnectionEstablished">Invoked once the connection was successfully established or failed to.</param>
 		public static void ConnectToServer(IPAddress serverIP, Action<bool> onConnectionEstablished = null)
 		{
-			if (IsConnected)
+			if (ConnectionStatus != ConnectionStatus.IsDisconnected)
 			{
-				Debug.LogWarning("The local Client is already connected to a Server!");
+				Debug.LogWarning("The local Client is already connected or connecting to a Server!");
 				onConnectionEstablished?.Invoke(false);
 				return;
 			}

@@ -66,9 +66,9 @@ namespace jKnepel.UnitySync.Networking
 				_localIP = IPAddress.Parse(ModuledNetManager.LocalIP);
 				_port = _settings.Port;
 				_udpClient = new(_port);
+
 				ServerInformation = new(_localIP, servername, _settings.MaxNumberClients);
 				ClientInformation = new(1, _settings.Username, _settings.Color);
-
 
 				_listenerThread = new(() => ListenerThread()) { IsBackground = true };
 				_listenerThread.Start();
@@ -503,36 +503,36 @@ namespace jKnepel.UnitySync.Networking
 		#region sender logic
 
 		private void HeartbeatThread()
-		{	// send heartbeat used for discovery until server is closed
-			while (_disposeCount == 0)
+		{   
+			try
 			{
-				try
-				{
+				int discoveryPort = _settings.DiscoveryPort;
+				UdpClient heartbeatClient = new();
+				heartbeatClient.EnableBroadcast = true;
+				heartbeatClient.ExclusiveAddressUse = false;
+				heartbeatClient.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+				heartbeatClient.Client.Bind(new IPEndPoint(_localIP, discoveryPort));
+				IPEndPoint remoteEndpoint = new(IPAddress.Broadcast, discoveryPort);
+
+				while (_disposeCount == 0)
+				{   // send heartbeat used for discovery until server is closed
 					// TODO : only recalculate if connected clients changed
 					ServerInformationPacket heartbeat = new(ServerInformation.Servername, ServerInformation.MaxNumberConnectedClients, (byte)_connectedClients.Count);
 					byte[] heartbeatBytes = heartbeat.Serialize();
-					_udpClient.Send(heartbeatBytes, heartbeatBytes.Length, new(IPAddress.Broadcast, _port));
+					heartbeatClient.Send(heartbeatBytes, heartbeatBytes.Length, remoteEndpoint);
 					Thread.Sleep(_settings.ServerHeartbeatDelay);
 				}
-				catch (Exception ex)
+			}
+			catch (Exception ex)
+			{
+				switch (ex)
 				{
-					switch (ex)
-					{
-						case IndexOutOfRangeException:
-						case ArgumentException:
-							continue;
-						case ThreadAbortException:
-							return;
-						case SocketException:
-						case ObjectDisposedException:
-							Debug.LogError(ex.ToString());
-							_mainThreadActions.Enqueue(() => Dispose());
-							break;
-						default:
-							_mainThreadActions.Enqueue(() => Dispose());
-							ExceptionDispatchInfo.Capture(ex).Throw();
-							throw;
-					}
+					case ThreadAbortException:
+						return;
+					default:
+						_mainThreadActions.Enqueue(() => Dispose());
+						ExceptionDispatchInfo.Capture(ex).Throw();
+						throw;
 				}
 			}
 		}
