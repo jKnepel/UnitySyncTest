@@ -15,7 +15,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 			Type = EPacketType.ACK;
 			Sequence = sequence;
 			IsChunked = sliceNumber != null;
-			if (sliceNumber == null)
+			if (sliceNumber != null)
 				SliceNumber = (ushort)sliceNumber;
 		}
 

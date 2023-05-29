@@ -40,7 +40,7 @@ namespace jKnepel.UnitySync.Networking.Packets
 				if (!CheckCRC32Checksum(Bytes))
 					return false;
 
-				BitConverter.ToUInt64(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_LENGTH));
+				Challenge = BitConverter.ToUInt64(GetBytesFromArray(Bytes, ModuledNetSettings.CRC32_LENGTH + ModuledNetSettings.PACKET_TYPE_LENGTH, ModuledNetSettings.CHALLENGE_LENGTH));
 
 				return true;
 			}
