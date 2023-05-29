@@ -130,7 +130,7 @@ namespace jKnepel.UnitySync.SceneSync
                 else
                 {
                     // server client list
-                    GUILayout.Label($"Current Server: {ModuledNetManager.CurrentServer.Servername}");
+                    GUILayout.Label($"Current Server: {ModuledNetManager.CurrentServer?.Servername}");
                     _clientsViewPos = EditorGUILayout.BeginScrollView(_clientsViewPos, EditorStyles.helpBox, GUILayout.ExpandWidth(true), GUILayout.MaxHeight(150));
                     {
                         if (ModuledNetManager.ConnectedClients.Count == 0)
@@ -141,9 +141,9 @@ namespace jKnepel.UnitySync.SceneSync
 						{
                             Color defaultColor = _style.normal.textColor;
                             _style.alignment = TextAnchor.MiddleLeft;
-                            for (int i = 0; i < ModuledNetManager.CurrentServer.NumberConnectedClients; i++)
+                            for (int i = 0; i < ModuledNetManager.ConnectedClients?.Count; i++)
                             {
-                                ClientInformation client = ModuledNetManager.ConnectedClients.ElementAt(i);
+                                ClientInformation client = ModuledNetManager.ConnectedClients?.ElementAt(i);
                                 EditorGUILayout.BeginHorizontal(GetScrollviewRowStyle(_scrollViewColors[i % 2]));
                                 {
                                     _style.normal.textColor = client.Color;
