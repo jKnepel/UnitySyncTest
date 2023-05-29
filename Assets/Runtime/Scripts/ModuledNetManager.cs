@@ -259,8 +259,6 @@ namespace jKnepel.UnitySync
 					if (sender.Equals(_ip))
 						continue;
 
-					Debug.Log(_openServers.Count);
-
 					// get packet type without chunked packet bit
 					byte typeBytes = receivedBytes[ModuledNetSettings.CRC32_LENGTH];
 					byte mask = 1 << 7;
